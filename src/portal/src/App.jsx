@@ -11,7 +11,8 @@ export default function App() {
     <ConfigProvider theme={theme}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          {/* <Route path="/" element={<HomePage />} /> */}
+          <Route path="/" element={<TutorPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/tutor/:sessionId" element={<TutorPage />} />
           <Route path="/admin" element={<AdminPage />} />

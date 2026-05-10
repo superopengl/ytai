@@ -3,14 +3,16 @@ import {
   integer,
   jsonb,
   numeric,
-  pgTable,
+  pgSchema,
   text,
   timestamp,
   uniqueIndex,
   uuid
 } from 'drizzle-orm/pg-core';
 
-export const user = pgTable('user', {
+export const ytai = pgSchema('ytai');
+
+export const user = ytai.table('user', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   role: text('role').notNull(),
@@ -19,7 +21,7 @@ export const user = pgTable('user', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
-export const loginRequest = pgTable('login_request', {
+export const loginRequest = ytai.table('login_request', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => user.id),
   status: text('status').notNull().default('pending'),
@@ -27,7 +29,7 @@ export const loginRequest = pgTable('login_request', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
-export const tutorSession = pgTable('tutor_session', {
+export const tutorSession = ytai.table('tutor_session', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => user.id),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
@@ -36,7 +38,7 @@ export const tutorSession = pgTable('tutor_session', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
-export const sessionImage = pgTable('session_image', {
+export const sessionImage = ytai.table('session_image', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
   storageUrl: text('storage_url').notNull(),
@@ -46,7 +48,7 @@ export const sessionImage = pgTable('session_image', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
-export const visionExtraction = pgTable(
+export const visionExtraction = ytai.table(
   'vision_extraction',
   {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -64,13 +66,14 @@ export const visionExtraction = pgTable(
   })
 );
 
-export const sessionMessage = pgTable('session_message', {
+export const sessionMessage = ytai.table('session_message', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
   role: text('role').notNull(),
   content: text('content').notNull(),
   imageId: uuid('image_id').references(() => sessionImage.id),
   regionHash: text('region_hash'),
+  modelId: text('model_id'),
   promptTokens: integer('prompt_tokens'),
   completionTokens: integer('completion_tokens'),
   interrupted: boolean('interrupted').notNull().default(false),

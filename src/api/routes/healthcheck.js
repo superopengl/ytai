@@ -1,3 +1,3 @@
-export default async function healthcheck() {
-  return { ok: true };
+export default function healthcheck(fastify) {
+  fastify.get('/healthcheck', async () => ({ ok: true }));
 }
