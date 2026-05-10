@@ -68,7 +68,7 @@ DeepSeek-V3.2 (Brain) ── runs on EVERY chat turn
 - **Kid-safe content**: tutor system prompt explicitly forbids off-topic chat, profanity, and unsafe advice; refuses anything unrelated to homework
 - **No PII in prompts**: don't pass student names into the LLM; refer to them as "the student"
 - **Image privacy**: uploaded photos stored in S3 with private ACL; signed URLs only; auto-delete after N days (configurable)
-- **Auth**: JWT-based, same pattern as KidPlayAI
+- **Auth**: JWT-based
 - **Admin approval gate**: all new users require admin approval before they can use the tutor (MVP — replace with email verification later)
 
 ## Key Files
@@ -115,11 +115,11 @@ src/
     vite.config.js
     package.json
 devops/                         # Dockerfile + entrypoint
-deploy/                         # AWS CDK app (mirror kpai structure)
+deploy/                         # AWS CDK app
 dist/                           # Build artifacts (gitignored)
 ```
 
-## Deployment (Planned, mirrors KidPlayAI)
+## Deployment
 
 - **Domain**: `yoututorai.techseeding.com.au` (or chosen domain)
 - **Target**: AWS `ap-southeast-2` — ECS Fargate behind ALB, Aurora Postgres Serverless v2, S3 for images, ECR for image, Secrets Manager, Route53 alias
