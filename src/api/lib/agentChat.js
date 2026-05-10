@@ -1,4 +1,4 @@
-export default async function* openaiChat({ baseUrl, apiKey, model, messages, tools, signal }) {
+export default async function* agentChat({ baseUrl, apiKey, model, messages, tools, signal }) {
   if (!baseUrl) throw new Error('baseUrl is required');
   if (!model) throw new Error('model is required');
 
@@ -47,14 +47,36 @@ export default async function* openaiChat({ baseUrl, apiKey, model, messages, to
         if (data === '[DONE]') return;
         try {
           const json = JSON.parse(data);
+          if (process.env.YTAI_DEBUG_LLM === '1') {
+            // eslint-disable-next-line no-console
+            console.log('[agentChat] chunk', JSON.stringify(json));
+          }
           const choice = json.choices?.[0];
           const delta = choice?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
             yield { delta };
           }
-          const toolCallChunks = choice?.delta?.tool_calls;
-          if (Array.isArray(toolCallChunks) && toolCallChunks.length > 0) {
-            yield { toolCallChunks };
+          const deltaToolCalls = choice?.delta?.tool_calls;
+          if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {
+            yield { toolCallChunks: deltaToolCalls };
+          }
+          // Fallback: some providers return non-streamed tool calls on the
+          // final chunk under choice.message.tool_calls instead of delta.
+          const finalToolCalls = choice?.message?.tool_calls;
+          if (Array.isArray(finalToolCalls) && finalToolCalls.length > 0) {
+            const normalized = finalToolCalls.map((tc, i) => ({
+              index: tc.index ?? i,
+              id: tc.id,
+              type: tc.type,
+              function: {
+                name: tc.function?.name,
+                arguments:
+                  typeof tc.function?.arguments === 'string'
+                    ? tc.function.arguments
+                    : JSON.stringify(tc.function?.arguments ?? {})
+              }
+            }));
+            yield { toolCallChunks: normalized };
           }
           if (choice?.finish_reason) {
             yield { finishReason: choice.finish_reason };

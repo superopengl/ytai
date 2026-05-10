@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionMessage, tutorSession } from '../db/schema.js';
-import openaiChat from '../lib/openaiChat.js';
+import agentChat from '../lib/agentChat.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 import drawingTools from '../lib/drawingTools.js';
 
@@ -117,19 +117,24 @@ export default function tutorSendMessage(fastify) {
         if (acc.argsRaw) {
           try {
             args = JSON.parse(acc.argsRaw);
-          } catch {
+          } catch (err) {
+            request.log.warn(
+              { sessionId, name: acc.name, argsRaw: acc.argsRaw, err: err.message },
+              'Failed to parse tool call arguments'
+            );
             continue;
           }
         }
         const call = { id: acc.id, name: acc.name, args };
         completedToolCalls.push(call);
+        request.log.info({ sessionId, call }, 'Emitted tool call');
         sse('tool', call);
       }
       toolCallAccum.clear();
     }
 
     try {
-      for await (const chunk of openaiChat({
+      for await (const chunk of agentChat({
         baseUrl,
         apiKey,
         model: modelId,
@@ -165,6 +170,15 @@ export default function tutorSendMessage(fastify) {
         }
       }
       flushCompletedToolCalls();
+      request.log.info(
+        {
+          sessionId,
+          contentLen: assistantContent.length,
+          toolCallCount: completedToolCalls.length,
+          toolsOffered: imageDataUrl ? drawingTools.length : 0
+        },
+        'Chat stream finished'
+      );
     } catch (err) {
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
         interrupted = true;
