@@ -1,0 +1,33 @@
+{
+  "name": "@techseeding/yoututorai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,portal -c blue,magenta \"pnpm dev:api\" \"pnpm dev:portal\"",
+    "dev:api": "node --watch --env-file=.env src/api/server.js",
+    "dev:portal": "pnpm -F @techseeding/yoututorai-portal dev",
+    "build:prod": "pnpm -F @techseeding/yoututorai-portal build && mkdir -p dist/src && cp -R src/api dist/src/api",
+    "start:prod": "node --env-file=.env.production dist/src/api/server.js",
+    "build:docker": "docker build -f devops/Dockerfile -t yoututorai .",
+    "db:generate": "drizzle-kit generate --config=src/api/drizzle.config.js",
+    "db:migrate": "node --env-file=.env src/api/db/migrate.js",
+    "db:studio": "drizzle-kit studio --config=src/api/drizzle.config.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "@fastify/static": "^8.0.0",
+    "drizzle-orm": "^0.36.0",
+    "fastify": "^5.0.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "drizzle-kit": "^0.28.0"
+  }
+}

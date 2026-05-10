@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Build / cache
+*.log
+*.tsbuildinfo
+.turbo/
+.vite/
+coverage/
+
+# CDK
+deploy/cdk.out/
+deploy/.cdk.staging/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
