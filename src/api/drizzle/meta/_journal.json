@@ -8,6 +8,13 @@
       "when": 1778379309083,
       "tag": "0000_careful_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778395533591,
+      "tag": "0001_glossy_vance_astro",
+      "breakpoints": true
     }
   ]
 }

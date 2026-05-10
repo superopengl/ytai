@@ -22,6 +22,7 @@ export default function tutorGetMessages(fastify) {
         role: sessionMessage.role,
         content: sessionMessage.content,
         interrupted: sessionMessage.interrupted,
+        toolCalls: sessionMessage.toolCalls,
         createdAt: sessionMessage.createdAt
       })
       .from(sessionMessage)

@@ -3,7 +3,7 @@ import { Alert, Button, Input, Typography } from 'antd';
 import { LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import streamSSE from '../lib/streamSSE.js';
 
-export default function ChatPanel({ sessionId, getImage }) {
+export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
   const [messages, setMessages] = useState([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState('');
@@ -26,8 +26,22 @@ export default function ChatPanel({ sessionId, getImage }) {
       })
       .then((body) => {
         if (cancelled) return;
-        setMessages(body.messages ?? []);
+        const loaded = body.messages ?? [];
+        setMessages(loaded);
         setHistoryLoaded(true);
+        if (onAiAnnotations) {
+          const restored = [];
+          for (const m of loaded) {
+            if (Array.isArray(m.toolCalls)) {
+              for (const tc of m.toolCalls) {
+                if (tc?.name === 'draw_annotation') {
+                  restored.push({ id: `${m.id}:${tc.id ?? restored.length}`, args: tc.args });
+                }
+              }
+            }
+          }
+          onAiAnnotations(restored);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -109,6 +123,11 @@ export default function ChatPanel({ sessionId, getImage }) {
                 : m
             )
           );
+        } else if (event === 'tool') {
+          if (data?.name === 'draw_annotation' && onAiAnnotations) {
+            const id = `${placeholderId}:${data.id ?? Math.random().toString(36).slice(2)}`;
+            onAiAnnotations((prev) => [...prev, { id, args: data.args }]);
+          }
         } else if (event === 'error') {
           setError(data.error || 'Something went wrong.');
         }
@@ -121,7 +140,7 @@ export default function ChatPanel({ sessionId, getImage }) {
       abortRef.current = null;
       setBusy(false);
     }
-  }, [busy, input, sessionId, getImage]);
+  }, [busy, input, sessionId, getImage, onAiAnnotations]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

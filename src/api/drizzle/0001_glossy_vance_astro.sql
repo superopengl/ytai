@@ -1,0 +1,1 @@
+ALTER TABLE "ytai"."session_message" ADD COLUMN "tool_calls" jsonb;

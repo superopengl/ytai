@@ -77,6 +77,7 @@ export const sessionMessage = ytai.table('session_message', {
   promptTokens: integer('prompt_tokens'),
   completionTokens: integer('completion_tokens'),
   interrupted: boolean('interrupted').notNull().default(false),
+  toolCalls: jsonb('tool_calls'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });

@@ -1,15 +1,25 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect, Text } from 'react-konva';
 import { Button, Space, Tooltip } from 'antd';
 import { ClearOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
 
-const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onReplace }, ref) {
+const DEFAULT_AI_COLOR = '#3aa0ff';
+
+const PEN_COLORS = ['#ff1744', '#22c55e', '#f97316', '#a855f7', '#1d2233'];
+const PEN_WIDTHS = [4, 7, 12];
+
+const AnnotationCanvas = forwardRef(function AnnotationCanvas(
+  { imageUrl, onReplace, aiAnnotations = [] },
+  ref
+) {
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const drawing = useRef(false);
   const [image, setImage] = useState(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [lines, setLines] = useState([]);
+  const [penColor, setPenColor] = useState(PEN_COLORS[0]);
+  const [penWidth, setPenWidth] = useState(PEN_WIDTHS[1]);
 
   useImperativeHandle(
     ref,
@@ -57,7 +67,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
     if (!image) return;
     drawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setLines((prev) => [...prev, { points: [pos.x, pos.y] }]);
+    setLines((prev) => [...prev, { points: [pos.x, pos.y], color: penColor, width: penWidth }]);
   }
 
   function extendLine(e) {
@@ -65,7 +75,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
     const pos = e.target.getStage().getPointerPosition();
     setLines((prev) => {
       const last = prev[prev.length - 1];
-      const next = { points: [...last.points, pos.x, pos.y] };
+      const next = { ...last, points: [...last.points, pos.x, pos.y] };
       return [...prev.slice(0, -1), next];
     });
   }
@@ -76,7 +86,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Space style={{ marginBottom: 12 }}>
+      <Space style={{ marginBottom: 12, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
         <Tooltip title="Undo last stroke">
           <Button
             icon={<UndoOutlined />}
@@ -100,6 +110,62 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
             Replace image
           </Button>
         </Tooltip>
+
+        <span style={toolbarDividerStyle} />
+
+        {PEN_COLORS.map((color) => (
+          <Tooltip key={color} title={`Pen color ${color}`}>
+            <button
+              type="button"
+              aria-label={`Pen color ${color}`}
+              onClick={() => setPenColor(color)}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: '50%',
+                background: color,
+                cursor: 'pointer',
+                padding: 0,
+                border: penColor === color ? '3px solid #1d2233' : '1px solid rgba(0,0,0,0.2)',
+                boxShadow: penColor === color ? 'inset 0 0 0 2px #fff' : 'none'
+              }}
+            />
+          </Tooltip>
+        ))}
+
+        <span style={toolbarDividerStyle} />
+
+        {PEN_WIDTHS.map((width) => (
+          <Tooltip key={width} title={`Pen thickness ${width}px`}>
+            <button
+              type="button"
+              aria-label={`Pen thickness ${width}px`}
+              onClick={() => setPenWidth(width)}
+              style={{
+                width: 32,
+                height: 26,
+                borderRadius: 6,
+                background: '#fff',
+                cursor: 'pointer',
+                padding: 0,
+                border: penWidth === width ? '2px solid #1d2233' : '1px solid #d9d9d9',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: width + 2,
+                  height: width + 2,
+                  borderRadius: '50%',
+                  background: penColor
+                }}
+              />
+            </button>
+          </Tooltip>
+        ))}
       </Space>
       <div
         ref={containerRef}
@@ -129,16 +195,29 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
             <Layer listening={false}>
               <KonvaImage image={image} width={fit.width} height={fit.height} />
             </Layer>
+            <Layer listening={false}>
+              {aiAnnotations.map((anno) => (
+                <AiAnnotation
+                  key={anno.id}
+                  annotation={anno}
+                  fitWidth={fit.width}
+                  fitHeight={fit.height}
+                />
+              ))}
+            </Layer>
             <Layer>
               {lines.map((line, idx) => (
                 <Line
                   key={idx}
                   points={line.points}
-                  stroke="#ff5252"
-                  strokeWidth={4}
+                  stroke={line.color || '#ff1744'}
+                  strokeWidth={line.width || 7}
                   tension={0.3}
                   lineCap="round"
                   lineJoin="round"
+                  shadowColor="rgba(255, 255, 255, 0.95)"
+                  shadowBlur={Math.max(4, (line.width || 7) * 0.7)}
+                  shadowOpacity={1}
                   globalCompositeOperation="source-over"
                 />
               ))}
@@ -152,10 +231,100 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas({ imageUrl, onRepl
 
 export default AnnotationCanvas;
 
+const toolbarDividerStyle = {
+  display: 'inline-block',
+  width: 1,
+  height: 24,
+  background: '#ececf3',
+  alignSelf: 'center'
+};
+
 function fitToContainer(image, container) {
   if (!image || container.width === 0 || container.height === 0) {
     return { width: 0, height: 0 };
   }
   const ratio = Math.min(container.width / image.width, container.height / image.height);
   return { width: image.width * ratio, height: image.height * ratio };
+}
+
+function AiAnnotation({ annotation, fitWidth, fitHeight }) {
+  const args = annotation?.args;
+  if (!args || typeof args.x !== 'number' || typeof args.y !== 'number') return null;
+  const x = clamp01(args.x) * fitWidth;
+  const y = clamp01(args.y) * fitHeight;
+  const w = clamp01(args.width ?? 0) * fitWidth;
+  const h = clamp01(args.height ?? 0) * fitHeight;
+  const color = isCssColor(args.color) ? args.color : DEFAULT_AI_COLOR;
+  const label = typeof args.label === 'string' ? args.label.slice(0, 24) : '';
+
+  const labelNode = label ? (
+    <Text
+      text={label}
+      x={x}
+      y={Math.max(0, y - 18)}
+      fontSize={14}
+      fontStyle="bold"
+      fill={color}
+      shadowColor="rgba(255,255,255,0.9)"
+      shadowBlur={4}
+    />
+  ) : null;
+
+  if (args.shape === 'highlight') {
+    return (
+      <>
+        <Rect
+          x={x}
+          y={y}
+          width={Math.max(w, 4)}
+          height={Math.max(h, 4)}
+          fill={color}
+          opacity={0.25}
+          cornerRadius={4}
+        />
+        {labelNode}
+      </>
+    );
+  }
+
+  if (args.shape === 'rect') {
+    return (
+      <>
+        <Rect
+          x={x}
+          y={y}
+          width={Math.max(w, 4)}
+          height={Math.max(h, 4)}
+          stroke={color}
+          strokeWidth={4}
+          dash={[10, 6]}
+          cornerRadius={6}
+        />
+        {labelNode}
+      </>
+    );
+  }
+
+  // default: circle (ellipse fits any aspect)
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rx = Math.max(w / 2, 12);
+  const ry = Math.max(h / 2, 12);
+  return (
+    <>
+      <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />
+      {labelNode}
+    </>
+  );
+}
+
+function clamp01(n) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function isCssColor(s) {
+  return typeof s === 'string' && /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\([^)]+\)|hsla?\([^)]+\))$/.test(s);
 }

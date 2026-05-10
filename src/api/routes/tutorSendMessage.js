@@ -2,9 +2,10 @@ import { asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionMessage, tutorSession } from '../db/schema.js';
 import openaiChat from '../lib/openaiChat.js';
+import tutorPrompt from '../lib/tutorPrompt.js';
+import drawingTools from '../lib/drawingTools.js';
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
-import tutorPrompt from '../lib/tutorPrompt.js';
 
 export default function tutorSendMessage(fastify) {
   fastify.post('/api/tutor/:sessionId/message', async (request, reply) => {
@@ -106,6 +107,26 @@ export default function tutorSendMessage(fastify) {
     let completionTokens = null;
     let interrupted = false;
     let fatalError = null;
+    const toolCallAccum = new Map();
+    const completedToolCalls = [];
+
+    function flushCompletedToolCalls() {
+      for (const acc of toolCallAccum.values()) {
+        if (!acc.name) continue;
+        let args = {};
+        if (acc.argsRaw) {
+          try {
+            args = JSON.parse(acc.argsRaw);
+          } catch {
+            continue;
+          }
+        }
+        const call = { id: acc.id, name: acc.name, args };
+        completedToolCalls.push(call);
+        sse('tool', call);
+      }
+      toolCallAccum.clear();
+    }
 
     try {
       for await (const chunk of openaiChat({
@@ -113,17 +134,37 @@ export default function tutorSendMessage(fastify) {
         apiKey,
         model: modelId,
         messages: modelMessages,
+        tools: imageDataUrl ? drawingTools : undefined,
         signal: abortController.signal
       })) {
         if (chunk.delta) {
           assistantContent += chunk.delta;
           sse('token', { delta: chunk.delta });
         }
+        if (chunk.toolCallChunks) {
+          for (const tc of chunk.toolCallChunks) {
+            const idx = tc.index ?? 0;
+            let acc = toolCallAccum.get(idx);
+            if (!acc) {
+              acc = { id: tc.id || `call_${idx}`, name: '', argsRaw: '' };
+              toolCallAccum.set(idx, acc);
+            }
+            if (tc.id) acc.id = tc.id;
+            if (tc.function?.name) acc.name = tc.function.name;
+            if (typeof tc.function?.arguments === 'string') {
+              acc.argsRaw += tc.function.arguments;
+            }
+          }
+        }
+        if (chunk.finishReason === 'tool_calls' || chunk.finishReason === 'stop') {
+          flushCompletedToolCalls();
+        }
         if (chunk.usage) {
           promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
           completionTokens = chunk.usage.completion_tokens ?? completionTokens;
         }
       }
+      flushCompletedToolCalls();
     } catch (err) {
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
         interrupted = true;
@@ -143,7 +184,8 @@ export default function tutorSendMessage(fastify) {
           modelId,
           promptTokens,
           completionTokens,
-          interrupted
+          interrupted,
+          toolCalls: completedToolCalls.length > 0 ? completedToolCalls : null
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
@@ -157,6 +199,7 @@ export default function tutorSendMessage(fastify) {
           promptTokens,
           completionTokens,
           interrupted,
+          toolCalls: completedToolCalls.length > 0 ? completedToolCalls : [],
           createdAt: assistantRow.createdAt
         });
       }

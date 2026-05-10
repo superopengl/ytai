@@ -10,6 +10,7 @@ export default function TutorPage() {
   const navigate = useNavigate();
   const [imageUrl, setImageUrl] = useState(null);
   const [sessionId, setSessionId] = useState(routeSessionId ?? null);
+  const [aiAnnotations, setAiAnnotations] = useState([]);
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
@@ -47,11 +48,13 @@ export default function TutorPage() {
   function onSelectFile(file) {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     setImageUrl(URL.createObjectURL(file));
+    setAiAnnotations([]);
   }
 
   function onReplace() {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     setImageUrl(null);
+    setAiAnnotations([]);
   }
 
   return (
@@ -81,7 +84,12 @@ export default function TutorPage() {
             }}
           >
             {imageUrl ? (
-              <AnnotationCanvas ref={canvasRef} imageUrl={imageUrl} onReplace={onReplace} />
+              <AnnotationCanvas
+                ref={canvasRef}
+                imageUrl={imageUrl}
+                onReplace={onReplace}
+                aiAnnotations={aiAnnotations}
+              />
             ) : (
               <PhotoCapture onSelectFile={onSelectFile} />
             )}
@@ -89,7 +97,11 @@ export default function TutorPage() {
         </Splitter.Panel>
         <Splitter.Panel>
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <ChatPanel sessionId={sessionId} getImage={getCanvasImage} />
+            <ChatPanel
+              sessionId={sessionId}
+              getImage={getCanvasImage}
+              onAiAnnotations={setAiAnnotations}
+            />
           </div>
         </Splitter.Panel>
       </Splitter>

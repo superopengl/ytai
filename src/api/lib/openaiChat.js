@@ -1,4 +1,4 @@
-export default async function* openaiChat({ baseUrl, apiKey, model, messages, signal }) {
+export default async function* openaiChat({ baseUrl, apiKey, model, messages, tools, signal }) {
   if (!baseUrl) throw new Error('baseUrl is required');
   if (!model) throw new Error('model is required');
 
@@ -6,15 +6,18 @@ export default async function* openaiChat({ baseUrl, apiKey, model, messages, si
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
+  const body = {
+    model,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true }
+  };
+  if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      stream_options: { include_usage: true }
-    }),
+    body: JSON.stringify(body),
     signal
   });
 
@@ -44,9 +47,17 @@ export default async function* openaiChat({ baseUrl, apiKey, model, messages, si
         if (data === '[DONE]') return;
         try {
           const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta?.content;
+          const choice = json.choices?.[0];
+          const delta = choice?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
             yield { delta };
+          }
+          const toolCallChunks = choice?.delta?.tool_calls;
+          if (Array.isArray(toolCallChunks) && toolCallChunks.length > 0) {
+            yield { toolCallChunks };
+          }
+          if (choice?.finish_reason) {
+            yield { finishReason: choice.finish_reason };
           }
           if (json.usage) {
             yield { usage: json.usage };
