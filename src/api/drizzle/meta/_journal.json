@@ -15,6 +15,13 @@
       "when": 1778395533591,
       "tag": "0001_glossy_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0002_image_cache",
+      "breakpoints": true
     }
   ]
 }

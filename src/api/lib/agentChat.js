@@ -30,6 +30,7 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const streamedToolIndexes = new Set();
 
   try {
     while (true) {
@@ -58,25 +59,32 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
           }
           const deltaToolCalls = choice?.delta?.tool_calls;
           if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {
+            for (const tc of deltaToolCalls) streamedToolIndexes.add(tc.index ?? 0);
             yield { toolCallChunks: deltaToolCalls };
           }
           // Fallback: some providers return non-streamed tool calls on the
           // final chunk under choice.message.tool_calls instead of delta.
+          // Skip indexes already covered by streamed delta chunks — otherwise
+          // their args get concatenated downstream and JSON.parse fails.
           const finalToolCalls = choice?.message?.tool_calls;
           if (Array.isArray(finalToolCalls) && finalToolCalls.length > 0) {
-            const normalized = finalToolCalls.map((tc, i) => ({
-              index: tc.index ?? i,
-              id: tc.id,
-              type: tc.type,
-              function: {
-                name: tc.function?.name,
-                arguments:
-                  typeof tc.function?.arguments === 'string'
-                    ? tc.function.arguments
-                    : JSON.stringify(tc.function?.arguments ?? {})
-              }
-            }));
-            yield { toolCallChunks: normalized };
+            const normalized = finalToolCalls
+              .map((tc, i) => ({
+                index: tc.index ?? i,
+                id: tc.id,
+                type: tc.type,
+                function: {
+                  name: tc.function?.name,
+                  arguments:
+                    typeof tc.function?.arguments === 'string'
+                      ? tc.function.arguments
+                      : JSON.stringify(tc.function?.arguments ?? {})
+                }
+              }))
+              .filter((tc) => !streamedToolIndexes.has(tc.index));
+            if (normalized.length > 0) {
+              yield { toolCallChunks: normalized };
+            }
           }
           if (choice?.finish_reason) {
             yield { finishReason: choice.finish_reason };

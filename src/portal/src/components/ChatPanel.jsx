@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Input, Typography } from 'antd';
 import { LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
 
 export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
@@ -11,6 +12,11 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
+  // Hash of the last image dataUrl successfully sent to the server. Lets us
+  // skip resending bytes when neither the photo nor the user's annotations
+  // have changed since the previous turn — the server keeps the cached
+  // vision_extraction keyed off the matching content_hash.
+  const lastSentImageHashRef = useRef(null);
 
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -18,6 +24,7 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
     setMessages([]);
     setHistoryLoaded(false);
     setError(null);
+    lastSentImageHashRef.current = null;
 
     fetch(`/api/tutor/${sessionId}/messages`)
       .then((res) => {
@@ -85,12 +92,20 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
     abortRef.current = controller;
 
     const image = getImage?.();
+    let imageToSend = null;
+    let imageHashThisTurn = null;
+    if (image?.dataUrl) {
+      imageHashThisTurn = await hashDataUrl(image.dataUrl);
+      if (imageHashThisTurn && imageHashThisTurn !== lastSentImageHashRef.current) {
+        imageToSend = image;
+      }
+    }
 
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, image: image || undefined }),
+        body: JSON.stringify({ content: text, image: imageToSend || undefined }),
         signal: controller.signal
       });
 
@@ -110,6 +125,7 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
             )
           );
         } else if (event === 'done') {
+          if (imageHashThisTurn) lastSentImageHashRef.current = imageHashThisTurn;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === placeholderId

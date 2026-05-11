@@ -20,3 +20,4 @@ deploy/.cdk.staging/
 .DS_Store
 .vscode/
 .idea/
+data/images

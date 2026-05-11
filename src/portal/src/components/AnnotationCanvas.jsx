@@ -1,12 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect, Text } from 'react-konva';
-import { Button, Space, Tooltip } from 'antd';
+import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
 import { ClearOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
 
 const DEFAULT_AI_COLOR = '#3aa0ff';
 
-const PEN_COLORS = ['#ff1744', '#22c55e', '#f97316', '#a855f7', '#1d2233'];
-const PEN_WIDTHS = [4, 7, 12];
+const PEN_PRESETS = ['#ff1744', '#22c55e', '#f97316', '#a855f7', '#1d2233', '#ffd60a', '#06b6d4'];
+const PEN_WIDTH_MIN = 2;
+const PEN_WIDTH_MAX = 20;
+const PEN_WIDTH_DEFAULT = 7;
 
 const AnnotationCanvas = forwardRef(function AnnotationCanvas(
   { imageUrl, onReplace, aiAnnotations = [] },
@@ -18,8 +20,8 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
   const [image, setImage] = useState(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [lines, setLines] = useState([]);
-  const [penColor, setPenColor] = useState(PEN_COLORS[0]);
-  const [penWidth, setPenWidth] = useState(PEN_WIDTHS[1]);
+  const [penColor, setPenColor] = useState(PEN_PRESETS[0]);
+  const [penWidth, setPenWidth] = useState(PEN_WIDTH_DEFAULT);
 
   useImperativeHandle(
     ref,
@@ -113,59 +115,49 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
         <span style={toolbarDividerStyle} />
 
-        {PEN_COLORS.map((color) => (
-          <Tooltip key={color} title={`Pen color ${color}`}>
-            <button
-              type="button"
-              aria-label={`Pen color ${color}`}
-              onClick={() => setPenColor(color)}
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                background: color,
-                cursor: 'pointer',
-                padding: 0,
-                border: penColor === color ? '3px solid #1d2233' : '1px solid rgba(0,0,0,0.2)',
-                boxShadow: penColor === color ? 'inset 0 0 0 2px #fff' : 'none'
-              }}
-            />
-          </Tooltip>
-        ))}
+        <Tooltip title="Pen color">
+          <ColorPicker
+            value={penColor}
+            onChange={(c) => setPenColor(c.toHexString())}
+            disabledAlpha
+            presets={[{ label: 'Quick colors', colors: PEN_PRESETS }]}
+          />
+        </Tooltip>
 
         <span style={toolbarDividerStyle} />
 
-        {PEN_WIDTHS.map((width) => (
-          <Tooltip key={width} title={`Pen thickness ${width}px`}>
-            <button
-              type="button"
-              aria-label={`Pen thickness ${width}px`}
-              onClick={() => setPenWidth(width)}
+        <Tooltip title="Pen thickness">
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 8px'
+            }}
+          >
+            <span
+              aria-hidden
               style={{
-                width: 32,
-                height: 26,
-                borderRadius: 6,
-                background: '#fff',
-                cursor: 'pointer',
-                padding: 0,
-                border: penWidth === width ? '2px solid #1d2233' : '1px solid #d9d9d9',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center'
+                display: 'inline-block',
+                width: penWidth,
+                height: penWidth,
+                borderRadius: '50%',
+                background: penColor,
+                flexShrink: 0
               }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: width + 2,
-                  height: width + 2,
-                  borderRadius: '50%',
-                  background: penColor
-                }}
-              />
-            </button>
-          </Tooltip>
-        ))}
+            />
+            <Slider
+              min={PEN_WIDTH_MIN}
+              max={PEN_WIDTH_MAX}
+              step={1}
+              value={penWidth}
+              onChange={setPenWidth}
+              style={{ width: 120, margin: 0 }}
+              tooltip={{ formatter: (v) => `${v}px` }}
+            />
+            <span style={{ minWidth: 28, fontSize: 12, color: '#5d6478' }}>{penWidth}px</span>
+          </div>
+        </Tooltip>
       </Space>
       <div
         ref={containerRef}

@@ -32,21 +32,33 @@ export const loginRequest = ytai.table('login_request', {
 export const tutorSession = ytai.table('tutor_session', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => user.id),
+  // Most recent image attached to the session. Text-only turns reuse its
+  // cached vision_extraction so Brain doesn't need the bytes resent.
+  currentImageId: uuid('current_image_id'),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
-export const sessionImage = ytai.table('session_image', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
-  storageUrl: text('storage_url').notNull(),
-  width: integer('width').notNull(),
-  height: integer('height').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-});
+export const sessionImage = ytai.table(
+  'session_image',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
+    // sha256 of the flattened canvas bytes — same hash within a session
+    // returns the existing row so vision_extraction can be reused.
+    contentHash: text('content_hash').notNull(),
+    storageUrl: text('storage_url').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => ({
+    sessionHashUnique: uniqueIndex('session_image_session_hash_uq').on(t.sessionId, t.contentHash)
+  })
+);
 
 export const visionExtraction = ytai.table(
   'vision_extraction',

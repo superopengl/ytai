@@ -1,11 +1,113 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import db from '../db/index.js';
-import { sessionMessage, tutorSession } from '../db/schema.js';
+import {
+  sessionImage,
+  sessionMessage,
+  tutorSession,
+  visionExtraction
+} from '../db/schema.js';
 import agentChat from '../lib/agentChat.js';
-import tutorPrompt from '../lib/tutorPrompt.js';
 import drawingTools from '../lib/drawingTools.js';
+import extractVision from '../lib/extractVision.js';
+import hashBuffer from '../lib/hashBuffer.js';
+import persistImage from '../lib/persistImage.js';
+import tutorPrompt from '../lib/tutorPrompt.js';
 
-const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+function brainConfig() {
+  return {
+    baseUrl: process.env.YTAI_OPENROUTER_BASE_URL || DEFAULT_OPENROUTER_BASE_URL,
+    apiKey: process.env.YTAI_OPENROUTER_API_KEY || '',
+    model: process.env.YTAI_OPENROUTER_CHAT_MODEL || 'deepseek/deepseek-chat'
+  };
+}
+
+function visionConfig() {
+  return {
+    baseUrl:
+      process.env.YTAI_VISION_BASE_URL ||
+      process.env.YTAI_OPENROUTER_BASE_URL ||
+      DEFAULT_OPENROUTER_BASE_URL,
+    apiKey: process.env.YTAI_VISION_API_KEY || process.env.YTAI_OPENROUTER_API_KEY || '',
+    model: process.env.YTAI_OPENROUTER_VISION_MODEL || 'qwen/qwen2.5-vl-7b-instruct'
+  };
+}
+
+function decodeDataUrl(dataUrl) {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) return null;
+  return { mimeType: match[1], bytes: Buffer.from(match[2], 'base64') };
+}
+
+async function resolveImage({ sessionId, imageDataUrl, log }) {
+  if (!imageDataUrl) return null;
+  const decoded = decodeDataUrl(imageDataUrl);
+  if (!decoded) {
+    log.warn({ sessionId }, 'image dataUrl could not be decoded — ignoring');
+    return null;
+  }
+  const contentHash = hashBuffer(decoded.bytes);
+  const [existing] = await db()
+    .select({ id: sessionImage.id, width: sessionImage.width, height: sessionImage.height })
+    .from(sessionImage)
+    .where(and(eq(sessionImage.sessionId, sessionId), eq(sessionImage.contentHash, contentHash)));
+  if (existing) {
+    return { id: existing.id, contentHash, wasCached: true };
+  }
+  const { storageUrl } = await persistImage({
+    bytes: decoded.bytes,
+    contentHash,
+    mimeType: decoded.mimeType
+  });
+  const [inserted] = await db()
+    .insert(sessionImage)
+    .values({
+      sessionId,
+      contentHash,
+      storageUrl,
+      // We don't decode dimensions server-side; use 0 as a sentinel. The
+      // frontend already passes width/height for the canvas; we could plumb
+      // it through later if needed.
+      width: 0,
+      height: 0
+    })
+    .returning({ id: sessionImage.id });
+  return { id: inserted.id, contentHash, wasCached: false };
+}
+
+async function loadOrRunVision({ image, imageDataUrl, log }) {
+  if (!image) return null;
+  const [existing] = await db()
+    .select({ extracted: visionExtraction.extracted })
+    .from(visionExtraction)
+    .where(and(eq(visionExtraction.imageId, image.id), isNull(visionExtraction.regionHash)));
+  if (existing) {
+    log.info({ imageId: image.id }, 'vision_extraction cache hit');
+    return existing.extracted;
+  }
+  if (!imageDataUrl) {
+    log.warn({ imageId: image.id }, 'image cached but no extraction and no dataUrl to re-extract');
+    return null;
+  }
+  const { baseUrl, apiKey, model } = visionConfig();
+  log.info({ imageId: image.id, model }, 'running Eyes (vision extraction)');
+  const { extracted, modelVersion } = await extractVision({
+    imageDataUrl,
+    baseUrl,
+    apiKey,
+    model
+  });
+  await db()
+    .insert(visionExtraction)
+    .values({
+      imageId: image.id,
+      regionHash: null,
+      extracted,
+      modelVersion
+    });
+  return extracted;
+}
 
 export default function tutorSendMessage(fastify) {
   fastify.post('/api/tutor/:sessionId/message', async (request, reply) => {
@@ -22,13 +124,39 @@ export default function tutorSendMessage(fastify) {
     }
 
     const [session] = await db()
-      .select({ id: tutorSession.id })
+      .select({ id: tutorSession.id, currentImageId: tutorSession.currentImageId })
       .from(tutorSession)
       .where(eq(tutorSession.id, sessionId));
 
     if (!session) {
       reply.code(404);
       return { error: 'Session not found' };
+    }
+
+    // Resolve the active image: either the one in this request, or the
+    // session's current_image_id from a prior turn.
+    let activeImage = null;
+    if (imageDataUrl) {
+      activeImage = await resolveImage({ sessionId, imageDataUrl, log: request.log });
+      if (activeImage && activeImage.id !== session.currentImageId) {
+        await db()
+          .update(tutorSession)
+          .set({ currentImageId: activeImage.id, updatedAt: new Date() })
+          .where(eq(tutorSession.id, sessionId));
+      }
+    } else if (session.currentImageId) {
+      activeImage = { id: session.currentImageId, wasCached: true };
+    }
+
+    let visionJson = null;
+    try {
+      visionJson = await loadOrRunVision({
+        image: activeImage,
+        imageDataUrl,
+        log: request.log
+      });
+    } catch (err) {
+      request.log.error({ err, sessionId }, 'Eyes extraction failed — continuing without vision JSON');
     }
 
     const history = await db()
@@ -39,36 +167,29 @@ export default function tutorSendMessage(fastify) {
 
     const [userRow] = await db()
       .insert(sessionMessage)
-      .values({ sessionId, role: 'user', content })
+      .values({
+        sessionId,
+        role: 'user',
+        content,
+        imageId: activeImage?.id ?? null
+      })
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
       { role: 'system', content: tutorPrompt() },
+      ...(visionJson
+        ? [
+            {
+              role: 'system',
+              content: `Worksheet contents (JSON):\n${JSON.stringify(visionJson)}`
+            }
+          ]
+        : []),
       ...history.map((m) => ({ role: m.role, content: m.content })),
-      imageDataUrl
-        ? {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: imageDataUrl } },
-              { type: 'text', text: content }
-            ]
-          }
-        : { role: 'user', content }
+      { role: 'user', content }
     ];
 
-    const modelId = imageDataUrl
-      ? process.env.YTAI_OPENROUTER_VISION_MODEL || 'qwen/qwen2.5-vl-72b-instruct'
-      : process.env.YTAI_OPENROUTER_CHAT_MODEL || 'deepseek/deepseek-chat';
-
-    const baseUrl = imageDataUrl
-      ? process.env.YTAI_VISION_BASE_URL ||
-        process.env.YTAI_OPENROUTER_BASE_URL ||
-        DEFAULT_BASE_URL
-      : process.env.YTAI_OPENROUTER_BASE_URL || DEFAULT_BASE_URL;
-
-    const apiKey = imageDataUrl
-      ? process.env.YTAI_VISION_API_KEY || process.env.YTAI_OPENROUTER_API_KEY || ''
-      : process.env.YTAI_OPENROUTER_API_KEY || '';
+    const { baseUrl, apiKey, model: modelId } = brainConfig();
 
     reply.hijack();
     const raw = reply.raw;
@@ -96,6 +217,10 @@ export default function tutorSendMessage(fastify) {
       createdAt: userRow.createdAt
     });
 
+    if (visionJson) {
+      sse('meta', { kind: 'vision_ready', imageId: activeImage?.id ?? null });
+    }
+
     const abortController = new AbortController();
     request.raw.on('close', () => {
       clientClosed = true;
@@ -112,16 +237,25 @@ export default function tutorSendMessage(fastify) {
 
     function flushCompletedToolCalls() {
       for (const acc of toolCallAccum.values()) {
-        if (!acc.name) continue;
+        if (!acc.name) {
+          request.log.warn(
+            { sessionId, accId: acc.id, argsRaw: acc.argsRaw },
+            'Tool call accumulator has args but no function name — dropping'
+          );
+          continue;
+        }
         let args = {};
         if (acc.argsRaw) {
           try {
             args = JSON.parse(acc.argsRaw);
           } catch (err) {
-            request.log.warn(
+            request.log.error(
               { sessionId, name: acc.name, argsRaw: acc.argsRaw, err: err.message },
-              'Failed to parse tool call arguments'
+              'Failed to parse tool call arguments — dropping tool call'
             );
+            sse('error', {
+              error: `Tool call "${acc.name}" had unparseable arguments and was dropped.`
+            });
             continue;
           }
         }
@@ -139,7 +273,7 @@ export default function tutorSendMessage(fastify) {
         apiKey,
         model: modelId,
         messages: modelMessages,
-        tools: imageDataUrl ? drawingTools : undefined,
+        tools: visionJson ? drawingTools : undefined,
         signal: abortController.signal
       })) {
         if (chunk.delta) {
@@ -161,24 +295,16 @@ export default function tutorSendMessage(fastify) {
             }
           }
         }
-        if (chunk.finishReason === 'tool_calls' || chunk.finishReason === 'stop') {
-          flushCompletedToolCalls();
+        if (chunk.finishReason) {
+          if (chunk.finishReason === 'tool_calls' || chunk.finishReason === 'stop') {
+            flushCompletedToolCalls();
+          }
         }
         if (chunk.usage) {
           promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
           completionTokens = chunk.usage.completion_tokens ?? completionTokens;
         }
       }
-      flushCompletedToolCalls();
-      request.log.info(
-        {
-          sessionId,
-          contentLen: assistantContent.length,
-          toolCallCount: completedToolCalls.length,
-          toolsOffered: imageDataUrl ? drawingTools.length : 0
-        },
-        'Chat stream finished'
-      );
     } catch (err) {
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
         interrupted = true;
@@ -186,6 +312,8 @@ export default function tutorSendMessage(fastify) {
         fatalError = err;
         request.log.error({ err, sessionId }, 'Chat stream failed');
       }
+    } finally {
+      flushCompletedToolCalls();
     }
 
     try {
@@ -196,6 +324,7 @@ export default function tutorSendMessage(fastify) {
           role: 'assistant',
           content: assistantContent,
           modelId,
+          imageId: activeImage?.id ?? null,
           promptTokens,
           completionTokens,
           interrupted,

@@ -27,19 +27,21 @@ Multi-page app with four views:
 1. User visits the homepage, clicks "Start Tutoring," logs in, waits for admin approval
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam
 3. Image uploads to S3 (or local disk in dev); the URL is stored on the session
-4. **DeepSeek-VL2 ("Eyes") runs once** on the raw photo and returns a structured JSON: list of questions, marked answers (correct/wrong/blank), and any visible teacher feedback (red Xs, ticks, written notes)
+4. **Qwen2.5-VL ("Eyes") runs once** on the raw photo and returns a structured JSON: list of questions, marked answers (correct/wrong/blank), and any visible teacher feedback (red Xs, ticks, written notes). Qwen2.5-VL is also asked to return bounding boxes per item so Brain can later reference them by id.
 5. The AI greets the student, summarizes what it sees on the page, flags any wrong answers, and asks "What can I help you with?"
 6. The student types a question OR **circles a region** on the canvas and asks "explain this"
-7. **If the student circled a region**: the canvas drawing layer is flattened with the photo, OR the circled region is cropped client-side from drawn coordinates → sent to DeepSeek-VL2, which returns the text inside that region
-8. The extracted text is appended to the chat context, and **DeepSeek-V3.2 ("Brain")** generates a tutoring response, streamed token-by-token to the chat panel
+7. **If the student circled a region**: the canvas drawing layer is flattened with the photo, OR the circled region is cropped client-side from drawn coordinates → sent to Qwen2.5-VL, which returns the text inside that region
+8. The extracted text is appended to the chat context, and **deepseek-v4-flash ("Brain")** generates a tutoring response, streamed token-by-token to the chat panel
 9. The student can hit **Stop** at any time to interrupt and redirect
 10. Repeat from step 6 until the student is done; session ends, transcript is stored
 
 ## Architecture
 
-The app runs an eyes/brain AI pipeline (DeepSeek-VL2 for vision, DeepSeek-V3.2 for chat) behind a Fastify backend and a React + Ant Design frontend. Vision calls are minimized and cached; chat streams over SSE with abort support.
+The app runs an eyes/brain AI pipeline (Qwen2.5-VL for vision, deepseek-v4-flash for chat — both accessed via OpenRouter) behind a Fastify backend and a React + Ant Design frontend. Vision calls are minimized and cached; chat streams over SSE with abort support.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
+
+Pipeline flow diagram: [docs/pipeline.md](docs/pipeline.md)
 
 ## Database
 
@@ -59,9 +61,9 @@ Summary:
 - `GET /api/login/:loginRequestId/status` — poll login status
 - `POST /api/admin/user` — create a user (admin)
 - `POST /api/tutor/session` — start a tutoring session (auth)
-- `POST /api/tutor/:sessionId/image` — upload photo, triggers VL2 extraction (auth)
-- `POST /api/tutor/:sessionId/circle` — submit a circled region, triggers VL2 on the crop (auth)
-- `POST /api/tutor/:sessionId/message` — send chat message, streams V3.2 response via SSE (auth)
+- `POST /api/tutor/:sessionId/image` — upload photo, triggers Qwen2.5-VL extraction (auth)
+- `POST /api/tutor/:sessionId/circle` — submit a circled region, triggers Qwen2.5-VL on the crop (auth)
+- `POST /api/tutor/:sessionId/message` — send chat message, streams deepseek-v4-flash response via SSE (auth)
 - `GET /api/tutor/:sessionId` — get session state + transcript (auth)
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
@@ -74,8 +76,8 @@ Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 - **Backend**: Node.js, Fastify
 - **Database**: PostgreSQL with Drizzle ORM
 - **Image storage**: S3 in production, local disk in dev
-- **AI — Vision (Eyes)**: **DeepSeek-VL2** via DeepSeek API
-- **AI — Chat (Brain)**: **DeepSeek-V3.2** via DeepSeek API; streaming, abortable
+- **AI — Vision (Eyes)**: **Qwen2.5-VL** (default: `qwen/qwen2.5-vl-72b-instruct`) via OpenRouter; strong visual grounding (returns bounding boxes)
+- **AI — Chat (Brain)**: **deepseek-v4-flash** via OpenRouter; streaming, abortable
 - **Streaming**: SSE (Server-Sent Events)
 - **Package manager**: pnpm (workspace monorepo — root `@techseeding/yoututorai`, `@techseeding/yoututorai-portal`, `@techseeding/yoututorai-deploy`)
 - **Cloud / IaC**: AWS, CDK v2 (JavaScript), region `ap-southeast-2` (Sydney)
@@ -126,9 +128,12 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_PORTAL_PORT` | Vite dev server port | `9522` |
 | `YTAI_PUBLIC_URL` | Public-facing app origin | `http://localhost:9522` |
 | `YTAI_JWT_SECRET` | JWT signing secret | *(required)* |
-| `YTAI_DEEPSEEK_API_KEY` | DeepSeek API key (used for both VL2 and V3.2) | *(required)* |
-| `YTAI_DEEPSEEK_VISION_MODEL` | Vision model id | `deepseek-vl2` |
-| `YTAI_DEEPSEEK_CHAT_MODEL` | Chat model id | `deepseek-chat` (verify current id) |
+| `YTAI_OPENROUTER_API_KEY` | OpenRouter API key (used for both Eyes and Brain) | *(required)* |
+| `YTAI_OPENROUTER_CHAT_MODEL` | Brain model id on OpenRouter | `deepseek/deepseek-chat` |
+| `YTAI_OPENROUTER_VISION_MODEL` | Eyes model id on OpenRouter | `qwen/qwen2.5-vl-72b-instruct` |
+| `YTAI_OPENROUTER_BASE_URL` | Override the OpenRouter base URL | `https://openrouter.ai/api/v1` |
+| `YTAI_VISION_BASE_URL` | Per-route override for Eyes (e.g. local LM Studio at `http://localhost:9529/v1`); falls back to OpenRouter when unset | *(unset)* |
+| `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
 | `YTAI_S3_BUCKET` | Image bucket (prod) | *(required in prod)* |
 | `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days | `30` |
 
@@ -137,5 +142,5 @@ All env vars prefixed with `YTAI_`.
 1. **Streaming transport**: SSE vs. WebSocket? SSE is simpler and natively supports `AbortController`. Default to SSE; revisit if we add voice or multi-user shared sessions.
 2. **Voice in/out**: Whisper (STT) + ElevenLabs (TTS) is the cheap path. Defer to v2.
 3. **Multi-user shared session**: parent + student on different devices in the same session. Defer to v2.
-4. **Confidence fallback for VL2**: if VL2 misreads handwriting, what's the recovery? Options: ask the user to re-circle, ask them to type the question, or send the crop to a second-opinion vision model. Decide after first user testing.
+4. **Confidence fallback for Eyes**: if Qwen2.5-VL misreads handwriting, what's the recovery? Options: ask the user to re-circle, ask them to type the question, or send the crop to a second-opinion vision model. Decide after first user testing.
 5. **Subject-specific tools**: math step-checker (sympy), writing rubric grader. Add as Brain-side tool calls once core loop works.
