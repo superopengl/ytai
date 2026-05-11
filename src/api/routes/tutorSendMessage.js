@@ -176,15 +176,7 @@ export default function tutorSendMessage(fastify) {
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
-      { role: 'system', content: tutorPrompt() },
-      ...(visionJson
-        ? [
-            {
-              role: 'system',
-              content: `Worksheet contents (JSON):\n${JSON.stringify(visionJson)}`
-            }
-          ]
-        : []),
+      ...tutorPrompt({ visionJson }),
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content }
     ];
