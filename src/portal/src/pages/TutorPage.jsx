@@ -99,6 +99,7 @@ export default function TutorPage() {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <ChatPanel
               sessionId={sessionId}
+              imageUrl={imageUrl}
               getImage={getCanvasImage}
               onAiAnnotations={setAiAnnotations}
             />

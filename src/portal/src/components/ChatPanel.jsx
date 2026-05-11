@@ -4,7 +4,7 @@ import { LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
 
-export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
+export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations }) {
   const [messages, setMessages] = useState([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState('');
@@ -73,6 +73,13 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
     };
   }, []);
 
+  // Clear the "already sent" hash whenever the user replaces or removes the
+  // image. Without this, the dirty-check could keep matching the previous
+  // photo's hash and never re-send the new one.
+  useEffect(() => {
+    lastSentImageHashRef.current = null;
+  }, [imageUrl]);
+
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || busy || !sessionId) return;
@@ -92,12 +99,31 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
     abortRef.current = controller;
 
     const image = getImage?.();
+    // Guard against the race where the user replaced the image but the new
+    // photo hasn't finished loading into the canvas yet: in that case
+    // exportImage() returns null while imageUrl is non-empty. Falling
+    // through would send a text-only request and the server would reuse the
+    // previous image's vision_extraction — which looks like "the AI is
+    // ignoring my new photo."
+    if (imageUrl && !image?.dataUrl) {
+      setBusy(false);
+      setInput(text);
+      setMessages((prev) => prev.filter((m) => m.id !== placeholderId && !(m._local && m.content === text)));
+      setError('Photo is still loading — give it a moment, then send again.');
+      return;
+    }
+
     let imageToSend = null;
     let imageHashThisTurn = null;
     if (image?.dataUrl) {
       imageHashThisTurn = await hashDataUrl(image.dataUrl);
       if (imageHashThisTurn && imageHashThisTurn !== lastSentImageHashRef.current) {
-        imageToSend = image;
+        imageToSend = {
+          dataUrl: image.dataUrl,
+          width: image.width,
+          height: image.height,
+          hasAnnotations: image.hasAnnotations
+        };
       }
     }
 
@@ -105,7 +131,10 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text, image: imageToSend || undefined }),
+        body: JSON.stringify({
+          content: text,
+          image: imageToSend || undefined
+        }),
         signal: controller.signal
       });
 
@@ -156,7 +185,7 @@ export default function ChatPanel({ sessionId, getImage, onAiAnnotations }) {
       abortRef.current = null;
       setBusy(false);
     }
-  }, [busy, input, sessionId, getImage, onAiAnnotations]);
+  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

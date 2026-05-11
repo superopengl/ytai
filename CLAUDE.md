@@ -19,25 +19,23 @@ Multi-page app with four views:
 2. **Login** (`/login`) — User enters their name + role (student / parent / teacher); admin approval required for MVP
 3. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
-   - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming and a "Circle something new" button to re-run vision extraction
+   - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
 4. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
 
 ## How It Works
 
 1. User visits the homepage, clicks "Start Tutoring," logs in, waits for admin approval
-2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam
-3. Image uploads to S3 (or local disk in dev); the URL is stored on the session
-4. **Qwen2.5-VL ("Eyes") runs once** on the raw photo and returns a structured JSON: list of questions, marked answers (correct/wrong/blank), and any visible teacher feedback (red Xs, ticks, written notes). Qwen2.5-VL is also asked to return bounding boxes per item so Brain can later reference them by id.
-5. The AI greets the student, summarizes what it sees on the page, flags any wrong answers, and asks "What can I help you with?"
-6. The student types a question OR **circles a region** on the canvas and asks "explain this"
-7. **If the student circled a region**: the canvas drawing layer is flattened with the photo, OR the circled region is cropped client-side from drawn coordinates → sent to Qwen2.5-VL, which returns the text inside that region
-8. The extracted text is appended to the chat context, and **deepseek-v4-flash ("Brain")** generates a tutoring response, streamed token-by-token to the chat panel
-9. The student can hit **Stop** at any time to interrupt and redirect
-10. Repeat from step 6 until the student is done; session ends, transcript is stored
+2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
+3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Bytes are deduped by sha256 and persisted; the session remembers the active image id. **No upfront vision pass.**
+4. **deepseek-v4-flash ("Brain")** runs on every turn. When Brain needs to see the page, it calls the `lookup_on_image(question)` tool — one focused question per call.
+5. The server runs **Qwen2.5-VL ("Eyes")** on the current image bytes with that question and returns a short text answer plus, when relevant, a normalized 0..1 bounding box. Results are cached in `vision_extraction` keyed by `(image_id, sha256(question))` so repeats during a session are free.
+6. Brain may chain lookups (e.g. "what's on the page?" → "what did the student answer for question 3?") and may call `draw_annotation` with a bbox from a lookup to point at the page. Tokens stream to the chat panel; `draw_annotation` calls render on the canvas.
+7. The student can hit **Stop** at any time to interrupt Brain and any in-flight Eyes call.
+8. Repeat until the session ends; transcript is stored.
 
 ## Architecture
 
-The app runs an eyes/brain AI pipeline (Qwen2.5-VL for vision, deepseek-v4-flash for chat — both accessed via OpenRouter) behind a Fastify backend and a React + Ant Design frontend. Vision calls are minimized and cached; chat streams over SSE with abort support.
+Brain (deepseek-v4-flash) drives every turn and calls Eyes (Qwen2.5-VL) as a tool on demand — no eager full-page extraction. Both models go through OpenRouter. Vision results are cached per `(image_id, question)` so repeats are free. The Konva canvas exports the photo + freehand strokes as one flattened PNG, so Eyes interprets the student's circles and underlines directly without coordinate-mapping. Chat streams over SSE with abort support.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
@@ -57,14 +55,12 @@ Fastify HTTP API. All routes prefixed with `/api` except `/healthcheck`. Auth vi
 
 Summary:
 - `GET /healthcheck` — public
-- `POST /api/login/user` — login request
-- `GET /api/login/:loginRequestId/status` — poll login status
-- `POST /api/admin/user` — create a user (admin)
-- `POST /api/tutor/session` — start a tutoring session (auth)
-- `POST /api/tutor/:sessionId/image` — upload photo, triggers Qwen2.5-VL extraction (auth)
-- `POST /api/tutor/:sessionId/circle` — submit a circled region, triggers Qwen2.5-VL on the crop (auth)
-- `POST /api/tutor/:sessionId/message` — send chat message, streams deepseek-v4-flash response via SSE (auth)
-- `GET /api/tutor/:sessionId` — get session state + transcript (auth)
+- `POST /api/login/user` — login request *(planned)*
+- `GET /api/login/:loginRequestId/status` — poll login status *(planned)*
+- `POST /api/admin/user` — create a user (admin) *(planned)*
+- `POST /api/tutor/session` — start a tutoring session
+- `GET /api/tutor/:sessionId/messages` — fetch transcript
+- `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain calls Eyes (Qwen2.5-VL) via the `lookup_on_image` tool on demand; results cached in `vision_extraction` per `(image_id, sha256(question))`.
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 
@@ -76,8 +72,8 @@ Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 - **Backend**: Node.js, Fastify
 - **Database**: PostgreSQL with Drizzle ORM
 - **Image storage**: S3 in production, local disk in dev
-- **AI — Vision (Eyes)**: **Qwen2.5-VL** (default: `qwen/qwen2.5-vl-72b-instruct`) via OpenRouter; strong visual grounding (returns bounding boxes)
-- **AI — Chat (Brain)**: **deepseek-v4-flash** via OpenRouter; streaming, abortable
+- **AI — Vision (Eyes)**: **Qwen2.5-VL** (default: `qwen/qwen2.5-vl-72b-instruct`) via OpenRouter; called on demand by Brain through the `lookup_on_image` tool
+- **AI — Chat (Brain)**: **deepseek-v4-flash** via OpenRouter; streaming, abortable, tool-call enabled
 - **Streaming**: SSE (Server-Sent Events)
 - **Package manager**: pnpm (workspace monorepo — root `@techseeding/yoututorai`, `@techseeding/yoututorai-portal`, `@techseeding/yoututorai-deploy`)
 - **Cloud / IaC**: AWS, CDK v2 (JavaScript), region `ap-southeast-2` (Sydney)

@@ -1,4 +1,5 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   sessionImage,
@@ -7,13 +8,17 @@ import {
   visionExtraction
 } from '../db/schema.js';
 import agentChat from '../lib/agentChat.js';
-import drawingTools from '../lib/drawingTools.js';
-import extractVision from '../lib/extractVision.js';
+import askVision from '../lib/askVision.js';
+import brainTools from '../lib/brainTools.js';
 import hashBuffer from '../lib/hashBuffer.js';
+import loadImageDataUrl from '../lib/loadImageDataUrl.js';
 import persistImage from '../lib/persistImage.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+// Safety cap: Brain can chain lookups, but if it keeps calling tools without
+// emitting content something is wrong — bail before we melt the OpenRouter bill.
+const MAX_TOOL_ROUNDS = 6;
 
 function brainConfig() {
   return {
@@ -40,7 +45,11 @@ function decodeDataUrl(dataUrl) {
   return { mimeType: match[1], bytes: Buffer.from(match[2], 'base64') };
 }
 
-async function resolveImage({ sessionId, imageDataUrl, log }) {
+function hashQuestion(question) {
+  return createHash('sha256').update(question.trim().toLowerCase()).digest('hex');
+}
+
+async function resolveImage({ sessionId, imageDataUrl, dimensions, log }) {
   if (!imageDataUrl) return null;
   const decoded = decodeDataUrl(imageDataUrl);
   if (!decoded) {
@@ -49,11 +58,25 @@ async function resolveImage({ sessionId, imageDataUrl, log }) {
   }
   const contentHash = hashBuffer(decoded.bytes);
   const [existing] = await db()
-    .select({ id: sessionImage.id, width: sessionImage.width, height: sessionImage.height })
+    .select({
+      id: sessionImage.id,
+      width: sessionImage.width,
+      height: sessionImage.height,
+      storageUrl: sessionImage.storageUrl
+    })
     .from(sessionImage)
     .where(and(eq(sessionImage.sessionId, sessionId), eq(sessionImage.contentHash, contentHash)));
   if (existing) {
-    return { id: existing.id, contentHash, wasCached: true };
+    log.info(
+      { sessionId, contentHash: contentHash.slice(0, 12), imageId: existing.id },
+      'resolveImage: hash matched existing session_image'
+    );
+    return {
+      id: existing.id,
+      storageUrl: existing.storageUrl,
+      width: existing.width || dimensions?.width || 0,
+      height: existing.height || dimensions?.height || 0
+    };
   }
   const { storageUrl } = await persistImage({
     bytes: decoded.bytes,
@@ -66,46 +89,79 @@ async function resolveImage({ sessionId, imageDataUrl, log }) {
       sessionId,
       contentHash,
       storageUrl,
-      // We don't decode dimensions server-side; use 0 as a sentinel. The
-      // frontend already passes width/height for the canvas; we could plumb
-      // it through later if needed.
-      width: 0,
-      height: 0
+      width: Math.max(0, Math.round(dimensions?.width || 0)),
+      height: Math.max(0, Math.round(dimensions?.height || 0))
     })
     .returning({ id: sessionImage.id });
-  return { id: inserted.id, contentHash, wasCached: false };
+  log.info(
+    {
+      sessionId,
+      contentHash: contentHash.slice(0, 12),
+      imageId: inserted.id,
+      width: dimensions?.width || 0,
+      height: dimensions?.height || 0
+    },
+    'resolveImage: inserted new session_image'
+  );
+  return {
+    id: inserted.id,
+    storageUrl,
+    width: dimensions?.width || 0,
+    height: dimensions?.height || 0
+  };
 }
 
-async function loadOrRunVision({ image, imageDataUrl, log }) {
-  if (!image) return null;
-  const [existing] = await db()
+// Hashed natural-language vision Q&A cache. Brain often asks the same thing
+// twice during a session (e.g. "list the questions") — caching makes the
+// second-and-onwards calls free. Keyed by (imageId, hashedQuestion); when
+// annotations change the imageId changes too, so cached answers correctly
+// expire.
+async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) {
+  const questionHash = hashQuestion(question);
+  const [cached] = await db()
     .select({ extracted: visionExtraction.extracted })
     .from(visionExtraction)
-    .where(and(eq(visionExtraction.imageId, image.id), isNull(visionExtraction.regionHash)));
-  if (existing) {
-    log.info({ imageId: image.id }, 'vision_extraction cache hit');
-    return existing.extracted;
+    .where(and(eq(visionExtraction.imageId, image.id), eq(visionExtraction.regionHash, questionHash)));
+  if (cached?.extracted) {
+    log.info({ imageId: image.id, questionHash: questionHash.slice(0, 12) }, 'vision cache hit');
+    return cached.extracted;
   }
+
+  const imageDataUrl = imageDataUrlForThisTurn || (await loadImageDataUrl(image.storageUrl));
   if (!imageDataUrl) {
-    log.warn({ imageId: image.id }, 'image cached but no extraction and no dataUrl to re-extract');
-    return null;
+    log.warn({ imageId: image.id }, 'cannot run vision: no data URL and storage unreadable');
+    return { answer: '', bbox: null, error: 'image-unavailable' };
   }
+
   const { baseUrl, apiKey, model } = visionConfig();
-  log.info({ imageId: image.id, model }, 'running Eyes (vision extraction)');
-  const { extracted, modelVersion } = await extractVision({
+  log.info({ imageId: image.id, question, model }, 'running Eyes (lookup_on_image)');
+  const { answer, bbox, modelVersion } = await askVision({
     imageDataUrl,
+    question,
     baseUrl,
     apiKey,
     model
   });
+
+  const extracted = { question, answer, bbox };
   await db()
     .insert(visionExtraction)
     .values({
       imageId: image.id,
-      regionHash: null,
+      regionHash: questionHash,
       extracted,
       modelVersion
-    });
+    })
+    .onConflictDoNothing();
+  log.info(
+    {
+      imageId: image.id,
+      questionHash: questionHash.slice(0, 12),
+      bbox,
+      answerPreview: answer.slice(0, 200)
+    },
+    'Eyes lookup complete'
+  );
   return extracted;
 }
 
@@ -133,11 +189,29 @@ export default function tutorSendMessage(fastify) {
       return { error: 'Session not found' };
     }
 
-    // Resolve the active image: either the one in this request, or the
-    // session's current_image_id from a prior turn.
+    const reqImageDims = {
+      width: Number(request.body?.image?.width) || 0,
+      height: Number(request.body?.image?.height) || 0
+    };
+
+    request.log.info(
+      {
+        sessionId,
+        hasImageInRequest: !!imageDataUrl,
+        sessionCurrentImageId: session.currentImageId,
+        imageDims: reqImageDims
+      },
+      'turn start'
+    );
+
     let activeImage = null;
     if (imageDataUrl) {
-      activeImage = await resolveImage({ sessionId, imageDataUrl, log: request.log });
+      activeImage = await resolveImage({
+        sessionId,
+        imageDataUrl,
+        dimensions: reqImageDims,
+        log: request.log
+      });
       if (activeImage && activeImage.id !== session.currentImageId) {
         await db()
           .update(tutorSession)
@@ -145,18 +219,23 @@ export default function tutorSendMessage(fastify) {
           .where(eq(tutorSession.id, sessionId));
       }
     } else if (session.currentImageId) {
-      activeImage = { id: session.currentImageId, wasCached: true };
-    }
-
-    let visionJson = null;
-    try {
-      visionJson = await loadOrRunVision({
-        image: activeImage,
-        imageDataUrl,
-        log: request.log
-      });
-    } catch (err) {
-      request.log.error({ err, sessionId }, 'Eyes extraction failed — continuing without vision JSON');
+      const [row] = await db()
+        .select({
+          id: sessionImage.id,
+          width: sessionImage.width,
+          height: sessionImage.height,
+          storageUrl: sessionImage.storageUrl
+        })
+        .from(sessionImage)
+        .where(eq(sessionImage.id, session.currentImageId));
+      if (row) {
+        activeImage = {
+          id: row.id,
+          storageUrl: row.storageUrl,
+          width: row.width,
+          height: row.height
+        };
+      }
     }
 
     const history = await db()
@@ -176,7 +255,7 @@ export default function tutorSendMessage(fastify) {
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
-      ...tutorPrompt({ visionJson }),
+      ...tutorPrompt({ hasImage: !!activeImage }),
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content }
     ];
@@ -209,10 +288,6 @@ export default function tutorSendMessage(fastify) {
       createdAt: userRow.createdAt
     });
 
-    if (visionJson) {
-      sse('meta', { kind: 'vision_ready', imageId: activeImage?.id ?? null });
-    }
-
     const abortController = new AbortController();
     request.raw.on('close', () => {
       clientClosed = true;
@@ -224,77 +299,134 @@ export default function tutorSendMessage(fastify) {
     let completionTokens = null;
     let interrupted = false;
     let fatalError = null;
-    const toolCallAccum = new Map();
-    const completedToolCalls = [];
-
-    function flushCompletedToolCalls() {
-      for (const acc of toolCallAccum.values()) {
-        if (!acc.name) {
-          request.log.warn(
-            { sessionId, accId: acc.id, argsRaw: acc.argsRaw },
-            'Tool call accumulator has args but no function name — dropping'
-          );
-          continue;
-        }
-        let args = {};
-        if (acc.argsRaw) {
-          try {
-            args = JSON.parse(acc.argsRaw);
-          } catch (err) {
-            request.log.error(
-              { sessionId, name: acc.name, argsRaw: acc.argsRaw, err: err.message },
-              'Failed to parse tool call arguments — dropping tool call'
-            );
-            sse('error', {
-              error: `Tool call "${acc.name}" had unparseable arguments and was dropped.`
-            });
-            continue;
-          }
-        }
-        const call = { id: acc.id, name: acc.name, args };
-        completedToolCalls.push(call);
-        request.log.info({ sessionId, call }, 'Emitted tool call');
-        sse('tool', call);
-      }
-      toolCallAccum.clear();
-    }
+    const visibleToolCalls = []; // draw_annotation calls surfaced to the UI
 
     try {
-      for await (const chunk of agentChat({
-        baseUrl,
-        apiKey,
-        model: modelId,
-        messages: modelMessages,
-        tools: visionJson ? drawingTools : undefined,
-        signal: abortController.signal
-      })) {
-        if (chunk.delta) {
-          assistantContent += chunk.delta;
-          sse('token', { delta: chunk.delta });
-        }
-        if (chunk.toolCallChunks) {
-          for (const tc of chunk.toolCallChunks) {
-            const idx = tc.index ?? 0;
-            let acc = toolCallAccum.get(idx);
-            if (!acc) {
-              acc = { id: tc.id || `call_${idx}`, name: '', argsRaw: '' };
-              toolCallAccum.set(idx, acc);
-            }
-            if (tc.id) acc.id = tc.id;
-            if (tc.function?.name) acc.name = tc.function.name;
-            if (typeof tc.function?.arguments === 'string') {
-              acc.argsRaw += tc.function.arguments;
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+        const toolCallAccum = new Map();
+        let assistantContentThisRound = '';
+        let finishReason = null;
+
+        for await (const chunk of agentChat({
+          baseUrl,
+          apiKey,
+          model: modelId,
+          messages: modelMessages,
+          tools: activeImage ? brainTools : undefined,
+          signal: abortController.signal
+        })) {
+          if (chunk.delta) {
+            assistantContentThisRound += chunk.delta;
+            assistantContent += chunk.delta;
+            sse('token', { delta: chunk.delta });
+          }
+          if (chunk.toolCallChunks) {
+            for (const tc of chunk.toolCallChunks) {
+              const idx = tc.index ?? 0;
+              let acc = toolCallAccum.get(idx);
+              if (!acc) {
+                acc = { id: tc.id || `call_${idx}`, name: '', argsRaw: '' };
+                toolCallAccum.set(idx, acc);
+              }
+              if (tc.id) acc.id = tc.id;
+              if (tc.function?.name) acc.name = tc.function.name;
+              if (typeof tc.function?.arguments === 'string') {
+                acc.argsRaw += tc.function.arguments;
+              }
             }
           }
-        }
-        if (chunk.finishReason) {
-          if (chunk.finishReason === 'tool_calls' || chunk.finishReason === 'stop') {
-            flushCompletedToolCalls();
+          if (chunk.finishReason) finishReason = chunk.finishReason;
+          if (chunk.usage) {
+            promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
+            completionTokens = chunk.usage.completion_tokens ?? completionTokens;
           }
         }
-        if (chunk.usage) {
-          promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
-          completionTokens = chunk.usage.completion_tokens ?? completionTokens;
+
+        const pendingCalls = [];
+        for (const acc of toolCallAccum.values()) {
+          if (!acc.name) {
+            request.log.warn(
+              { sessionId, accId: acc.id, argsRaw: acc.argsRaw },
+              'Tool call accumulator has args but no function name — dropping'
+            );
+            continue;
+          }
+          let args = {};
+          if (acc.argsRaw) {
+            try {
+              args = JSON.parse(acc.argsRaw);
+            } catch (err) {
+              request.log.error(
+                { sessionId, name: acc.name, argsRaw: acc.argsRaw, err: err.message },
+                'Failed to parse tool call arguments — dropping tool call'
+              );
+              sse('error', {
+                error: `Tool call "${acc.name}" had unparseable arguments and was dropped.`
+              });
+              continue;
+            }
+          }
+          pendingCalls.push({ id: acc.id, name: acc.name, args });
+        }
+
+        if (pendingCalls.length === 0) {
+          // Plain text turn — done with Brain.
+          break;
+        }
+
+        // Re-emit the assistant turn as a proper tool_calls message so the
+        // next Brain round sees its own prior decision.
+        modelMessages.push({
+          role: 'assistant',
+          content: assistantContentThisRound,
+          tool_calls: pendingCalls.map((c) => ({
+            id: c.id,
+            type: 'function',
+            function: { name: c.name, arguments: JSON.stringify(c.args) }
+          }))
+        });
+
+        for (const call of pendingCalls) {
+          let toolResult;
+          if (call.name === 'lookup_on_image') {
+            const question = typeof call.args?.question === 'string' ? call.args.question.trim() : '';
+            if (!activeImage) {
+              toolResult = { error: 'No image is attached to this session.' };
+            } else if (!question) {
+              toolResult = { error: 'lookup_on_image requires a non-empty question.' };
+            } else {
+              try {
+                toolResult = await lookupOnImage({
+                  image: activeImage,
+                  question,
+                  imageDataUrlForThisTurn: imageDataUrl,
+                  log: request.log
+                });
+              } catch (err) {
+                request.log.error({ err, sessionId, question }, 'lookup_on_image failed');
+                toolResult = { error: `Vision call failed: ${err.message?.slice(0, 200) ?? 'unknown error'}` };
+              }
+            }
+            sse('lookup', { id: call.id, question, result: toolResult });
+          } else if (call.name === 'draw_annotation') {
+            visibleToolCalls.push(call);
+            sse('tool', call);
+            toolResult = { ok: true };
+          } else {
+            request.log.warn({ sessionId, name: call.name }, 'Brain requested unknown tool — ignoring');
+            toolResult = { error: `Unknown tool: ${call.name}` };
+          }
+
+          modelMessages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify(toolResult)
+          });
+        }
+
+        if (finishReason === 'stop') {
+          // Provider says it's done but we still have tool calls — feed them
+          // back and continue. Otherwise let the loop iterate.
         }
       }
     } catch (err) {
@@ -304,8 +436,6 @@ export default function tutorSendMessage(fastify) {
         fatalError = err;
         request.log.error({ err, sessionId }, 'Chat stream failed');
       }
-    } finally {
-      flushCompletedToolCalls();
     }
 
     try {
@@ -320,7 +450,7 @@ export default function tutorSendMessage(fastify) {
           promptTokens,
           completionTokens,
           interrupted,
-          toolCalls: completedToolCalls.length > 0 ? completedToolCalls : null
+          toolCalls: visibleToolCalls.length > 0 ? visibleToolCalls : null
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
@@ -334,7 +464,7 @@ export default function tutorSendMessage(fastify) {
           promptTokens,
           completionTokens,
           interrupted,
-          toolCalls: completedToolCalls.length > 0 ? completedToolCalls : [],
+          toolCalls: visibleToolCalls,
           createdAt: assistantRow.createdAt
         });
       }

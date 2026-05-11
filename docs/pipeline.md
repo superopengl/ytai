@@ -1,117 +1,111 @@
 # Eyes/Brain Pipeline
 
-YouTutorAI runs a two-model AI pipeline: **Qwen2.5-VL ("Eyes")** for vision and **deepseek-v4-flash ("Brain")** for chat, both accessed through OpenRouter. Vision is expensive and slow; chat is many-turn. The pipeline is structured so that vision runs at most once per image (plus on-demand for circled regions) and its structured output is cached and reused across every chat turn.
+YouTutorAI runs a two-model AI pipeline: **Qwen2.5-VL ("Eyes")** for vision and **deepseek-v4-flash ("Brain")** for chat, both accessed through OpenRouter. Brain drives every turn; it calls Eyes as a tool whenever it needs to see the page.
 
-Qwen2.5-VL is the right Eyes for this app specifically because of its native **visual grounding** — it returns bounding boxes alongside extracted content, which is what makes the annotation tool-use loop (Brain → "circle question 3" → frontend draws on Konva canvas) work without a second vision round-trip.
+We do **not** run a structured upfront extraction. VLMs are good at answering questions about an image but unreliable at producing stable schemas with coordinates — so instead of trying to read the whole page into JSON, Brain just asks one focused question at a time when it needs to know something.
 
 ## Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         INITIAL UPLOAD                          │
+│                         IMAGE UPLOAD                            │
 └─────────────────────────────────────────────────────────────────┘
 
-   [Student/Parent]
+   [Student]
         │
-        │  snaps photo of worksheet
+        │  snaps photo, may draw circles / underlines on top
+        ▼
+   ┌──────────────┐         The flattened canvas (photo + strokes)
+   │  Frontend    │         is exported on send — strokes are baked
+   │  (Konva)     │         into the image bytes Eyes will see.
+   └──────────────┘
+        │
+        │  on first message with this image, dataUrl rides the POST
         ▼
    ┌──────────────┐
-   │  Frontend    │  POST /api/tutor/:sessionId/image
-   │  (Konva)     │─────────────┐
-   └──────────────┘             │
-                                ▼
-                       ┌─────────────────┐
-                       │  Fastify API    │
-                       └────────┬────────┘
-                                │
-                  ┌─────────────┼─────────────┐
-                  ▼             ▼             ▼
-            ┌─────────┐   ┌──────────┐   ┌────────────┐
-            │  S3 /   │   │  Postgres│   │ Qwen2.5-VL │  ◄── "Eyes"
-            │  disk   │   │ session_ │   │  (vision)  │      runs ONCE
-            └─────────┘   │  image   │   └─────┬──────┘
-                          └──────────┘         │
-                                               │ structured JSON:
-                                               │  { questions[],
-                                               │    answers[],
-                                               │    teacher_marks,
-                                               │    boxes[] }
-                                               ▼
-                                       ┌──────────────┐
-                                       │ vision_      │  ◄── cached,
-                                       │ extraction   │      reused on
-                                       │ (Postgres)   │      every turn
-                                       └──────────────┘
+   │  Fastify API │  POST /api/tutor/:sessionId/message
+   └──────┬───────┘
+          │  dedup by sha256(bytes); store on disk; remember
+          │  current_image_id on the session.
+          ▼
+   ┌──────────────┐
+   │ session_image│   No eager vision call. The image just sits here
+   └──────────────┘   until Brain asks for it.
 
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                       CHAT TURN  (repeats)                      │
 └─────────────────────────────────────────────────────────────────┘
 
-   [Student]
-      │
-      │  types question        OR        circles a region
-      │                                        │
-      │                                        ▼
-      │                              ┌──────────────────┐
-      │                              │ Crop region from │
-      │                              │ canvas, POST to  │
-      │                              │ /circle endpoint │
-      │                              └────────┬─────────┘
-      │                                       │
-      │                                       ▼
-      │                                  ┌────────────┐
-      │                                  │ Qwen2.5-VL │  ◄── "Eyes"
-      │                                  │   (crop)   │      on demand
-      │                                  └─────┬──────┘
-      │                                        │ text inside region
-      │             ┌─────────────────────────┘
-      ▼             ▼
-   ┌───────────────────────────────┐
-   │  Assemble chat context:       │
-   │   • system prompt (Socratic,  │
-   │     age-appropriate)          │
-   │   • cached vision JSON        │
-   │   • prior transcript          │
-   │   • new user message (+ crop) │
-   └───────────────┬───────────────┘
-                   │
-                   ▼
-            ┌──────────────────┐
-            │ deepseek-v4-flash│   ◄── "Brain"
-            │   (chat)         │
-            └────────┬─────────┘
+   [Student] types a question
+        │
+        ▼
+   ┌──────────────────────────────────┐
+   │  Assemble:                       │
+   │   • persona system prompt        │
+   │   • "image attached — call       │
+   │      lookup_on_image to read it" │
+   │   • prior transcript             │
+   │   • new user message             │
+   └────────────────┬─────────────────┘
+                    │
+                    ▼
+            ┌───────────────────┐
+            │ deepseek-v4-flash │  ◄── "Brain"
+            │   (chat, tools)   │
+            └────────┬──────────┘
                      │
-                     │  streams tokens
-                     ▼
-              ┌─────────────┐         ┌─────────────────┐
-              │  SSE        │────────►│  Frontend chat  │
-              │  /message   │         │  panel          │
-              └──────┬──────┘         └────────┬────────┘
-                     │                         │
-                     │   AbortController       │ [Stop] button
-                     │◄────────────────────────┘
-                     ▼
-              ┌─────────────┐
-              │ Persist to  │
-              │ session_    │
-              │ message     │
-              └─────────────┘
+        ┌────────────┴────────────┐
+        │                         │
+        ▼                         ▼
+   plain tokens         tool_call: lookup_on_image
+        │                         │
+        ▼                         ▼
+   ┌──────────┐            ┌────────────────────────┐
+   │  SSE     │            │ server runs Qwen2.5-VL │
+   │ stream   │            │   on the CURRENT image │  ◄── "Eyes"
+   └──────────┘            │   bytes + the question │      on demand
+                           └─────────┬──────────────┘
+                                     │
+                                     ▼
+                          ┌────────────────────┐
+                          │ vision_extraction  │   ◄── cache by
+                          │  (image_id,        │       (image, q)
+                          │   sha256(question))│
+                          └─────────┬──────────┘
+                                    │
+                                    ▼
+                            ┌──────────────┐
+                            │ tool result  │
+                            │ feeds back   │
+                            │ into Brain   │
+                            └──────┬───────┘
+                                   │
+                                   ▼  (loop until Brain stops calling tools)
+                            ┌──────────────┐
+                            │ Brain emits  │
+                            │ final tokens │
+                            └──────────────┘
+
+  Brain may also call draw_annotation with a normalized 0..1 bbox
+  (often one lookup_on_image just handed back) — the server forwards
+  that to the frontend over SSE so Konva draws the shape on top.
 ```
 
 ## Key properties
 
-- **Eyes runs at two moments only**: once at image upload, and once per "circle" action. Never on every chat turn.
-- **`vision_extraction` is the cache layer** — it's why Brain can answer dozens of questions about the same worksheet without paying for vision again. It includes per-item bounding boxes from Qwen2.5-VL, used to resolve Brain's annotation tool-calls back to pixel coordinates.
-- **deepseek-v4-flash only ever sees text** (system prompt + cached vision JSON + crop text + transcript). The image bytes don't go to Brain.
-- **SSE + AbortController** is the single channel where streaming and "Stop" both live.
+- **Vision runs on demand**, not eagerly. Brain decides what it needs to know and asks one focused question per call. Cost scales with what the student actually asks about, not with what's on the page.
+- **`vision_extraction` is a question-answer cache**, keyed by `(image_id, sha256(question))`. The same lookup twice in a session is free; annotations changing produces a new `image_id`, which correctly invalidates the cache.
+- **Strokes are bytes, not bboxes.** The frontend flattens the Konva stage (photo + freehand layer) into a single PNG before sending. Eyes sees the student's circles and underlines directly; the server never has to reason about stroke geometry.
+- **deepseek-v4-flash only ever sees text** (system prompt + transcript + tool results). The image bytes go to Eyes; what Brain receives is the natural-language answer Eyes produced.
+- **SSE + AbortController** is the single channel where streaming and "Stop" both live. The client closing mid-turn cancels both the Brain stream and any in-flight Eyes call.
 
-## Why pipeline, not tool-calling
+## Why on-demand instead of eager extraction
 
-Brain could in principle call Eyes as a tool whenever it wants to look at the image. We don't do that because:
+We previously ran a single VL pass on every uploaded image that returned a JSON schema with bounding boxes per question, and Brain referenced that JSON in its context. We dropped that pattern because:
 
-1. Vision is the slowest, most expensive step — letting Brain re-trigger it on a whim destroys the cost model.
-2. For 8–14yo users, explicit UI affordances (the circle button) are clearer than the model deciding for itself when to look again.
-3. The cached `vision_extraction` JSON is already a faithful, structured representation of the page — Brain rarely needs more.
+1. **Bbox geometry from VLMs isn't reliable.** Coordinates drift between runs even on the same image, which broke the "where is question 3" grounding the schema was supposed to provide.
+2. **Schemas don't compose with the student's natural questions.** A focused Q&A ("what did the student write next to question 3?") beats parsing a fixed schema for an answer Brain has to interpret anyway.
+3. **Caching still works** at the per-question level, so the cost story is similar in steady state — and *less* costly on simple text-only conversations where Brain never needs to look at the image.
 
-If a future feature needs Brain-initiated vision (e.g. "zoom in on the diagram"), introduce it as an explicit tool call rather than removing the cache.
+If a future feature needs the whole-page schema (e.g. a "scan all answers and flag mistakes" pass before chat starts), introduce it as an explicit batch lookup — Brain firing a single broad `lookup_on_image` call — rather than reintroducing eager extraction.

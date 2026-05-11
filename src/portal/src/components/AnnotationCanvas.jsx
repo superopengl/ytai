@@ -33,6 +33,10 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
         if (fit.width === 0) return null;
         const pixelRatio = image.width / fit.width;
         return {
+          // Strokes are drawn on top of the image inside the Stage, so
+          // toDataURL captures them baked into the bytes. Eyes sees the
+          // student's circles and underlines directly when Brain calls
+          // lookup_on_image — no separate stroke bbox needed.
           dataUrl: stage.toDataURL({ mimeType: 'image/png', pixelRatio }),
           width: image.width,
           height: image.height,
@@ -40,7 +44,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
         };
       }
     }),
-    [image, containerSize, lines.length]
+    [image, containerSize, lines]
   );
 
   useEffect(() => {
@@ -65,19 +69,28 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
   const fit = fitToContainer(image, containerSize);
 
+  // Lines are stored in 0..1 normalized coords (same convention as AI
+  // annotations) so they stay anchored to the page when the window resizes.
+  function toNormalized(pos) {
+    if (fit.width === 0 || fit.height === 0) return null;
+    return [pos.x / fit.width, pos.y / fit.height];
+  }
+
   function startLine(e) {
     if (!image) return;
+    const pt = toNormalized(e.target.getStage().getPointerPosition());
+    if (!pt) return;
     drawing.current = true;
-    const pos = e.target.getStage().getPointerPosition();
-    setLines((prev) => [...prev, { points: [pos.x, pos.y], color: penColor, width: penWidth }]);
+    setLines((prev) => [...prev, { points: pt, color: penColor, width: penWidth }]);
   }
 
   function extendLine(e) {
     if (!drawing.current) return;
-    const pos = e.target.getStage().getPointerPosition();
+    const pt = toNormalized(e.target.getStage().getPointerPosition());
+    if (!pt) return;
     setLines((prev) => {
       const last = prev[prev.length - 1];
-      const next = { ...last, points: [...last.points, pos.x, pos.y] };
+      const next = { ...last, points: [...last.points, ...pt] };
       return [...prev.slice(0, -1), next];
     });
   }
@@ -201,7 +214,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
               {lines.map((line, idx) => (
                 <Line
                   key={idx}
-                  points={line.points}
+                  points={normalizedToPixels(line.points, fit.width, fit.height)}
                   stroke={line.color || '#ff1744'}
                   strokeWidth={line.width || 7}
                   tension={0.3}
@@ -230,6 +243,15 @@ const toolbarDividerStyle = {
   background: '#ececf3',
   alignSelf: 'center'
 };
+
+function normalizedToPixels(points, width, height) {
+  const out = new Array(points.length);
+  for (let i = 0; i < points.length; i += 2) {
+    out[i] = points[i] * width;
+    out[i + 1] = points[i + 1] * height;
+  }
+  return out;
+}
 
 function fitToContainer(image, container) {
   if (!image || container.width === 0 || container.height === 0) {

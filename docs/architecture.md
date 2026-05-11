@@ -1,53 +1,56 @@
 # YouTutorAI Architecture
 
-## AI Pipeline — The Eyes/Brain Split
+## AI Pipeline — Brain drives, Eyes answers
 
-Cost-optimized two-model pipeline. Vision is expensive; chat is cheap. We minimize vision calls.
+Two-model pipeline: **Qwen2.5-VL ("Eyes")** for vision and **deepseek-v4-flash ("Brain")** for chat, both via OpenRouter. Brain runs every turn and calls Eyes as a tool when it needs to see the page.
 
 ```
-[Photo upload]
+[Photo upload + freehand strokes on canvas]
      │
      ▼
-DeepSeek-VL2 (Eyes) ── runs ONCE on upload
-     │   Returns: { questions: [...], marked_answers: [...], notes: [...] }
-     ▼
-[Stored on session as structured context]
+Frontend flattens Konva stage → PNG (strokes baked in)
      │
      ▼
-DeepSeek-V3.2 (Brain) ── runs on EVERY chat turn
-     │   System prompt includes the structured page context + tutoring persona
-     │   Streams response to client; abortable
+POST /api/tutor/:sessionId/message
+     │   Dedup by sha256(bytes); persist to disk; record as
+     │   tutor_session.current_image_id. No eager vision pass.
      ▼
-[Student replies / asks follow-up]
-     │
-     ├── Text-only follow-up? → Brain only (cheap)
-     │
-     └── "Circle something new" button pressed?
+Brain (deepseek-v4-flash) on every chat turn
+     │   System prompt = persona + "image attached, call lookup_on_image
+     │   to read it"
+     │   Tools = { lookup_on_image(question), draw_annotation(...) }
+     ▼
+For each turn:
+     ├─ tokens stream out                            ──► SSE to client
+     └─ tool_call: lookup_on_image(question)
               │
               ▼
-         Crop image to drawn coordinates (client-side, via Konva)
+         Server runs Qwen2.5-VL on the CURRENT image + the question
+              │   Cached in vision_extraction by (image_id, sha256(question))
+              ▼
+         { answer, bbox? } feeds back as a tool message
               │
               ▼
-         DeepSeek-VL2 on the crop only ── returns text in that region
-              │
-              ▼
-         Append to chat context, then Brain generates response
+         Brain continues (may call again, or emit final answer)
+
+Tool: draw_annotation(shape, x, y, w, h, …)
+     │   Brain uses a bbox that lookup_on_image returned to point at
+     │   the page. Server forwards the call over SSE; Konva draws.
 ```
 
 **Key rules**:
-- Vision (VL2) runs only on (a) initial upload, (b) explicit "circle something new" action. Never on every turn.
-- The text model is given the structured JSON from the initial vision pass as part of its system context — it can reference questions by number without re-querying VL2.
-- If VL2 confidence is low on a circle, fall back to the client-side coordinate crop. This bypasses the detection problem entirely.
-- Streaming chat uses `AbortController` so the **Stop** button can interrupt mid-response. The interrupted partial response is preserved in the transcript so follow-ups have context.
+- Vision is on-demand. No upfront full-page extraction — VLM bbox geometry isn't stable enough to rely on a fixed schema.
+- The bytes Eyes sees include the student's freehand strokes (the canvas exports the flattened stage). Eyes interprets circles, underlines, and highlights directly; the server never reasons about stroke coordinates.
+- `vision_extraction` is a Q&A cache, not a schema store. Same question on the same image hits the cache; changing annotations changes the image hash and naturally invalidates.
+- Brain's tool-call loop is capped at `MAX_TOOL_ROUNDS = 6` per turn as a runaway guard.
+- Streaming uses SSE + `AbortController` so the Stop button kills both Brain and any in-flight Eyes call. The interrupted partial response is preserved in the transcript.
 
 ## Cost / Model Strategy
 
-- **VL2 (Eyes)** is the expensive call. Strategy: run it **at most twice per question** — once on upload, once if the user circles a new region. Cache results in `vision_extraction` keyed by image + region hash so re-circling the same area is free.
-- **V3.2 (Brain)** runs every chat turn. ~10-20× cheaper than Claude Sonnet, so multi-turn back-and-forth tutoring stays affordable.
-- **Confidence fallback**: if VL2 returns low confidence on a circle, skip VL2 and send the client-side cropped image region directly to V3.2 with a "what does this say?" prompt. V3.2 is text-only, so this fallback requires the multimodal variant or routing to VL2 anyway — TBD during build, may need to keep VL2 as the only OCR path.
-- **Watch-outs**:
-  - DeepSeek model names change. Verify `deepseek-vl2` and the latest V3.x text model on deepseek.com/api before wiring the client.
-  - DeepSeek's pedagogy is weaker than Claude on Socratic teaching for young kids. Compensate with a strong system prompt: "Never give the answer directly. Ask one guiding question at a time. Use language an 8-year-old understands."
+- **Eyes (Qwen2.5-VL)** is the expensive call. Strategy: run it only when Brain asks. Cache results in `vision_extraction` keyed by `(image_id, sha256(question))` so repeated lookups are free. Image-byte dedup means re-sending the same photo doesn't create a new image row.
+- **Brain (deepseek-v4-flash)** runs every chat turn. Cheap. The tool-call loop may add 1–2 extra Brain round-trips per turn that needs vision, but Brain calls are still inexpensive vs Eyes.
+- **Worst case per turn**: Brain → tool call → Eyes (1–3s) → Brain → tokens. Equivalent latency to the previous eager-extraction model on the first turn, *better* on text-only turns (no vision call at all).
+- **Pedagogy**: deepseek-v4-flash is weaker than Claude on Socratic teaching for young kids. Compensate with a strong system prompt (see `src/api/prompts/tutorPersona.md`).
 
 ## Frontend (React + Ant Design)
 
@@ -57,9 +60,8 @@ DeepSeek-V3.2 (Brain) ── runs on EVERY chat turn
 - Pages: `HomePage`, `LoginPage`, `TutorPage`, `AdminPage`
 - Components:
   - `PhotoCapture` — `<input type="file" capture="environment">` for phone camera + upload fallback
-  - `AnnotationCanvas` — Konva.js wrapper; renders the photo as a background layer and a transparent drawing layer on top; exposes `getCircledRegion()` returning a crop blob + bounding box
+  - `AnnotationCanvas` — Konva.js wrapper; renders the photo as a background layer and a transparent drawing layer on top; `exportImage()` returns a flattened dataUrl (strokes baked in) for Eyes to read
   - `ChatPanel` — streaming message list with Stop button; renders math via KaTeX
-  - `VisionSummary` — shows the structured page extraction (questions, marked answers) above chat, collapsible
 - Design tokens in `src/portal/src/theme.js` — kid-friendly colors, encouraging tone in copy, large legible fonts
 - Vite dev server proxies API/WebSocket to Fastify backend
 
@@ -79,20 +81,17 @@ src/
     server.js                   # Fastify setup, plugin registration, route wiring
     routes/                     # One controller per file (filename = exported function name)
       healthcheck.js
-      login.js                  # POST /api/login/user
-      loginStatus.js            # GET /api/login/:loginRequestId/status
-      adminUsers.js
-      adminCreateUser.js
       tutorCreateSession.js     # POST /api/tutor/session
-      tutorUploadImage.js       # POST /api/tutor/:sessionId/image
-      tutorCircleRegion.js      # POST /api/tutor/:sessionId/circle
-      tutorSendMessage.js       # POST /api/tutor/:sessionId/message  (streams)
-      tutorGetSession.js        # GET /api/tutor/:sessionId
+      tutorGetMessages.js       # GET  /api/tutor/:sessionId/messages
+      tutorSendMessage.js       # POST /api/tutor/:sessionId/message  (streams; runs Brain tool-call loop)
     lib/
-      deepseekVision.js         # DeepSeek-VL2 client (full-page + crop modes)
-      deepseekChat.js           # DeepSeek-V3.2 client with streaming + abort
-      tutorPrompt.js            # System prompt builder for the tutor persona
-      imageStorage.js           # S3 (prod) / local disk (dev) abstraction
+      agentChat.js              # OpenAI-compatible streaming chat client (Brain)
+      askVision.js              # Qwen2.5-VL Q&A (one image + one question)
+      brainTools.js             # Tool defs: lookup_on_image, draw_annotation
+      tutorPrompt.js            # Persona + per-turn system messages
+      persistImage.js           # Disk (dev) image storage
+      loadImageDataUrl.js       # Re-hydrate persisted image bytes for later vision calls
+      hashBuffer.js             # sha256 helper for content-hash dedup
     db/
       schema.js                 # Drizzle schema
       index.js                  # postgres.js connection

@@ -42,49 +42,59 @@ One row per tutoring sitting. A user starts a new session each time they begin t
 | `updated_at` | timestamptz | |
 
 ### `session_image`
-Photos uploaded into a session (worksheets, exam pages). One session can have multiple images. The S3 URL (or local path in dev) is stored here.
+Photos uploaded into a session (worksheets, exam pages, plus any freehand strokes the student drew — strokes are flattened into the bytes before upload). One session can have multiple images; sending the same bytes twice deduplicates by `content_hash`.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK |
 | `session_id` | uuid | FK → `tutor_session.id` |
-| `storage_url` | text | S3 URL (prod) or local file path (dev) |
-| `width` | int | original pixel dimensions |
+| `content_hash` | text | sha256 of the flattened canvas bytes; unique within a session |
+| `storage_url` | text | S3 URL (prod) or `file://` path (dev) |
+| `width` | int | pixel dimensions of the source image |
 | `height` | int | |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
+Unique index on `(session_id, content_hash)`.
+
+### `tutor_session.current_image_id`
+The most recently active `session_image` for the session. Text-only turns reuse the bytes referenced by this id; uploading a new image (different `content_hash`) advances it.
+
 ### `vision_extraction`
-Cached DeepSeek-VL2 outputs. Keyed by `(image_id, region_hash)` so re-circling the same area never re-bills VL2. Region `null` means full-page extraction; otherwise a crop bounding box hashed to a stable string.
+Cache layer for Brain's on-demand vision lookups. Each row is one `lookup_on_image(question)` call's result, keyed by `(image_id, sha256(question))` so repeated lookups during a session are free. The image_id changes whenever the photo bytes change (including when the student adds or erases strokes), which naturally invalidates the cache.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK |
 | `image_id` | uuid | FK → `session_image.id` |
-| `region_hash` | text | nullable; null = full page |
-| `region_bbox` | jsonb | `{ x, y, w, h }` or null |
-| `extracted` | jsonb | structured VL2 output |
-| `confidence` | numeric | VL2 self-reported confidence (if available) |
-| `model_version` | text | e.g. `deepseek-vl2-2026-03` |
+| `region_hash` | text | sha256(question) — names a question, not a region. Nullable for legacy rows. |
+| `region_bbox` | jsonb | unused under the on-demand pipeline; kept nullable for back-compat |
+| `extracted` | jsonb | `{ question, answer, bbox? }` from Qwen2.5-VL |
+| `confidence` | numeric | nullable; provider-self-reported confidence if available |
+| `model_version` | text | e.g. `qwen/qwen2.5-vl-72b-instruct` |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
 Unique index on `(image_id, region_hash)`.
 
+> Note on the `region_hash` column name: kept for migration compatibility. Semantically it now stores a question hash, not a geometric region hash.
+
 ### `session_message`
-Chat transcript. Ordered by `created_at`. Messages from VL2 extractions are stored as `system` role with a marker so they're distinguishable from the tutor persona.
+Chat transcript. Ordered by `created_at`. Only `user` and `assistant` messages are persisted — Brain's intermediate tool calls and Eyes' tool replies stay in-memory during the turn and are not stored.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK |
 | `session_id` | uuid | FK → `tutor_session.id` |
-| `role` | text | `user` \| `assistant` \| `system` |
+| `role` | text | `user` \| `assistant` |
 | `content` | text | message body |
-| `image_id` | uuid | nullable; FK → `session_image.id` (for messages that reference a specific image/region) |
-| `region_hash` | text | nullable; matches `vision_extraction.region_hash` |
-| `prompt_tokens` | int | from DeepSeek API response |
+| `image_id` | uuid | nullable; FK → `session_image.id` (the active image when the turn was sent) |
+| `region_hash` | text | nullable; legacy column, unused under the on-demand pipeline |
+| `model_id` | text | model that produced an `assistant` row (e.g. `deepseek/deepseek-chat`) |
+| `prompt_tokens` | int | from chat API response |
 | `completion_tokens` | int | |
 | `interrupted` | boolean | true if the user hit Stop mid-stream |
+| `tool_calls` | jsonb | user-visible tool calls (currently `draw_annotation` only); null when none |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
