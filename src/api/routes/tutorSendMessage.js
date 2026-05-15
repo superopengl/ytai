@@ -301,10 +301,13 @@ export default function tutorSendMessage(fastify) {
     let fatalError = null;
     const visibleToolCalls = []; // draw_annotation calls surfaced to the UI
 
+    let hitRoundCap = false;
     try {
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      let round = 0;
+      for (; round < MAX_TOOL_ROUNDS; round += 1) {
         const toolCallAccum = new Map();
         let assistantContentThisRound = '';
+        let reasoningThisRound = '';
         let finishReason = null;
 
         for await (const chunk of agentChat({
@@ -319,6 +322,9 @@ export default function tutorSendMessage(fastify) {
             assistantContentThisRound += chunk.delta;
             assistantContent += chunk.delta;
             sse('token', { delta: chunk.delta });
+          }
+          if (chunk.reasoning) {
+            reasoningThisRound += chunk.reasoning;
           }
           if (chunk.toolCallChunks) {
             for (const tc of chunk.toolCallChunks) {
@@ -368,6 +374,19 @@ export default function tutorSendMessage(fastify) {
           }
           pendingCalls.push({ id: acc.id, name: acc.name, args });
         }
+
+        request.log.info(
+          {
+            sessionId,
+            round,
+            finishReason,
+            contentChars: assistantContentThisRound.length,
+            reasoningChars: reasoningThisRound.length,
+            reasoningPreview: reasoningThisRound.slice(0, 400),
+            toolCalls: pendingCalls.map((c) => ({ name: c.name, args: c.args }))
+          },
+          'Brain round complete'
+        );
 
         if (pendingCalls.length === 0) {
           // Plain text turn — done with Brain.
@@ -429,6 +448,13 @@ export default function tutorSendMessage(fastify) {
           // back and continue. Otherwise let the loop iterate.
         }
       }
+      if (round >= MAX_TOOL_ROUNDS) {
+        hitRoundCap = true;
+        request.log.warn(
+          { sessionId, maxRounds: MAX_TOOL_ROUNDS },
+          'Brain hit the tool-call round cap without emitting a final answer — aborting'
+        );
+      }
     } catch (err) {
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
         interrupted = true;
@@ -457,6 +483,10 @@ export default function tutorSendMessage(fastify) {
       if (fatalError) {
         sse('error', {
           error: fatalError.message?.slice(0, 600) || 'The tutor lost its train of thought. Try again?'
+        });
+      } else if (hitRoundCap && !assistantContent) {
+        sse('error', {
+          error: 'The tutor kept looking at the page without finishing a thought. Try rephrasing your question.'
         });
       } else {
         sse('done', {

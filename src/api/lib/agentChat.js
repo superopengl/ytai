@@ -57,6 +57,16 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
           if (typeof delta === 'string' && delta.length > 0) {
             yield { delta };
           }
+          // Reasoning models (deepseek-v4-flash, deepseek-r1, etc.) stream
+          // their chain-of-thought under delta.reasoning_content. Surface it
+          // as a separate channel so the caller can log it or show a
+          // "thinking…" trail — otherwise a long reasoning phase looks like
+          // a frozen stream.
+          const reasoning =
+            choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
+          if (typeof reasoning === 'string' && reasoning.length > 0) {
+            yield { reasoning };
+          }
           const deltaToolCalls = choice?.delta?.tool_calls;
           if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {
             for (const tc of deltaToolCalls) streamedToolIndexes.add(tc.index ?? 0);
