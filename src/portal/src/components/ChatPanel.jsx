@@ -276,14 +276,25 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         ) : messages.length === 0 ? (
           <EmptyHint />
         ) : (
-          messages.map((message) => (
-            <Bubble
-              key={message.id}
-              message={message}
-              sessionId={sessionId}
-              onReplay={voice.supported ? () => voice.speak(message.content) : null}
-            />
-          ))
+          messages.map((message) => {
+            const isThisSpeaking = voice.supported && voice.speakingId === message.id;
+            return (
+              <Bubble
+                key={message.id}
+                message={message}
+                sessionId={sessionId}
+                isSpeaking={isThisSpeaking}
+                onReplay={
+                  voice.supported
+                    ? () =>
+                        isThisSpeaking
+                          ? voice.stop()
+                          : voice.speak(message.content, message.id)
+                    : null
+                }
+              />
+            );
+          })
         )}
         {showThinking && <ThinkingBubble />}
       </div>
@@ -325,7 +336,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message, sessionId, onReplay }) {
+function Bubble({ message, sessionId, onReplay, isSpeaking }) {
   const isUser = message.role === 'user';
   if (!isUser && !message.content) return null;
   // Replay only after the assistant turn is fully written — replaying a
@@ -392,13 +403,14 @@ function Bubble({ message, sessionId, onReplay }) {
         )}
         {canReplay && (
           <div style={{ marginTop: 6, padding: imageSrc ? '0 6px' : 0, textAlign: 'right' }}>
-            <Tooltip title="Read this aloud">
+            <Tooltip title={isSpeaking ? 'Stop reading' : 'Read this aloud'}>
               <Button
                 type="text"
                 size="small"
-                icon={<SoundOutlined />}
+                icon={isSpeaking ? <SpeakingIcon /> : <SoundOutlined />}
                 onClick={onReplay}
-                aria-label="Replay this message"
+                aria-label={isSpeaking ? 'Stop reading this message' : 'Replay this message'}
+                aria-pressed={isSpeaking}
                 style={{ color: '#5b8def', height: 22, padding: '0 6px' }}
               />
             </Tooltip>
@@ -406,6 +418,48 @@ function Bubble({ message, sessionId, onReplay }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Inline speaker-with-animated-dots indicator. Sized to match
+// SoundOutlined (1em square) so the surrounding Button doesn't jump when
+// the icon swaps in/out. The three dots fade in sequentially so it reads
+// as "speaking right now" rather than "loading".
+function SpeakingIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 1,
+        fontSize: '1em',
+        lineHeight: 1
+      }}
+    >
+      <SoundOutlined />
+      <span style={{ display: 'inline-flex', gap: 1, marginLeft: 2 }}>
+        <span className="ytai-speak-dot ytai-speak-dot-1" />
+        <span className="ytai-speak-dot ytai-speak-dot-2" />
+        <span className="ytai-speak-dot ytai-speak-dot-3" />
+      </span>
+      <style>{`
+        .ytai-speak-dot {
+          width: 3px;
+          height: 3px;
+          border-radius: 50%;
+          background: currentColor;
+          opacity: 0.2;
+          animation: ytaiSpeakDot 1.1s infinite ease-in-out;
+        }
+        .ytai-speak-dot-2 { animation-delay: 0.18s; }
+        .ytai-speak-dot-3 { animation-delay: 0.36s; }
+        @keyframes ytaiSpeakDot {
+          0%, 60%, 100% { opacity: 0.2; transform: translateY(0); }
+          30% { opacity: 1; transform: translateY(-1px); }
+        }
+      `}</style>
+    </span>
   );
 }
 

@@ -46,6 +46,11 @@ export default function useTutorVoice(sessionId) {
   const [enabled, setEnabledState] = useState(readPreference);
   const [supported, setSupported] = useState(true); // flips false on first 503
   const [speaking, setSpeaking] = useState(false);
+  // Identifies which message bubble (if any) is currently being replayed.
+  // Streaming voice leaves this null — only the per-bubble replay button
+  // sets it, so the UI can show an "I'm reading THIS one" indicator
+  // without flagging every assistant message during live streaming.
+  const [speakingId, setSpeakingId] = useState(null);
 
   // Mutable session state lives in refs so SSE callbacks (which close over
   // the initial render) always see the freshest values.
@@ -70,19 +75,27 @@ export default function useTutorVoice(sessionId) {
   const stop = useCallback(() => {
     bufferRef.current = '';
     if (currentAudioRef.current) {
+      const audio = currentAudioRef.current;
+      // Detach handlers BEFORE pausing/clearing the src. Setting src='' on
+      // a playing element fires an async 'error' event on most browsers;
+      // without this, the stale handler would later clobber currentAudioRef
+      // and playingRef just as a replacement audio has started playing.
+      audio.onended = null;
+      audio.onerror = null;
       try {
-        currentAudioRef.current.pause();
+        audio.pause();
       } catch {
         // ignore
       }
-      const src = currentAudioRef.current.src;
-      currentAudioRef.current.src = '';
+      const src = audio.src;
+      audio.src = '';
       if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
       currentAudioRef.current = null;
     }
     drainQueue();
     playingRef.current = false;
     setSpeaking(false);
+    setSpeakingId(null);
   }, [drainQueue]);
 
   // Take the next entry off the queue and play it. Recursively chains to
@@ -93,6 +106,7 @@ export default function useTutorVoice(sessionId) {
     const entry = queueRef.current[0];
     if (!entry) {
       setSpeaking(false);
+      setSpeakingId(null);
       return;
     }
     playingRef.current = true;
@@ -113,25 +127,27 @@ export default function useTutorVoice(sessionId) {
         }
         const audio = new Audio(url);
         currentAudioRef.current = audio;
-        audio.onended = () => {
+        const advance = () => {
+          // If stop() (or a replay) detached us, this audio is no longer
+          // the active one — leave currentAudioRef/playingRef alone so we
+          // don't trample whatever took our place.
+          if (currentAudioRef.current !== audio) {
+            URL.revokeObjectURL(url);
+            return;
+          }
           URL.revokeObjectURL(url);
           if (queueRef.current[0] === entry) queueRef.current.shift();
           currentAudioRef.current = null;
           playingRef.current = false;
           playNext();
         };
-        audio.onerror = () => {
-          URL.revokeObjectURL(url);
-          if (queueRef.current[0] === entry) queueRef.current.shift();
-          currentAudioRef.current = null;
-          playingRef.current = false;
-          playNext();
-        };
+        audio.onended = advance;
+        audio.onerror = advance;
         audio.play().catch(() => {
-          // Autoplay blocked — surface by clearing the queue; the user
-          // will need to interact (toggle voice) before audio can play.
+          // Either autoplay was blocked or stop() pulled the rug. If we
+          // were superseded, just bail; otherwise wipe the queue.
           URL.revokeObjectURL(url);
-          stop();
+          if (currentAudioRef.current === audio) stop();
         });
       })
       .catch(() => {
@@ -201,9 +217,11 @@ export default function useTutorVoice(sessionId) {
   // Replay a full message. Explicit user action — bypasses the enabled
   // toggle so the icon works even when the live-speech preference is off.
   // Splits into sentences for incremental playback so a long bubble
-  // doesn't wait for one giant synth call.
+  // doesn't wait for one giant synth call. The optional id is the message
+  // bubble's id; the UI uses speakingId to show a "talking" indicator on
+  // that specific bubble.
   const speak = useCallback(
-    (rawText) => {
+    (rawText, id = null) => {
       if (!supported) return;
       stop();
       const text = typeof rawText === 'string' ? rawText : '';
@@ -212,6 +230,8 @@ export default function useTutorVoice(sessionId) {
       const sentences = [...completed];
       const tail = remainder.trim();
       if (tail) sentences.push(tail);
+      if (sentences.length === 0) return;
+      setSpeakingId(id);
       for (const s of sentences) enqueueDirect(s);
     },
     [supported, stop, enqueueDirect]
@@ -235,12 +255,13 @@ export default function useTutorVoice(sessionId) {
       enabled,
       supported,
       speaking,
+      speakingId,
       setEnabled,
       appendDelta,
       finalize,
       speak,
       stop
     }),
-    [enabled, supported, speaking, setEnabled, appendDelta, finalize, speak, stop]
+    [enabled, supported, speaking, speakingId, setEnabled, appendDelta, finalize, speak, stop]
   );
 }
