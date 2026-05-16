@@ -10,6 +10,7 @@ import {
 import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
+import MarkdownMessage from './MarkdownMessage.jsx';
 
 export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations }) {
   const [messages, setMessages] = useState([]);
@@ -276,7 +277,12 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           <EmptyHint />
         ) : (
           messages.map((message) => (
-            <Bubble key={message.id} message={message} sessionId={sessionId} />
+            <Bubble
+              key={message.id}
+              message={message}
+              sessionId={sessionId}
+              onReplay={voice.supported ? () => voice.speak(message.content) : null}
+            />
           ))
         )}
         {showThinking && <ThinkingBubble />}
@@ -319,9 +325,14 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message, sessionId }) {
+function Bubble({ message, sessionId, onReplay }) {
   const isUser = message.role === 'user';
   if (!isUser && !message.content) return null;
+  // Replay only after the assistant turn is fully written — replaying a
+  // still-streaming bubble would speak whatever fragment is in state and
+  // then conflict with the live streaming voice. _streaming is the local
+  // sentinel ChatPanel sets while tokens are still arriving.
+  const canReplay = !isUser && onReplay && !message._streaming;
   // Only user turns show the attached photo — assistant rows store the same
   // imageId for vision context but the transcript shouldn't echo it back.
   // Prefer the local dataUrl (already in memory for freshly-sent messages)
@@ -345,7 +356,11 @@ function Bubble({ message, sessionId }) {
           borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
           background: isUser ? '#5b8def' : '#f0f2f7',
           color: isUser ? '#fff' : '#1d2233',
-          whiteSpace: 'pre-wrap',
+          // User bubbles are author-typed text; preserve their newlines.
+          // Assistant bubbles are rendered as markdown so their HTML carries
+          // its own whitespace semantics — pre-wrap would add stray gaps
+          // between block elements.
+          whiteSpace: isUser ? 'pre-wrap' : 'normal',
           wordBreak: 'break-word',
           lineHeight: 1.5,
           opacity: message.interrupted ? 0.85 : 1
@@ -366,11 +381,27 @@ function Bubble({ message, sessionId }) {
           />
         )}
         {message.content && (
-          <div style={{ padding: imageSrc ? '0 6px' : 0 }}>{message.content}</div>
+          <div style={{ padding: imageSrc ? '0 6px' : 0 }}>
+            {isUser ? message.content : <MarkdownMessage>{message.content}</MarkdownMessage>}
+          </div>
         )}
         {message.interrupted && (
           <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4, padding: imageSrc ? '0 6px' : 0 }}>
             (stopped)
+          </div>
+        )}
+        {canReplay && (
+          <div style={{ marginTop: 6, padding: imageSrc ? '0 6px' : 0, textAlign: 'right' }}>
+            <Tooltip title="Read this aloud">
+              <Button
+                type="text"
+                size="small"
+                icon={<SoundOutlined />}
+                onClick={onReplay}
+                aria-label="Replay this message"
+                style={{ color: '#5b8def', height: 22, padding: '0 6px' }}
+              />
+            </Tooltip>
           </div>
         )}
       </div>

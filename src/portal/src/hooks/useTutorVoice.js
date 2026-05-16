@@ -141,9 +141,12 @@ export default function useTutorVoice(sessionId) {
       });
   }, [stop]);
 
-  const enqueue = useCallback(
+  // Push one sentence onto the queue and kick playback. Caller is
+  // responsible for whatever gating policy applies (the streaming path
+  // checks enabledRef; the replay path bypasses it).
+  const enqueueDirect = useCallback(
     (rawSentence) => {
-      if (!enabledRef.current || !supported || !sessionId) return;
+      if (!supported || !sessionId) return;
       const text = normalizeForSpeech(rawSentence);
       if (!text || text.length > MAX_SENTENCE_CHARS) return;
 
@@ -183,17 +186,36 @@ export default function useTutorVoice(sessionId) {
       bufferRef.current += delta;
       const { completed, remainder } = splitSentences(bufferRef.current);
       bufferRef.current = remainder;
-      for (const sentence of completed) enqueue(sentence);
+      for (const sentence of completed) enqueueDirect(sentence);
     },
-    [enqueue, supported]
+    [enqueueDirect, supported]
   );
 
   const finalize = useCallback(() => {
     if (!enabledRef.current || !supported) return;
     const tail = bufferRef.current.trim();
     bufferRef.current = '';
-    if (tail) enqueue(tail);
-  }, [enqueue, supported]);
+    if (tail) enqueueDirect(tail);
+  }, [enqueueDirect, supported]);
+
+  // Replay a full message. Explicit user action — bypasses the enabled
+  // toggle so the icon works even when the live-speech preference is off.
+  // Splits into sentences for incremental playback so a long bubble
+  // doesn't wait for one giant synth call.
+  const speak = useCallback(
+    (rawText) => {
+      if (!supported) return;
+      stop();
+      const text = typeof rawText === 'string' ? rawText : '';
+      if (!text.trim()) return;
+      const { completed, remainder } = splitSentences(text);
+      const sentences = [...completed];
+      const tail = remainder.trim();
+      if (tail) sentences.push(tail);
+      for (const s of sentences) enqueueDirect(s);
+    },
+    [supported, stop, enqueueDirect]
+  );
 
   const setEnabled = useCallback(
     (next) => {
@@ -216,8 +238,9 @@ export default function useTutorVoice(sessionId) {
       setEnabled,
       appendDelta,
       finalize,
+      speak,
       stop
     }),
-    [enabled, supported, speaking, setEnabled, appendDelta, finalize, stop]
+    [enabled, supported, speaking, setEnabled, appendDelta, finalize, speak, stop]
   );
 }
