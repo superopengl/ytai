@@ -41,19 +41,28 @@ export default function TutorPage() {
 
   useEffect(() => {
     return () => {
-      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
     };
   }, [imageUrl]);
 
   function onSelectFile(file) {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
     setImageUrl(URL.createObjectURL(file));
     setAiAnnotations([]);
   }
 
   function onReplace() {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
     setImageUrl(null);
+    setAiAnnotations([]);
+  }
+
+  // Load the photo from a chat image bubble back into the canvas so the
+  // student can keep working on (or annotating) an earlier upload.
+  function onCastImage(src) {
+    if (!src || src === imageUrl) return;
+    if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
+    setImageUrl(src);
     setAiAnnotations([]);
   }
 
@@ -102,6 +111,7 @@ export default function TutorPage() {
               imageUrl={imageUrl}
               getImage={getCanvasImage}
               onAiAnnotations={setAiAnnotations}
+              onCastImage={onCastImage}
             />
           </div>
         </Splitter.Panel>

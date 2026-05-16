@@ -52,6 +52,10 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
     img.crossOrigin = 'anonymous';
     img.src = imageUrl;
     img.onload = () => setImage(img);
+    // Strokes are anchored in normalized coords to whichever image was
+    // showing when they were drawn — they don't make sense over a freshly
+    // cast or replaced photo, so wipe them when the image source changes.
+    setLines([]);
     return () => {
       img.onload = null;
     };

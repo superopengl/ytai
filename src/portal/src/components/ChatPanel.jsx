@@ -12,7 +12,7 @@ import streamSSE from '../lib/streamSSE.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
 import MarkdownMessage from './MarkdownMessage.jsx';
 
-export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations }) {
+export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations, onCastImage }) {
   const [messages, setMessages] = useState([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState('');
@@ -326,6 +326,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
                 sessionId={sessionId}
                 isSpeaking={isThisSpeaking}
                 thinking={isStreamingTail && thinkingActive}
+                onCastImage={onCastImage}
                 onReplay={
                   voice.supported
                     ? () =>
@@ -377,7 +378,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message, sessionId, onReplay, isSpeaking, thinking }) {
+function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImage }) {
   const isUser = message.role === 'user';
   // Keep the bubble around while Brain is thinking, even with no content yet —
   // the inline "Thinking…" line below stands in for the message text.
@@ -424,13 +425,16 @@ function Bubble({ message, sessionId, onReplay, isSpeaking, thinking }) {
           <img
             src={imageSrc}
             alt="worksheet"
+            title={onCastImage ? 'Click to load this photo onto the canvas' : undefined}
+            onClick={onCastImage ? () => onCastImage(imageSrc) : undefined}
             style={{
               display: 'block',
               maxWidth: '100%',
               maxHeight: 240,
               borderRadius: 10,
               marginBottom: message.content ? 8 : 0,
-              background: '#fff'
+              background: '#fff',
+              cursor: onCastImage ? 'pointer' : 'default'
             }}
           />
         )}
