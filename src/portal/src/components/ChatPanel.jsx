@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, Tooltip, Typography } from 'antd';
 import {
   AudioMutedOutlined,
@@ -17,6 +17,9 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // True between "request sent / tool-call started" and "next token arrives" —
+  // i.e. moments where Brain is working but nothing is visibly streaming.
+  const [awaitingTokens, setAwaitingTokens] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -96,6 +99,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     setInput('');
     setError(null);
     setBusy(true);
+    setAwaitingTokens(true);
 
     const image = getImage?.();
     // Guard against the race where the user replaced the image but the new
@@ -200,6 +204,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             })
           );
         } else if (event === 'token') {
+          setAwaitingTokens(false);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === placeholderId ? { ...m, content: m.content + data.delta } : m
@@ -207,6 +212,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           );
           voice.appendDelta(data.delta);
         } else if (event === 'done') {
+          setAwaitingTokens(false);
           if (imageHashThisTurn) lastSentImageHashRef.current = imageHashThisTurn;
           if (data.interrupted) voice.stop();
           else voice.finalize();
@@ -223,12 +229,19 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
                 : m
             )
           );
+        } else if (event === 'lookup-start' || event === 'lookup') {
+          // Brain has paused to consult Eyes (or just got a result back and
+          // is about to pick its next move). Surface "Thinking…" until the
+          // next token arrives.
+          setAwaitingTokens(true);
         } else if (event === 'tool') {
+          setAwaitingTokens(true);
           if (data?.name === 'draw_annotation' && onAiAnnotations) {
             const id = `${placeholderId}:${data.id ?? Math.random().toString(36).slice(2)}`;
             onAiAnnotations((prev) => [...prev, { id, args: data.args }]);
           }
         } else if (event === 'error') {
+          setAwaitingTokens(false);
           setError(data.error || 'Something went wrong.');
           voice.stop();
         }
@@ -241,6 +254,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     } finally {
       abortRef.current = null;
       setBusy(false);
+      setAwaitingTokens(false);
     }
   }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations, voice]);
 
@@ -256,11 +270,10 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     }
   };
 
-  const showThinking = useMemo(() => {
-    if (!busy) return false;
-    const last = messages[messages.length - 1];
-    return last?.role === 'assistant' && !last.content;
-  }, [busy, messages]);
+  // Show "Thinking…" inline inside the streaming assistant bubble whenever
+  // Brain is working but no tokens are arriving — covers both the initial
+  // wait and mid-stream pauses while Eyes is being consulted.
+  const thinkingActive = busy && awaitingTokens;
 
   if (!sessionId) {
     return (
@@ -302,14 +315,17 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         ) : messages.length === 0 ? (
           <EmptyHint />
         ) : (
-          messages.map((message) => {
+          messages.map((message, idx) => {
             const isThisSpeaking = voice.supported && voice.speakingId === message.id;
+            const isStreamingTail =
+              idx === messages.length - 1 && message.role === 'assistant' && message._streaming;
             return (
               <Bubble
                 key={message.id}
                 message={message}
                 sessionId={sessionId}
                 isSpeaking={isThisSpeaking}
+                thinking={isStreamingTail && thinkingActive}
                 onReplay={
                   voice.supported
                     ? () =>
@@ -322,7 +338,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             );
           })
         )}
-        {showThinking && <ThinkingBubble />}
       </div>
 
       {error && (
@@ -362,9 +377,11 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message, sessionId, onReplay, isSpeaking }) {
+function Bubble({ message, sessionId, onReplay, isSpeaking, thinking }) {
   const isUser = message.role === 'user';
-  if (!isUser && !message.content) return null;
+  // Keep the bubble around while Brain is thinking, even with no content yet —
+  // the inline "Thinking…" line below stands in for the message text.
+  if (!isUser && !message.content && !thinking) return null;
   // Replay only after the assistant turn is fully written — replaying a
   // still-streaming bubble would speak whatever fragment is in state and
   // then conflict with the live streaming voice. _streaming is the local
@@ -420,6 +437,21 @@ function Bubble({ message, sessionId, onReplay, isSpeaking }) {
         {message.content && (
           <div style={{ padding: imageSrc ? '0 6px' : 0 }}>
             {isUser ? message.content : <MarkdownMessage>{message.content}</MarkdownMessage>}
+          </div>
+        )}
+        {thinking && (
+          <div
+            style={{
+              padding: imageSrc ? '0 6px' : 0,
+              marginTop: message.content ? 6 : 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 13,
+              opacity: 0.7
+            }}
+          >
+            <LoadingOutlined /> Thinking…
           </div>
         )}
         {message.interrupted && (
@@ -486,27 +518,6 @@ function SpeakingIcon() {
         }
       `}</style>
     </span>
-  );
-}
-
-function ThinkingBubble() {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
-      <div
-        style={{
-          padding: '10px 14px',
-          borderRadius: '16px 16px 16px 4px',
-          background: '#f0f2f7',
-          color: '#1d2233',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          fontSize: 13
-        }}
-      >
-        <LoadingOutlined /> Thinking…
-      </div>
-    </div>
   );
 }
 

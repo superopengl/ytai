@@ -447,6 +447,10 @@ export default function tutorSendMessage(fastify) {
             } else if (!question) {
               toolResult = { error: 'lookup_on_image requires a non-empty question.' };
             } else {
+              // Tell the UI that Brain has paused to consult Eyes — without
+              // this, the chat would freeze with no "Thinking…" indicator
+              // for however long the vision call takes.
+              sse('lookup-start', { id: call.id, question });
               try {
                 toolResult = await lookupOnImage({
                   image: activeImage,
