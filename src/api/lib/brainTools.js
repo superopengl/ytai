@@ -1,19 +1,51 @@
 // Tools exposed to Brain (the chat model) on every turn that has an image
-// attached to the session. Brain calls lookup_on_image whenever it needs to
-// know something on the page; the server runs Qwen2.5-VL on the current
-// image bytes and feeds the answer back. draw_annotation then lets Brain
-// point at the page using a normalized 0..1 bbox — usually one it just
-// received from a lookup_on_image call.
+// attached to the session.
+//
+// Reach for them in this order:
+//   1. find_text_on_image — cheap, fast, tight bboxes from PaddleOCR. Use
+//      whenever you already know the printed text you want to point at.
+//   2. lookup_on_image    — Qwen2.5-VL. Use for semantic reading: what the
+//      student wrote, what a diagram shows, whether an answer is right.
+//   3. draw_annotation    — draws on the page using a bbox you already have.
 
 const brainTools = [
+  {
+    type: 'function',
+    function: {
+      name: 'find_text_on_image',
+      description:
+        'Find printed text on the worksheet and return its tight bounding box. ' +
+        'Prefer this over lookup_on_image when you already know the exact words you want to locate ' +
+        '("Question 3", "x + 5 = 12", "Show your work"). It is cheap, deterministic, and returns ' +
+        'tighter coordinates than the vision model. Returns up to 5 best matches and a unionBbox ' +
+        'covering them all (normalized 0..1 [x, y, w, h]). If status is "no-match", "pending", ' +
+        '"failed", or "unavailable", fall back to lookup_on_image. Does not read handwriting, ' +
+        'math notation, or diagrams — use lookup_on_image for those.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          query: {
+            type: 'string',
+            description:
+              'The exact printed text (or a distinctive phrase from it) to find on the page. ' +
+              'Examples: "Question 3", "Name:", "Show your work below".'
+          }
+        },
+        required: ['query']
+      }
+    }
+  },
   {
     type: 'function',
     function: {
       name: 'lookup_on_image',
       description:
         'Look at the worksheet photo and answer a specific question about it. ' +
-        'Use this whenever you need to know what is printed on the page, what the student wrote, ' +
-        'whether an answer is right, where something is on the page, or what the student has circled/highlighted with their pen. ' +
+        'Use this for anything that requires understanding the page — what the student wrote, ' +
+        'whether an answer is right, what a diagram shows, what the student has circled/highlighted. ' +
+        'For locating printed text you already know the wording of, prefer find_text_on_image — it ' +
+        'is cheaper and its bboxes are tighter. ' +
         'Returns a short text answer and (when the question is locational) a normalized 0..1 bounding box. ' +
         'Ask one focused question per call.',
       parameters: {
@@ -40,7 +72,7 @@ const brainTools = [
       name: 'draw_annotation',
       description:
         'Draw a shape over the worksheet to point at exactly what you are talking about. ' +
-        'Use this AFTER lookup_on_image gave you a bounding box, or when you already know the coordinates. ' +
+        'Use this AFTER find_text_on_image or lookup_on_image gave you a bounding box, or when you already know the coordinates. ' +
         'Coordinates are normalized 0..1 relative to the image (0,0 = top-left, 1,1 = bottom-right). ' +
         'Prefer one annotation per turn. Skip this tool for general or off-page questions.',
       parameters: {

@@ -160,6 +160,10 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     const controller = new AbortController();
     abortRef.current = controller;
     voice.stop();
+    // Bind voice to the streaming bubble so the speaking icon shows on the
+    // right message during auto-speak. Rebound to the real message id on
+    // 'done' below — until then, the bubble is keyed by placeholderId.
+    voice.setActiveTarget(placeholderId);
 
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
@@ -215,7 +219,13 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           setAwaitingTokens(false);
           if (imageHashThisTurn) lastSentImageHashRef.current = imageHashThisTurn;
           if (data.interrupted) voice.stop();
-          else voice.finalize();
+          else {
+            // Re-bind voice ownership from placeholderId to the persistent
+            // message id so the icon stays on the bubble as the queue
+            // drains past the SSE 'done' boundary.
+            voice.setActiveTarget(data.messageId);
+            voice.finalize();
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === placeholderId
@@ -383,11 +393,12 @@ function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImag
   // Keep the bubble around while Brain is thinking, even with no content yet —
   // the inline "Thinking…" line below stands in for the message text.
   if (!isUser && !message.content && !thinking) return null;
-  // Replay only after the assistant turn is fully written — replaying a
-  // still-streaming bubble would speak whatever fragment is in state and
-  // then conflict with the live streaming voice. _streaming is the local
-  // sentinel ChatPanel sets while tokens are still arriving.
-  const canReplay = !isUser && onReplay && !message._streaming;
+  // Show the speaker control whenever the bubble is done streaming (so the
+  // user can replay it) OR when auto-speak is currently reading this
+  // streaming bubble aloud (so the user sees the "I'm reading this" icon
+  // and can click to stop). Hiding it entirely during _streaming would
+  // make the auto-speak feel silent visually.
+  const canReplay = !isUser && onReplay && (!message._streaming || isSpeaking);
   // Image-only user messages carry `imageId` (and, for freshly-sent ones,
   // an in-memory `imageDataUrl`); text user turns and assistant turns don't.
   // Prefer the local dataUrl when available; fall back to the server

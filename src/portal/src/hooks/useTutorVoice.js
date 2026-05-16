@@ -46,10 +46,11 @@ export default function useTutorVoice(sessionId) {
   const [enabled, setEnabledState] = useState(readPreference);
   const [supported, setSupported] = useState(true); // flips false on first 503
   const [speaking, setSpeaking] = useState(false);
-  // Identifies which message bubble (if any) is currently being replayed.
-  // Streaming voice leaves this null — only the per-bubble replay button
-  // sets it, so the UI can show an "I'm reading THIS one" indicator
-  // without flagging every assistant message during live streaming.
+  // Identifies which message bubble (if any) is currently being read aloud.
+  // Set both by explicit replay clicks (via speak()) and by streaming
+  // auto-speak (via setActiveTarget(), called from ChatPanel as it starts
+  // each turn). The UI uses this to show the "I'm reading THIS one"
+  // indicator on the right bubble.
   const [speakingId, setSpeakingId] = useState(null);
 
   // Mutable session state lives in refs so SSE callbacks (which close over
@@ -60,6 +61,11 @@ export default function useTutorVoice(sessionId) {
   const queueRef = useRef([]); // [{ audio: HTMLAudioElement | null, urlPromise: Promise<string|null>, controller: AbortController, done: boolean }]
   const playingRef = useRef(false);
   const currentAudioRef = useRef(null);
+  // The id of the message bubble that owns the current audio queue. Updated
+  // by ChatPanel as a turn flows (placeholderId → real messageId on 'done').
+  // playNext copies this into speakingId every time it starts a new entry,
+  // so the icon follows the active bubble through the whole turn.
+  const targetIdRef = useRef(null);
 
   const drainQueue = useCallback(() => {
     // Revoke any pending blob URLs we won't play.
@@ -94,9 +100,19 @@ export default function useTutorVoice(sessionId) {
     }
     drainQueue();
     playingRef.current = false;
+    targetIdRef.current = null;
     setSpeaking(false);
     setSpeakingId(null);
   }, [drainQueue]);
+
+  // Called by ChatPanel to associate the audio queue with a specific message
+  // bubble. During streaming this is the placeholder id; on 'done' it's
+  // re-bound to the real message id. Updates speakingId immediately when
+  // audio is already playing so the icon doesn't lag behind the rebind.
+  const setActiveTarget = useCallback((id) => {
+    targetIdRef.current = id;
+    if (playingRef.current) setSpeakingId(id);
+  }, []);
 
   // Take the next entry off the queue and play it. Recursively chains to
   // the entry after via onended. If a fetch fails or the entry was
@@ -111,6 +127,10 @@ export default function useTutorVoice(sessionId) {
     }
     playingRef.current = true;
     setSpeaking(true);
+    // Bind the visible "speaking" indicator to whatever bubble the active
+    // turn currently belongs to. Leaving this stale-but-set across turns is
+    // fine because ChatPanel rebinds at the start of every send().
+    setSpeakingId(targetIdRef.current);
 
     entry.urlPromise
       .then((url) => {
@@ -231,6 +251,10 @@ export default function useTutorVoice(sessionId) {
       const tail = remainder.trim();
       if (tail) sentences.push(tail);
       if (sentences.length === 0) return;
+      // Bind the queue to this bubble before enqueuing so playNext picks
+      // the right id when the first audio kicks off. setSpeakingId(id) on
+      // its own would race with playNext's own setSpeakingId(targetIdRef).
+      targetIdRef.current = id;
       setSpeakingId(id);
       for (const s of sentences) enqueueDirect(s);
     },
@@ -257,11 +281,23 @@ export default function useTutorVoice(sessionId) {
       speaking,
       speakingId,
       setEnabled,
+      setActiveTarget,
       appendDelta,
       finalize,
       speak,
       stop
     }),
-    [enabled, supported, speaking, speakingId, setEnabled, appendDelta, finalize, speak, stop]
+    [
+      enabled,
+      supported,
+      speaking,
+      speakingId,
+      setEnabled,
+      setActiveTarget,
+      appendDelta,
+      finalize,
+      speak,
+      stop
+    ]
   );
 }

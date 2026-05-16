@@ -10,6 +10,8 @@ import {
 import agentChat from '../lib/agentChat.js';
 import askVision from '../lib/askVision.js';
 import brainTools from '../lib/brainTools.js';
+import ensureImageOcr from '../lib/ensureImageOcr.js';
+import findTextOnImage from '../lib/findTextOnImage.js';
 import hashBuffer from '../lib/hashBuffer.js';
 import loadImageDataUrl from '../lib/loadImageDataUrl.js';
 import persistImage from '../lib/persistImage.js';
@@ -103,6 +105,9 @@ async function resolveImage({ sessionId, imageDataUrl, dimensions, log }) {
     },
     'resolveImage: inserted new session_image'
   );
+  // Kick OCR async. The promise is tracked inside ensureImageOcr so the
+  // find_text_on_image handler can await it later in the same turn.
+  ensureImageOcr({ imageId: inserted.id, storageUrl, log }).catch(() => {});
   return {
     id: inserted.id,
     storageUrl,
@@ -240,6 +245,11 @@ export default function tutorSendMessage(fastify) {
           width: row.width,
           height: row.height
         };
+        // Backfill OCR for images that predate this feature. ensureImageOcr
+        // is idempotent — a row that already exists is a no-op.
+        ensureImageOcr({ imageId: row.id, storageUrl: row.storageUrl, log: request.log }).catch(
+          () => {}
+        );
       }
     }
 
@@ -440,7 +450,32 @@ export default function tutorSendMessage(fastify) {
 
         for (const call of pendingCalls) {
           let toolResult;
-          if (call.name === 'lookup_on_image') {
+          if (call.name === 'find_text_on_image') {
+            const query = typeof call.args?.query === 'string' ? call.args.query.trim() : '';
+            if (!activeImage) {
+              toolResult = { error: 'No image is attached to this session.' };
+            } else if (!query) {
+              toolResult = { status: 'no-match', matches: [], error: 'query is required' };
+            } else {
+              sse('lookup-start', { id: call.id, question: `find: "${query}"` });
+              try {
+                toolResult = await findTextOnImage({
+                  imageId: activeImage.id,
+                  storageUrl: activeImage.storageUrl,
+                  query,
+                  log: request.log
+                });
+              } catch (err) {
+                request.log.error({ err, sessionId, query }, 'find_text_on_image failed');
+                toolResult = {
+                  status: 'failed',
+                  matches: [],
+                  error: `OCR call failed: ${err.message?.slice(0, 200) ?? 'unknown error'}`
+                };
+              }
+            }
+            sse('lookup', { id: call.id, question: `find: "${query}"`, result: toolResult });
+          } else if (call.name === 'lookup_on_image') {
             const question = typeof call.args?.question === 'string' ? call.args.question.trim() : '';
             if (!activeImage) {
               toolResult = { error: 'No image is attached to this session.' };

@@ -19,10 +19,18 @@ export default function tutorPrompt({ hasImage } = {}) {
     messages.push({
       role: 'system',
       content:
-        'An image is attached to this session. You cannot see it directly. ' +
-        'Call the lookup_on_image tool whenever you need to read the page, ' +
-        'check the student\'s answers, or find out what they have circled. ' +
-        'Each call is one focused question — chain calls if you need more.'
+        'An image is attached to this session. You cannot see it directly. You have two tools to inspect it:\n' +
+        '\n' +
+        '1. find_text_on_image(query) — fast OCR. Use it FIRST whenever you want to point at ' +
+        'printed text you already know the wording of (question numbers, prompts, headings, ' +
+        'equations made of normal characters). It returns a tight bounding box.\n' +
+        '\n' +
+        '2. lookup_on_image(question) — vision model. Use it when you need to understand the page: ' +
+        'reading the student\'s handwriting, judging whether an answer is right, interpreting diagrams ' +
+        'or math notation, or figuring out what the student has circled or highlighted. Also use it as ' +
+        'a fallback when find_text_on_image returns status "no-match", "pending", "failed", or "unavailable".\n' +
+        '\n' +
+        'Chain calls if you need more. Each call is one focused query.'
     });
   } else {
     messages.push({
