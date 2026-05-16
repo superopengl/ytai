@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import healthcheck from './routes/healthcheck.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
+import tutorGetImage from './routes/tutorGetImage.js';
 import tutorGetMessages from './routes/tutorGetMessages.js';
 import tutorSendMessage from './routes/tutorSendMessage.js';
 
@@ -9,6 +10,7 @@ export default async function server() {
 
   healthcheck(app);
   tutorCreateSession(app);
+  tutorGetImage(app);
   tutorGetMessages(app);
   tutorSendMessage(app);
 

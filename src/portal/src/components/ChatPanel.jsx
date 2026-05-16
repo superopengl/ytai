@@ -88,16 +88,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     setError(null);
     setBusy(true);
 
-    const placeholderId = `pending-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { id: `local-${placeholderId}`, role: 'user', content: text, _local: true },
-      { id: placeholderId, role: 'assistant', content: '', _streaming: true }
-    ]);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
     const image = getImage?.();
     // Guard against the race where the user replaced the image but the new
     // photo hasn't finished loading into the canvas yet: in that case
@@ -108,7 +98,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     if (imageUrl && !image?.dataUrl) {
       setBusy(false);
       setInput(text);
-      setMessages((prev) => prev.filter((m) => m.id !== placeholderId && !(m._local && m.content === text)));
       setError('Photo is still loading — give it a moment, then send again.');
       return;
     }
@@ -127,6 +116,26 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       }
     }
 
+    // Attach the freshly-flattened canvas to the user bubble so the image is
+    // visible the instant the message appears — no wait for the server
+    // round-trip. After the 'user' event we replace this with the server's
+    // imageId so history reloads can hit the /image endpoint.
+    const placeholderId = `pending-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `local-${placeholderId}`,
+        role: 'user',
+        content: text,
+        _local: true,
+        imageDataUrl: image?.dataUrl || null
+      },
+      { id: placeholderId, role: 'assistant', content: '', _streaming: true }
+    ]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
         method: 'POST',
@@ -143,7 +152,14 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           setMessages((prev) =>
             prev.map((m) =>
               m._local && m.role === 'user' && m.content === text && m.id.startsWith('local-')
-                ? { id: data.id, role: 'user', content: data.content, createdAt: data.createdAt }
+                ? {
+                    id: data.id,
+                    role: 'user',
+                    content: data.content,
+                    imageId: data.imageId ?? null,
+                    imageDataUrl: m.imageDataUrl,
+                    createdAt: data.createdAt
+                  }
                 : m
             )
           );
@@ -225,7 +241,9 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         ) : messages.length === 0 ? (
           <EmptyHint />
         ) : (
-          messages.map((message) => <Bubble key={message.id} message={message} />)
+          messages.map((message) => (
+            <Bubble key={message.id} message={message} sessionId={sessionId} />
+          ))
         )}
         {showThinking && <ThinkingBubble />}
       </div>
@@ -267,9 +285,17 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message }) {
+function Bubble({ message, sessionId }) {
   const isUser = message.role === 'user';
   if (!isUser && !message.content) return null;
+  // Only user turns show the attached photo — assistant rows store the same
+  // imageId for vision context but the transcript shouldn't echo it back.
+  // Prefer the local dataUrl (already in memory for freshly-sent messages)
+  // and fall back to the server endpoint for messages loaded from history.
+  const imageSrc = isUser
+    ? message.imageDataUrl ||
+      (message.imageId && sessionId ? `/api/tutor/${sessionId}/image/${message.imageId}` : null)
+    : null;
   return (
     <div
       style={{
@@ -281,7 +307,7 @@ function Bubble({ message }) {
       <div
         style={{
           maxWidth: '78%',
-          padding: '10px 14px',
+          padding: imageSrc ? '8px 8px 10px' : '10px 14px',
           borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
           background: isUser ? '#5b8def' : '#f0f2f7',
           color: isUser ? '#fff' : '#1d2233',
@@ -291,9 +317,27 @@ function Bubble({ message }) {
           opacity: message.interrupted ? 0.85 : 1
         }}
       >
-        {message.content}
+        {imageSrc && (
+          <img
+            src={imageSrc}
+            alt="worksheet"
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: 240,
+              borderRadius: 10,
+              marginBottom: message.content ? 8 : 0,
+              background: '#fff'
+            }}
+          />
+        )}
+        {message.content && (
+          <div style={{ padding: imageSrc ? '0 6px' : 0 }}>{message.content}</div>
+        )}
         {message.interrupted && (
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>(stopped)</div>
+          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4, padding: imageSrc ? '0 6px' : 0 }}>
+            (stopped)
+          </div>
         )}
       </div>
     </div>

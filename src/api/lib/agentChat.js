@@ -10,7 +10,14 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
     model,
     messages,
     stream: true,
-    stream_options: { include_usage: true }
+    stream_options: { include_usage: true },
+    // Skip the reasoning phase. deepseek-v4-flash and other thinking models
+    // burn wall-clock streaming reasoning_content before any user text.
+    // enable_thinking is the model-native flag (DeepSeek / Qwen);
+    // reasoning.exclude is OpenRouter's normalized form. Sending both is
+    // harmless — providers that don't recognize one ignore it.
+    enable_thinking: false,
+    reasoning: { exclude: true }
   };
   if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
 

@@ -285,6 +285,7 @@ export default function tutorSendMessage(fastify) {
       id: userRow.id,
       role: 'user',
       content,
+      imageId: activeImage?.id ?? null,
       createdAt: userRow.createdAt
     });
 
