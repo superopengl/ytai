@@ -305,7 +305,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           maxLength={2000}
           style={{ flex: 1, borderRadius: 12 }}
         />
-        {busy ? (
+        {busy || voice.speaking ? (
           <Button danger icon={<StopOutlined />} onClick={stop}>
             Stop
           </Button>
