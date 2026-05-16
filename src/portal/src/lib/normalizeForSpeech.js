@@ -71,10 +71,17 @@ function stripMarkdown(text) {
     .replace(/^\s*\d+\.\s+/gm, '');
 }
 
+// Pictographs, skin-tone modifiers, regional indicators (flags), the ZWJ
+// that stitches compound emoji together, and the emoji-presentation
+// variation selector. Kokoro otherwise tries to verbalize the codepoint
+// (e.g. reads the smile emoji as "smiling face with smiling eyes").
+const EMOJI_RE = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}‍️]/gu;
+
 export default function normalizeForSpeech(raw) {
   if (typeof raw !== 'string' || !raw.trim()) return '';
   let out = stripMath(raw);
   out = stripMarkdown(out);
+  out = out.replace(EMOJI_RE, '');
   // Collapse runs of whitespace including newlines into single spaces so
   // the TTS doesn't insert long pauses where the original had layout
   // breaks but no semantic break.

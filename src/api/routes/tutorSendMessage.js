@@ -205,6 +205,10 @@ export default function tutorSendMessage(fastify) {
     );
 
     let activeImage = null;
+    // True only when *this* turn introduces an image the session hasn't seen
+    // before. Drives whether we persist a standalone image-only user message
+    // so the UI can render the photo as its own bubble exactly once.
+    let imageChangedThisTurn = false;
     if (imageDataUrl) {
       activeImage = await resolveImage({
         sessionId,
@@ -213,6 +217,7 @@ export default function tutorSendMessage(fastify) {
         log: request.log
       });
       if (activeImage && activeImage.id !== session.currentImageId) {
+        imageChangedThisTurn = true;
         await db()
           .update(tutorSession)
           .set({ currentImageId: activeImage.id, updatedAt: new Date() })
@@ -244,19 +249,39 @@ export default function tutorSendMessage(fastify) {
       .where(eq(sessionMessage.sessionId, sessionId))
       .orderBy(asc(sessionMessage.createdAt));
 
+    // When the user attaches a new image, persist it as its own user message
+    // (no text) so the transcript shows the photo as a standalone bubble
+    // exactly once. The text turn itself stores no imageId — Brain still
+    // sees the page through lookup_on_image against session.currentImageId.
+    let imageMessageRow = null;
+    if (imageChangedThisTurn && activeImage) {
+      const [row] = await db()
+        .insert(sessionMessage)
+        .values({
+          sessionId,
+          role: 'user',
+          content: '',
+          imageId: activeImage.id
+        })
+        .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
+      imageMessageRow = row;
+    }
+
     const [userRow] = await db()
       .insert(sessionMessage)
       .values({
         sessionId,
         role: 'user',
         content,
-        imageId: activeImage?.id ?? null
+        imageId: null
       })
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
       ...tutorPrompt({ hasImage: !!activeImage }),
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      // Skip empty-content rows: those are image-attachment markers for the UI,
+      // not anything Brain needs in its conversational context.
+      ...history.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content }
     ];
 
@@ -285,8 +310,15 @@ export default function tutorSendMessage(fastify) {
       id: userRow.id,
       role: 'user',
       content,
-      imageId: activeImage?.id ?? null,
-      createdAt: userRow.createdAt
+      imageId: null,
+      createdAt: userRow.createdAt,
+      imageMessage: imageMessageRow
+        ? {
+            id: imageMessageRow.id,
+            imageId: activeImage.id,
+            createdAt: imageMessageRow.createdAt
+          }
+        : null
     });
 
     const abortController = new AbortController();
@@ -473,7 +505,7 @@ export default function tutorSendMessage(fastify) {
           role: 'assistant',
           content: assistantContent,
           modelId,
-          imageId: activeImage?.id ?? null,
+          imageId: null,
           promptTokens,
           completionTokens,
           interrupted,

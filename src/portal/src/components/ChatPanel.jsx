@@ -125,19 +125,30 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       }
     }
 
-    // Attach the freshly-flattened canvas to the user bubble so the image is
-    // visible the instant the message appears — no wait for the server
-    // round-trip. After the 'user' event we replace this with the server's
-    // imageId so history reloads can hit the /image endpoint.
+    // Render the image as its own bubble *only* when the photo is actually
+    // changing this turn. Subsequent text turns under the same image just
+    // show text — the page itself is already in the transcript above.
     const placeholderId = `pending-${Date.now()}`;
+    const userLocalId = `local-${placeholderId}`;
+    const imageLocalId = imageToSend ? `local-img-${placeholderId}` : null;
     setMessages((prev) => [
       ...prev,
+      ...(imageLocalId
+        ? [
+            {
+              id: imageLocalId,
+              role: 'user',
+              content: '',
+              _local: true,
+              imageDataUrl: image.dataUrl
+            }
+          ]
+        : []),
       {
-        id: `local-${placeholderId}`,
+        id: userLocalId,
         role: 'user',
         content: text,
-        _local: true,
-        imageDataUrl: image?.dataUrl || null
+        _local: true
       },
       { id: placeholderId, role: 'assistant', content: '', _streaming: true }
     ]);
@@ -160,18 +171,33 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       for await (const { event, data } of stream) {
         if (event === 'user') {
           setMessages((prev) =>
-            prev.map((m) =>
-              m._local && m.role === 'user' && m.content === text && m.id.startsWith('local-')
-                ? {
+            prev.flatMap((m) => {
+              if (imageLocalId && m.id === imageLocalId) {
+                if (!data.imageMessage) return [];
+                return [
+                  {
+                    id: data.imageMessage.id,
+                    role: 'user',
+                    content: '',
+                    imageId: data.imageMessage.imageId,
+                    imageDataUrl: m.imageDataUrl,
+                    createdAt: data.imageMessage.createdAt
+                  }
+                ];
+              }
+              if (m.id === userLocalId) {
+                return [
+                  {
                     id: data.id,
                     role: 'user',
                     content: data.content,
                     imageId: data.imageId ?? null,
-                    imageDataUrl: m.imageDataUrl,
                     createdAt: data.createdAt
                   }
-                : m
-            )
+                ];
+              }
+              return [m];
+            })
           );
         } else if (event === 'token') {
           setMessages((prev) =>
@@ -344,10 +370,10 @@ function Bubble({ message, sessionId, onReplay, isSpeaking }) {
   // then conflict with the live streaming voice. _streaming is the local
   // sentinel ChatPanel sets while tokens are still arriving.
   const canReplay = !isUser && onReplay && !message._streaming;
-  // Only user turns show the attached photo — assistant rows store the same
-  // imageId for vision context but the transcript shouldn't echo it back.
-  // Prefer the local dataUrl (already in memory for freshly-sent messages)
-  // and fall back to the server endpoint for messages loaded from history.
+  // Image-only user messages carry `imageId` (and, for freshly-sent ones,
+  // an in-memory `imageDataUrl`); text user turns and assistant turns don't.
+  // Prefer the local dataUrl when available; fall back to the server
+  // endpoint for messages loaded from history.
   const imageSrc = isUser
     ? message.imageDataUrl ||
       (message.imageId && sessionId ? `/api/tutor/${sessionId}/image/${message.imageId}` : null)
