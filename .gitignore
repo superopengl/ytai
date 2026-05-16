@@ -21,3 +21,4 @@ deploy/.cdk.staging/
 .vscode/
 .idea/
 data/images
+data/audio

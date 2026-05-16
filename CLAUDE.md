@@ -43,7 +43,7 @@ Pipeline flow diagram: [docs/pipeline.md](docs/pipeline.md)
 
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_image`, `session_message`, `vision_extraction`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_image`, `session_message`, `vision_extraction`, `tts_audio`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 
@@ -61,6 +61,7 @@ Summary:
 - `POST /api/tutor/session` — start a tutoring session
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
 - `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain calls Eyes (Qwen2.5-VL) via the `lookup_on_image` tool on demand; results cached in `vision_extraction` per `(image_id, sha256(question))`.
+- `POST /api/tutor/:sessionId/speak` — synthesize one sentence of MP3 audio (frontend buffers and chunks Brain's stream by sentence). Cached in `tts_audio` per `sha256(text + voice + model)` so kid-tutor catchphrases ("nice work!") are free on repeat. Returns 503 if `YTAI_TTS_BASE_URL` is unset.
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 
@@ -74,6 +75,7 @@ Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 - **Image storage**: S3 in production, local disk in dev
 - **AI — Vision (Eyes)**: **Qwen2.5-VL** (default: `qwen/qwen2.5-vl-72b-instruct`) via OpenRouter; called on demand by Brain through the `lookup_on_image` tool
 - **AI — Chat (Brain)**: **deepseek-v4-flash** via OpenRouter; streaming, abortable, tool-call enabled
+- **AI — Voice (TTS)**: **Kokoro-82M** via [`Kokoro-FastAPI`](https://github.com/remsky/Kokoro-FastAPI) (OpenAI-compatible `/audio/speech`); runs as a Docker sidecar in dev (`pnpm start:local:tts`). Configurable via `YTAI_TTS_BASE_URL` — any compatible provider works.
 - **Streaming**: SSE (Server-Sent Events)
 - **Package manager**: pnpm (workspace monorepo — root `@techseeding/yoututorai`, `@techseeding/yoututorai-portal`, `@techseeding/yoututorai-deploy`)
 - **Cloud / IaC**: AWS, CDK v2 (JavaScript), region `ap-southeast-2` (Sydney)
@@ -98,6 +100,9 @@ pnpm start:prod         # production: Fastify from dist/ (loads .env.production)
 pnpm db:generate        # generate Drizzle migration from schema changes
 pnpm db:migrate         # run pending migrations
 pnpm db:studio          # open Drizzle Studio
+
+pnpm start:local:tts    # boot Kokoro-FastAPI sidecar for local voice (port 9530)
+pnpm stop:local:tts     # tear it down
 
 pnpm -F @techseeding/yoututorai-deploy synth
 pnpm -F @techseeding/yoututorai-deploy diff
@@ -132,6 +137,11 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
 | `YTAI_S3_BUCKET` | Image bucket (prod) | *(required in prod)* |
 | `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days | `30` |
+| `YTAI_TTS_BASE_URL` | OpenAI-compatible `/audio/speech` endpoint (e.g. local Kokoro at `http://localhost:9530/v1`). Unset disables voice (route returns 503, UI greys out). | *(unset)* |
+| `YTAI_TTS_API_KEY` | Optional auth for the TTS endpoint | *(unset)* |
+| `YTAI_TTS_MODEL` | TTS model id | `kokoro` |
+| `YTAI_TTS_VOICE` | Default voice id (Kokoro: `af_heart`, `af_bella`, `am_adam`, …) | `af_heart` |
+| `YTAI_AUDIO_DIR` | Local disk path for cached MP3 bytes | `./data/audio` |
 
 ## Open Questions to Resolve During Build
 

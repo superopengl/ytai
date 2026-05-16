@@ -78,6 +78,27 @@ export const visionExtraction = ytai.table(
   })
 );
 
+export const ttsAudio = ytai.table(
+  'tts_audio',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // sha256 of (normalizedText + '\n' + voice + '\n' + model). Same text
+    // in the same voice returns the same row across sessions — a kid tutor
+    // says "nice work!" or "let's try again" constantly, so cross-session
+    // sharing is a real win.
+    textHash: text('text_hash').notNull(),
+    voice: text('voice').notNull(),
+    model: text('model').notNull(),
+    storageUrl: text('storage_url').notNull(),
+    bytes: integer('bytes').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => ({
+    ttsAudioHashUnique: uniqueIndex('tts_audio_hash_voice_model_uq').on(t.textHash, t.voice, t.model)
+  })
+);
+
 export const sessionMessage = ytai.table('session_message', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionId: uuid('session_id').notNull().references(() => tutorSession.id),

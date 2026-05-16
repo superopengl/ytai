@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Input, Typography } from 'antd';
-import { LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import { Alert, Button, Input, Tooltip, Typography } from 'antd';
+import {
+  AudioMutedOutlined,
+  LoadingOutlined,
+  SendOutlined,
+  SoundOutlined,
+  StopOutlined
+} from '@ant-design/icons';
 import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
+import useTutorVoice from '../hooks/useTutorVoice.js';
 
 export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations }) {
   const [messages, setMessages] = useState([]);
@@ -12,6 +19,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
+  const voice = useTutorVoice(sessionId);
   // Hash of the last image dataUrl successfully sent to the server. Lets us
   // skip resending bytes when neither the photo nor the user's annotations
   // have changed since the previous turn — the server keeps the cached
@@ -135,6 +143,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
 
     const controller = new AbortController();
     abortRef.current = controller;
+    voice.stop();
 
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
@@ -169,8 +178,11 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
               m.id === placeholderId ? { ...m, content: m.content + data.delta } : m
             )
           );
+          voice.appendDelta(data.delta);
         } else if (event === 'done') {
           if (imageHashThisTurn) lastSentImageHashRef.current = imageHashThisTurn;
+          if (data.interrupted) voice.stop();
+          else voice.finalize();
           setMessages((prev) =>
             prev.map((m) =>
               m.id === placeholderId
@@ -191,21 +203,24 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           }
         } else if (event === 'error') {
           setError(data.error || 'Something went wrong.');
+          voice.stop();
         }
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.message || 'Request failed.');
       }
+      voice.stop();
     } finally {
       abortRef.current = null;
       setBusy(false);
     }
-  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations]);
+  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations, voice]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
-  }, []);
+    voice.stop();
+  }, [voice]);
 
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -232,6 +247,25 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={headerStyle}>
         <Typography.Text strong>Tutor chat</Typography.Text>
+        <Tooltip
+          title={
+            !voice.supported
+              ? 'Voice is not configured on the server.'
+              : voice.enabled
+                ? 'Turn voice off'
+                : 'Turn voice on (tutor will read replies aloud)'
+          }
+        >
+          <Button
+            type="text"
+            size="small"
+            disabled={!voice.supported}
+            aria-pressed={voice.enabled}
+            icon={voice.enabled ? <SoundOutlined /> : <AudioMutedOutlined />}
+            onClick={() => voice.setEnabled(!voice.enabled)}
+            style={{ marginLeft: 'auto', color: voice.enabled ? '#5b8def' : undefined }}
+          />
+        </Tooltip>
       </div>
       <div ref={scrollRef} style={scrollStyle}>
         {!historyLoaded ? (
@@ -376,7 +410,13 @@ function EmptyHint() {
   );
 }
 
-const headerStyle = { padding: '12px 16px', borderBottom: '1px solid #ececf3' };
+const headerStyle = {
+  padding: '12px 16px',
+  borderBottom: '1px solid #ececf3',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8
+};
 const scrollStyle = { flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 };
 const composerStyle = {
   padding: 12,

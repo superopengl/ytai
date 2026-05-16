@@ -1,0 +1,25 @@
+# Local dev sidecars. Run with:
+#   docker compose -f docker-compose.dev.yml up
+#
+# The compose project name groups all containers under the "techseeding"
+# stack in Docker Desktop (matches the @techseeding/yoututorai npm scope).
+#
+# Kokoro-FastAPI exposes an OpenAI-compatible /v1/audio/speech endpoint
+# (https://github.com/remsky/Kokoro-FastAPI). Point YTAI_TTS_BASE_URL at it
+# in .env to enable voice on the tutor page.
+
+name: techseeding
+
+services:
+  tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: techseeding-yoututorai-tts
+    ports:
+      - "9530:8880"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
