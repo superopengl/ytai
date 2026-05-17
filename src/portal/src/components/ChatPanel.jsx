@@ -31,6 +31,12 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   // transcript is appended to this so the student can dictate on top of
   // text they'd already started typing without losing it.
   const dictationBaseRef = useRef('');
+  // Bumped on every send(). The async SSE loop only allowed to mutate
+  // shared state (busy, abortRef, etc.) while it's the active generation —
+  // lets us interrupt an in-flight turn and start a new one without the
+  // old turn's `finally` racing setBusy(false) over the new turn's
+  // setBusy(true).
+  const sendGenRef = useRef(0);
   // Hash of the last image dataUrl successfully sent to the server. Lets us
   // skip resending bytes when neither the photo nor the user's annotations
   // have changed since the previous turn — the server keeps the cached
@@ -110,18 +116,32 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   }, [speech.transcript, speech.listening]);
 
   const toggleDictation = useCallback(() => {
-    if (!speech.supported || busy) return;
+    if (!speech.supported) return;
     if (speech.listening) {
       speech.stop();
       return;
     }
     dictationBaseRef.current = input.replace(/\s+$/, '');
     speech.start();
-  }, [busy, input, speech]);
+  }, [input, speech]);
 
   const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy || !sessionId) return;
+    if (!text || !sessionId) return;
+
+    // Hitting Send mid-turn (Brain still streaming, or voice still playing)
+    // interrupts the previous turn instead of being a no-op. Abort the
+    // in-flight request, mark its half-written bubble as finished, and
+    // bump the generation so the old loop's `finally` can't clobber the
+    // new turn's busy/awaitingTokens state.
+    const myGen = ++sendGenRef.current;
+    if (abortRef.current) {
+      abortRef.current.abort();
+      setMessages((prev) =>
+        prev.map((m) => (m._streaming ? { ...m, _streaming: false, interrupted: true } : m))
+      );
+    }
+    voice.stop();
 
     // If the student hit Send mid-dictation, end the recognition session
     // before clearing the input so the trailing transcript doesn't get
@@ -193,7 +213,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
 
     const controller = new AbortController();
     abortRef.current = controller;
-    voice.stop();
     // Bind voice to the streaming bubble so the speaking icon shows on the
     // right message during auto-speak. Rebound to the real message id on
     // 'done' below — until then, the bubble is keyed by placeholderId.
@@ -211,6 +230,9 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       });
 
       for await (const { event, data } of stream) {
+        // If a newer send has superseded this one, stop processing — the
+        // active turn owns the UI state from here.
+        if (sendGenRef.current !== myGen) break;
         if (event === 'user') {
           setMessages((prev) =>
             prev.flatMap((m) => {
@@ -291,16 +313,18 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if (sendGenRef.current === myGen && err.name !== 'AbortError') {
         setError(err.message || 'Request failed.');
+        voice.stop();
       }
-      voice.stop();
     } finally {
-      abortRef.current = null;
-      setBusy(false);
-      setAwaitingTokens(false);
+      if (sendGenRef.current === myGen) {
+        abortRef.current = null;
+        setBusy(false);
+        setAwaitingTokens(false);
+      }
     }
-  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations, voice, speech]);
+  }, [input, sessionId, imageUrl, getImage, onAiAnnotations, voice, speech]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -410,26 +434,17 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
 
       <div style={composerStyle}>
         {speech.supported && (
-          <Tooltip
-            title={
-              speech.listening
-                ? 'Stop dictation'
-                : busy
-                  ? 'Wait for the tutor to finish before dictating.'
-                  : 'Dictate your question'
-            }
-          >
+          <Tooltip title={speech.listening ? 'Stop dictation' : 'Dictate your question'}>
             <Button
               icon={<AudioOutlined />}
               onClick={toggleDictation}
-              disabled={busy && !speech.listening}
               danger={speech.listening}
               type={speech.listening ? 'primary' : 'default'}
               aria-pressed={speech.listening}
               aria-label={speech.listening ? 'Stop dictation' : 'Start dictation'}
             />
           </Tooltip>
-        )}        
+        )}
         <Input.TextArea
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -439,7 +454,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             speech.listening
               ? 'Listening… speak now, then click the mic to stop.'
               : busy
-                ? 'Tutor is responding…'
+                ? 'Tutor is responding — type or dictate to jump in…'
                 : 'Ask about a question, or circle something on the photo first…'
           }
           readOnly={speech.listening}
@@ -451,15 +466,20 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             boxShadow: speech.listening ? '0 0 0 2px rgba(255, 77, 79, 0.15)' : undefined
           }}
         />
-        {busy || voice.speaking ? (
-          <Button danger icon={<StopOutlined />} onClick={stop}>
-            Stop
-          </Button>
-        ) : (
-          <Button type="primary" icon={<SendOutlined />} onClick={send} disabled={!input.trim()}>
-            Send
-          </Button>
+        {(busy || voice.speaking) && (
+          <Tooltip title="Stop the tutor">
+            <Button danger icon={<StopOutlined />} onClick={stop} aria-label="Stop the tutor" />
+          </Tooltip>
         )}
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={send}
+          disabled={!input.trim()}
+          title={busy || voice.speaking ? 'Send (this will interrupt the tutor)' : undefined}
+        >
+          Send
+        </Button>
       </div>
     </div>
   );

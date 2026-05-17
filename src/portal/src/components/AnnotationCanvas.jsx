@@ -1,11 +1,23 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect } from 'react-konva';
+import {
+  Stage,
+  Layer,
+  Image as KonvaImage,
+  Line,
+  Ellipse,
+  Rect,
+  Group,
+  Label,
+  Tag,
+  Text as KonvaText
+} from 'react-konva';
 // Konva primitives we use for AI annotations:
 //   - Rect: highlight (default), rect outline
 //   - Ellipse: circle
+//   - Label + Tag + Text: floating caption pill anchored to a mark
 //   - Line: pen strokes
 import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
-import { ClearOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
+import { ClearOutlined, HighlightOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
 
 const DEFAULT_AI_COLOR = '#3aa0ff';
 
@@ -15,7 +27,7 @@ const PEN_WIDTH_MAX = 20;
 const PEN_WIDTH_DEFAULT = 7;
 
 const AnnotationCanvas = forwardRef(function AnnotationCanvas(
-  { imageUrl, onReplace, aiAnnotations = [] },
+  { imageUrl, onReplace, aiAnnotations = [], onClearAiAnnotations },
   ref
 ) {
   const containerRef = useRef(null);
@@ -95,6 +107,10 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
   function startLine(e) {
     if (!image) return;
+    // If the press landed on an interactive AI annotation (the draggable
+    // label pill lives on aiLayerRef), let Konva handle the drag and don't
+    // start a competing pen stroke at the same point.
+    if (e.target?.getLayer?.() === aiLayerRef.current) return;
     const pt = toNormalized(e.target.getStage().getPointerPosition());
     if (!pt) return;
     drawing.current = true;
@@ -137,6 +153,17 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
             Clear
           </Button>
         </Tooltip>
+        {onClearAiAnnotations && (
+          <Tooltip title="Remove the tutor's highlights and circles">
+            <Button
+              icon={<HighlightOutlined />}
+              onClick={onClearAiAnnotations}
+              disabled={aiAnnotations.length === 0}
+            >
+              Clear tutor marks
+            </Button>
+          </Tooltip>
+        )}
         <Tooltip title="Replace this image">
           <Button icon={<SwapOutlined />} onClick={onReplace}>
             Replace image
@@ -217,7 +244,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
             <Layer listening={false}>
               <KonvaImage image={image} width={fit.width} height={fit.height} />
             </Layer>
-            <Layer listening={false} ref={aiLayerRef}>
+            <Layer ref={aiLayerRef}>
               {aiAnnotations.map((anno) => (
                 <AiAnnotation
                   key={anno.id}
@@ -288,6 +315,13 @@ function easeOut(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+// Caption pill sits just outside the bbox so it doesn't sit on top of the
+// thing it's labeling. We need an approximate height up front to decide
+// whether there's room above the bbox; Konva will measure the actual
+// label width / height at render time.
+const LABEL_PILL_HEIGHT = 22;
+const LABEL_PILL_GAP = 6;
+
 function AiAnnotation({ annotation, fitWidth, fitHeight }) {
   const args = annotation?.args;
   // Animation progress 0..1. Set unconditionally so hook order is stable;
@@ -322,8 +356,32 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
   const w = (coords.x2 - coords.x1) * fitWidth;
   const h = (coords.y2 - coords.y1) * fitHeight;
   const color = isCssColor(args.color) ? args.color : DEFAULT_AI_COLOR;
+  const labelText = typeof args.label === 'string' ? args.label.trim() : '';
 
-  if (args.shape === 'rect') {
+  return (
+    <Group>
+      {renderShape({ shape: args.shape, x, y, w, h, color, progress })}
+      {labelText && (
+        <AnnotationLabel
+          text={labelText}
+          color={color}
+          bboxX={x}
+          bboxY={y}
+          bboxW={w}
+          bboxH={h}
+          fitWidth={fitWidth}
+          fitHeight={fitHeight}
+          opacity={progress}
+        />
+      )}
+    </Group>
+  );
+}
+
+function renderShape({ shape, x, y, w, h, color, progress }) {
+  // Shapes are non-interactive: pen strokes need to pass through them, and
+  // only the label (rendered separately) is meant to be grabbed.
+  if (shape === 'rect') {
     return (
       <Rect
         x={x}
@@ -334,16 +392,27 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
         strokeWidth={4}
         dash={[10, 6]}
         cornerRadius={6}
+        listening={false}
       />
     );
   }
 
-  if (args.shape === 'circle') {
+  if (shape === 'circle') {
     const cx = x + w / 2;
     const cy = y + h / 2;
     const rx = Math.max(w / 2, 12);
     const ry = Math.max(h / 2, 12);
-    return <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />;
+    return (
+      <Ellipse
+        x={cx}
+        y={cy}
+        radiusX={rx}
+        radiusY={ry}
+        stroke={color}
+        strokeWidth={4}
+        listening={false}
+      />
+    );
   }
 
   // Default: highlight. A soft semi-transparent sweep that draws itself
@@ -361,7 +430,75 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
       fill={color}
       opacity={0.25}
       cornerRadius={4}
+      listening={false}
     />
+  );
+}
+
+function AnnotationLabel({ text, color, bboxX, bboxY, bboxW, bboxH, fitWidth, fitHeight, opacity }) {
+  // Once the user drags the pill, remember where they put it in
+  // image-normalized (0..1) coords so the label keeps its spot when the
+  // canvas resizes rather than snapping back to the bbox.
+  const [dragged, setDragged] = useState(null);
+
+  // Default anchor: below the bbox; flip above when below would clip off
+  // the bottom of the canvas. Konva auto-sizes the Label around its
+  // children, so we only set the top-left anchor.
+  const below = bboxY + bboxH + LABEL_PILL_GAP + LABEL_PILL_HEIGHT <= fitHeight;
+  const defaultY = below ? bboxY + bboxH + LABEL_PILL_GAP : bboxY - LABEL_PILL_GAP - LABEL_PILL_HEIGHT;
+  const defaultX = Math.max(0, bboxX);
+
+  const labelX = dragged ? dragged.nx * fitWidth : defaultX;
+  const labelY = dragged ? dragged.ny * fitHeight : defaultY;
+
+  const handleMouseEnter = (e) => {
+    const stage = e.target.getStage();
+    if (stage) stage.container().style.cursor = 'grab';
+  };
+  const handleMouseLeave = (e) => {
+    const stage = e.target.getStage();
+    if (stage) stage.container().style.cursor = '';
+  };
+  const handleDragStart = (e) => {
+    const stage = e.target.getStage();
+    if (stage) stage.container().style.cursor = 'grabbing';
+  };
+  const handleDragEnd = (e) => {
+    const stage = e.target.getStage();
+    if (stage) stage.container().style.cursor = 'grab';
+    if (!fitWidth || !fitHeight) return;
+    setDragged({
+      nx: clamp01(e.target.x() / fitWidth),
+      ny: clamp01(e.target.y() / fitHeight)
+    });
+  };
+
+  return (
+    <Label
+      x={labelX}
+      y={labelY}
+      opacity={opacity}
+      draggable
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <Tag
+        fill={color}
+        cornerRadius={6}
+        shadowColor="rgba(0, 0, 0, 0.25)"
+        shadowBlur={4}
+        shadowOffsetY={1}
+      />
+      <KonvaText
+        text={text}
+        fill="#fff"
+        fontStyle="600"
+        fontSize={12}
+        padding={5}
+      />
+    </Label>
   );
 }
 

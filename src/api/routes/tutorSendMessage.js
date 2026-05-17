@@ -8,6 +8,7 @@ import {
   visionExtraction
 } from '../db/schema.js';
 import agentChat from '../lib/agentChat.js';
+import { resolveAnnotationColor, ANNOTATION_COLOR_NAMES } from '../lib/annotationPalette.js';
 import askVision from '../lib/askVision.js';
 import brainTools from '../lib/brainTools.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
@@ -50,6 +51,24 @@ function decodeDataUrl(dataUrl) {
 
 function hashQuestion(question) {
   return createHash('sha256').update(question.trim().toLowerCase()).digest('hex');
+}
+
+function collectUsedColors(history) {
+  const seen = new Set();
+  for (const row of history) {
+    const calls = Array.isArray(row.toolCalls) ? row.toolCalls : [];
+    for (const tc of calls) {
+      if (tc?.name !== 'draw_annotation') continue;
+      const name =
+        typeof tc.args?.colorName === 'string'
+          ? tc.args.colorName.toLowerCase()
+          : typeof tc.args?.color === 'string' && /^[a-z]+$/i.test(tc.args.color)
+            ? tc.args.color.toLowerCase()
+            : null;
+      if (name) seen.add(name);
+    }
+  }
+  return Array.from(seen);
 }
 
 async function resolveImage({ sessionId, imageDataUrl, dimensions, log }) {
@@ -141,7 +160,7 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
 
   const { baseUrl, apiKey, model } = visionConfig();
   log.info({ imageId: image.id, question, model }, 'running Eyes (lookup_on_image)');
-  const { answer, bbox, rawBbox, modelVersion } = await askVision({
+  const { answer, modelVersion } = await askVision({
     imageDataUrl,
     question,
     baseUrl,
@@ -149,7 +168,7 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
     model
   });
 
-  const extracted = { question, answer, bbox };
+  const extracted = { question, answer };
   await db()
     .insert(visionExtraction)
     .values({
@@ -163,11 +182,6 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
     {
       imageId: image.id,
       questionHash: questionHash.slice(0, 12),
-      // Native 0–1000 [x1,y1,x2,y2] straight from the VLM, before any
-      // padding/scale correction. Useful for spotting whether the model
-      // itself is drifting vs. our coord math.
-      rawBbox,
-      bbox,
       answerPreview: answer.slice(0, 200)
     },
     'Eyes lookup complete'
@@ -259,10 +273,20 @@ export default function tutorSendMessage(fastify) {
     }
 
     const history = await db()
-      .select({ role: sessionMessage.role, content: sessionMessage.content })
+      .select({
+        role: sessionMessage.role,
+        content: sessionMessage.content,
+        toolCalls: sessionMessage.toolCalls
+      })
       .from(sessionMessage)
       .where(eq(sessionMessage.sessionId, sessionId))
       .orderBy(asc(sessionMessage.createdAt));
+
+    // Colors Brain has already used for draw_annotation this session. We
+    // feed these back to it via the system prompt so it can pick a fresh
+    // palette entry on the next mark.
+    const usedColors = collectUsedColors(history);
+    const usedColorsForTurn = new Set(usedColors);
 
     // When the user attaches a new image, persist it as its own user message
     // (no text) so the transcript shows the photo as a standalone bubble
@@ -293,7 +317,7 @@ export default function tutorSendMessage(fastify) {
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
-      ...tutorPrompt({ hasImage: !!activeImage }),
+      ...tutorPrompt({ hasImage: !!activeImage, usedColors }),
       // Skip empty-content rows: those are image-attachment markers for the UI,
       // not anything Brain needs in its conversational context.
       ...history.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content })),
@@ -505,6 +529,31 @@ export default function tutorSendMessage(fastify) {
             }
             sse('lookup', { id: call.id, question, result: toolResult });
           } else if (call.name === 'draw_annotation') {
+            // Normalize the color: Brain emits a palette name, the canvas
+            // expects a hex. Persist both — name for future used-color
+            // tracking, hex for rendering. If Brain skipped the field or
+            // gave us a duplicate / unknown name, fall back to the first
+            // still-unused palette entry so the mark never collides with
+            // an earlier one.
+            const requestedName =
+              typeof call.args?.color === 'string' ? call.args.color.toLowerCase() : null;
+            let colorName = requestedName && resolveAnnotationColor(requestedName)
+              ? requestedName
+              : null;
+            if (!colorName || usedColorsForTurn.has(colorName)) {
+              colorName =
+                ANNOTATION_COLOR_NAMES.find((c) => !usedColorsForTurn.has(c)) ||
+                colorName ||
+                ANNOTATION_COLOR_NAMES[0];
+            }
+            usedColorsForTurn.add(colorName);
+            call.args = {
+              ...call.args,
+              color: resolveAnnotationColor(colorName),
+              colorName,
+              label: typeof call.args?.label === 'string' ? call.args.label.slice(0, 60) : ''
+            };
+
             // Tighten the bbox using OCR before the UI sees it. Brain may
             // have handed us a loose Eyes-style region; the snap shrinks
             // it to hug the actual printed text. No-op when OCR isn't

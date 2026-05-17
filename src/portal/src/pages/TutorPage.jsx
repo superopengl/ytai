@@ -14,6 +14,7 @@ export default function TutorPage() {
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
+  const clearAiAnnotations = useCallback(() => setAiAnnotations([]), []);
 
   useEffect(() => {
     if (routeSessionId) {
@@ -98,6 +99,7 @@ export default function TutorPage() {
                 imageUrl={imageUrl}
                 onReplace={onReplace}
                 aiAnnotations={aiAnnotations}
+                onClearAiAnnotations={clearAiAnnotations}
               />
             ) : (
               <PhotoCapture onSelectFile={onSelectFile} />

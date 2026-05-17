@@ -1,3 +1,5 @@
+import { ANNOTATION_COLOR_NAMES } from './annotationPalette.js';
+
 // Tools exposed to Brain (the chat model) on every turn that has an image
 // attached to the session.
 //
@@ -42,12 +44,11 @@ const brainTools = [
       name: 'lookup_on_image',
       description:
         'Look at the worksheet photo and answer a specific question about it. ' +
-        'Use this for anything that requires understanding the page — what the student wrote, ' +
+        'Use this for understanding the page — what the questions are, what the student wrote, ' +
         'whether an answer is right, what a diagram shows, what the student has circled/highlighted. ' +
-        'For locating printed text you already know the wording of, prefer find_text_on_image — it ' +
-        'is cheaper and its bboxes are tighter. ' +
-        'Returns a short text answer and (when the question is locational) a normalized 0..1 corner ' +
-        'bbox [x1, y1, x2, y2] (top-left + bottom-right). ' +
+        'Returns a short text answer only — NO coordinates. ' +
+        'For locating something on the page (so you can draw on it), use find_text_on_image — that is ' +
+        'the only tool that returns bounding boxes. ' +
         'Ask one focused question per call.',
       parameters: {
         type: 'object',
@@ -97,7 +98,20 @@ const brainTools = [
           y2: { type: 'number', minimum: 0, maximum: 1, description: 'Bottom-right y in 0..1.' },
           color: {
             type: 'string',
-            description: 'CSS color, e.g. "#3aa0ff". Optional; a friendly blue is used by default.'
+            enum: [...ANNOTATION_COLOR_NAMES],
+            description:
+              'Color name from the fixed palette. Pick one you have NOT used yet in this session ' +
+              'so consecutive marks are easy to tell apart. The system message lists which colors ' +
+              'have already been used and which are still free. Optional — if omitted, an unused ' +
+              'palette color is auto-assigned.'
+          },
+          label: {
+            type: 'string',
+            description:
+              'Short caption shown next to the mark — the name of the thing you are pointing at. ' +
+              'Keep it under 30 characters. Examples: "Question 3", "the + sign", "wrong answer", ' +
+              '"12 × 4". This is what the student will read on the page beside the highlight. ' +
+              'Optional but strongly encouraged.'
           }
         },
         required: ['shape', 'x1', 'y1', 'x2', 'y2']
