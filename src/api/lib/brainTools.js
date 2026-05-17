@@ -98,10 +98,6 @@ const brainTools = [
           color: {
             type: 'string',
             description: 'CSS color, e.g. "#3aa0ff". Optional; a friendly blue is used by default.'
-          },
-          label: {
-            type: 'string',
-            description: 'Optional short caption (≤ 24 chars) shown next to the shape.'
           }
         },
         required: ['shape', 'x1', 'y1', 'x2', 'y2']

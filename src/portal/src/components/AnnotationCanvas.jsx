@@ -1,10 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect, Text } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect } from 'react-konva';
 // Konva primitives we use for AI annotations:
 //   - Rect: highlight (default), rect outline
 //   - Ellipse: circle
 //   - Line: pen strokes
-//   - Text: optional label
 import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
 import { ClearOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
 
@@ -314,37 +313,19 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
   const w = (coords.x2 - coords.x1) * fitWidth;
   const h = (coords.y2 - coords.y1) * fitHeight;
   const color = isCssColor(args.color) ? args.color : DEFAULT_AI_COLOR;
-  const label = typeof args.label === 'string' ? args.label.slice(0, 24) : '';
-
-  const labelNode =
-    label && progress >= 1 ? (
-      <Text
-        text={label}
-        x={x}
-        y={Math.max(0, y - 18)}
-        fontSize={14}
-        fontStyle="bold"
-        fill={color}
-        shadowColor="rgba(255,255,255,0.9)"
-        shadowBlur={4}
-      />
-    ) : null;
 
   if (args.shape === 'rect') {
     return (
-      <>
-        <Rect
-          x={x}
-          y={y}
-          width={Math.max(w, 4)}
-          height={Math.max(h, 4)}
-          stroke={color}
-          strokeWidth={4}
-          dash={[10, 6]}
-          cornerRadius={6}
-        />
-        {labelNode}
-      </>
+      <Rect
+        x={x}
+        y={y}
+        width={Math.max(w, 4)}
+        height={Math.max(h, 4)}
+        stroke={color}
+        strokeWidth={4}
+        dash={[10, 6]}
+        cornerRadius={6}
+      />
     );
   }
 
@@ -353,34 +334,25 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
     const cy = y + h / 2;
     const rx = Math.max(w / 2, 12);
     const ry = Math.max(h / 2, 12);
-    return (
-      <>
-        <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />
-        {labelNode}
-      </>
-    );
+    return <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />;
   }
 
   // Default: highlight. A soft semi-transparent sweep that draws itself
   // left-to-right like a tutor's marker. The visible width grows from 0 to
-  // the full bbox width via the rAF tick above; once `progress` reaches 1
-  // the rect is at its final size and the label fades in.
+  // the full bbox width via the rAF tick above.
   const fullWidth = Math.max(w, 4);
   const fullHeight = Math.max(h, 4);
   const sweptWidth = Math.max(fullWidth * progress, 0);
   return (
-    <>
-      <Rect
-        x={x}
-        y={y}
-        width={sweptWidth}
-        height={fullHeight}
-        fill={color}
-        opacity={0.25}
-        cornerRadius={4}
-      />
-      {labelNode}
-    </>
+    <Rect
+      x={x}
+      y={y}
+      width={sweptWidth}
+      height={fullHeight}
+      fill={color}
+      opacity={0.25}
+      cornerRadius={4}
+    />
   );
 }
 
