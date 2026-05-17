@@ -8,7 +8,7 @@
 # (https://github.com/remsky/Kokoro-FastAPI). Point YTAI_TTS_BASE_URL at it
 # in .env to enable voice on the tutor page.
 #
-# PaddleOCR runs behind a thin FastAPI wrapper (see devops/ocr/) and gives
+# EasyOCR runs behind a thin FastAPI wrapper (see devops/ocr/) and gives
 # Brain tight text bboxes via the find_text_on_image tool. Point
 # YTAI_OCR_BASE_URL at it in .env to enable OCR.
 
@@ -40,4 +40,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 90s

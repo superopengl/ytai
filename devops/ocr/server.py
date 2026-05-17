@@ -1,8 +1,8 @@
-# RapidOCR HTTP wrapper.
+# EasyOCR HTTP wrapper.
 #
 # POST /ocr-json  body: {"image_base64": "..."}  →
 #   {
-#     "modelVersion": "rapidocr-onnxruntime-1.4.4/PP-OCRv4",
+#     "modelVersion": "easyocr-1.7.2/craft+crnn",
 #     "width":  <px>,
 #     "height": <px>,
 #     "lines": [
@@ -15,28 +15,33 @@
 #     ]
 #   }
 #
-# We use RapidOCR (ONNX Runtime port of PaddleOCR's PP-OCRv4 detect+recognize
-# pipeline) instead of PaddleOCR itself because Paddle's CPU SIMD code
-# segfaults under QEMU emulation on Apple Silicon. RapidOCR ships native
-# arm64 wheels so the container works on every dev machine.
+# EasyOCR runs the CRAFT detector + a CRNN recognizer through PyTorch. Native
+# arm64 wheels mean the same image works on Apple Silicon dev machines and
+# Linux/amd64 deploy targets.
 
 import base64
 import io
 import os
 
+import easyocr
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from PIL import Image
 from pydantic import BaseModel
-from rapidocr_onnxruntime import RapidOCR
 
 MODEL_VERSION = os.environ.get(
     "YTAI_OCR_MODEL_VERSION",
-    "rapidocr-onnxruntime-1.4.4/PP-OCRv4",
+    "easyocr-1.7.2/craft+crnn",
 )
 
-# Singleton; loading the ONNX models takes ~hundreds of ms.
-_engine = RapidOCR()
+# EasyOCR happily emits low-confidence guesses on blank margins, page noise,
+# and crinkled-paper shadows. Anything below this score gets dropped before
+# it can poison find_text_on_image ranking.
+MIN_CONFIDENCE = float(os.environ.get("YTAI_OCR_MIN_CONFIDENCE", "0.3"))
+
+# Singleton; loading the detector + recognizer weights from disk costs a
+# few seconds, so we pay it once at process start.
+_engine = easyocr.Reader(["en"], gpu=False)
 
 app = FastAPI()
 
@@ -79,17 +84,18 @@ def _run(bytes_in: bytes):
     w, h = rgb.size
     arr = np.array(rgb)
 
-    # RapidOCR returns (result, elapse_dict). result is either None (empty
-    # page) or a list of [polygon, text, confidence] tuples.
-    result, _elapse = _engine(arr)
-    items = result or []
+    # EasyOCR returns a list of (polygon, text, confidence) tuples. polygon
+    # is four [x, y] points clockwise from the top-left.
+    result = _engine.readtext(arr)
 
     lines = []
-    for entry in items:
+    for entry in result or []:
         if not entry or len(entry) < 3:
             continue
         poly, text, conf = entry[0], entry[1], entry[2]
         if not text:
+            continue
+        if conf < MIN_CONFIDENCE:
             continue
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]

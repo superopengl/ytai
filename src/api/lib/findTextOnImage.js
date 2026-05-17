@@ -24,14 +24,16 @@ import ensureImageOcr from './ensureImageOcr.js';
 const MIN_TOKEN_SCORE = 0.6; // ≥ 60% of query tokens must appear in the line
 const MAX_MATCHES = 5;
 // How long to wait for an in-flight OCR job before giving up and returning
-// 'pending'. PaddleOCR on CPU is ~1–3s per image; 4s covers the common case
+// 'pending'. EasyOCR on CPU is ~3–8s per image; 8s covers the common case
 // without freezing the chat if the sidecar is sick.
-const OCR_WAIT_MS = 4000;
+const OCR_WAIT_MS = 8000;
 
 export default async function findTextOnImage({ imageId, storageUrl, query, log }) {
   const trimmed = typeof query === 'string' ? query.trim() : '';
   if (!trimmed) return { status: 'no-match', matches: [], error: 'empty query' };
   if (!imageId) return { status: 'unavailable', matches: [], error: 'no image' };
+
+  log?.info({ imageId, query: trimmed }, 'running OCR (find_text_on_image)');
 
   let row = await readOcrRow(imageId);
 
@@ -54,23 +56,56 @@ export default async function findTextOnImage({ imageId, storageUrl, query, log 
     row = await readOcrRow(imageId);
   }
 
-  if (!row) return { status: 'unavailable', matches: [] };
-  if (row.status === 'pending') return { status: 'pending', matches: [] };
+  if (!row) {
+    log?.info({ imageId, query: trimmed, status: 'unavailable' }, 'OCR find complete');
+    return { status: 'unavailable', matches: [] };
+  }
+  if (row.status === 'pending') {
+    log?.info({ imageId, query: trimmed, status: 'pending' }, 'OCR find complete');
+    return { status: 'pending', matches: [] };
+  }
   if (row.status === 'failed') {
+    log?.info(
+      { imageId, query: trimmed, status: 'failed', error: row.error || null },
+      'OCR find complete'
+    );
     return { status: 'failed', matches: [], error: row.error || 'OCR failed' };
   }
 
   const lines = Array.isArray(row.lines) ? row.lines : [];
-  if (lines.length === 0) return { status: 'no-match', matches: [] };
+  if (lines.length === 0) {
+    log?.info(
+      { imageId, query: trimmed, status: 'no-match', reason: 'empty-ocr' },
+      'OCR find complete'
+    );
+    return { status: 'no-match', matches: [] };
+  }
 
   const matches = rankMatches(trimmed, lines);
-  if (matches.length === 0) return { status: 'no-match', matches: [] };
+  if (matches.length === 0) {
+    log?.info(
+      { imageId, query: trimmed, status: 'no-match', lineCount: lines.length },
+      'OCR find complete'
+    );
+    return { status: 'no-match', matches: [] };
+  }
 
-  return {
-    status: 'ready',
-    matches,
-    unionBbox: unionOf(matches.map((m) => m.bbox))
-  };
+  const unionBbox = unionOf(matches.map((m) => m.bbox));
+  log?.info(
+    {
+      imageId,
+      query: trimmed,
+      status: 'ready',
+      matchCount: matches.length,
+      topMatch: matches[0].text.slice(0, 120),
+      topScore: matches[0].score,
+      topBbox: matches[0].bbox,
+      unionBbox
+    },
+    'OCR find complete'
+  );
+
+  return { status: 'ready', matches, unionBbox };
 }
 
 async function readOcrRow(imageId) {
@@ -128,9 +163,12 @@ function rankMatches(query, lines) {
     } else {
       continue;
     }
+    // Convert OCR's native [x, y, w, h] to the canonical [x1, y1, x2, y2]
+    // corner shape used elsewhere in the system before returning.
+    const [bx, by, bw, bh] = line.bbox;
     scored.push({
       text: line.text,
-      bbox: line.bbox,
+      bbox: [bx, by, bx + bw, by + bh],
       confidence: typeof line.confidence === 'number' ? line.confidence : null,
       score
     });
@@ -140,6 +178,9 @@ function rankMatches(query, lines) {
   return scored.slice(0, MAX_MATCHES);
 }
 
+// Union of [x1, y1, x2, y2] corner bboxes, returned in the same corner
+// shape. Bboxes here are already in the canonical format (rankMatches
+// converted on the way out of OCR storage).
 function unionOf(bboxes) {
   if (!Array.isArray(bboxes) || bboxes.length === 0) return null;
   let minX = 1;
@@ -148,12 +189,12 @@ function unionOf(bboxes) {
   let maxY = 0;
   for (const b of bboxes) {
     if (!Array.isArray(b) || b.length < 4) continue;
-    const [x, y, w, h] = b;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x + w > maxX) maxX = x + w;
-    if (y + h > maxY) maxY = y + h;
+    const [x1, y1, x2, y2] = b;
+    if (x1 < minX) minX = x1;
+    if (y1 < minY) minY = y1;
+    if (x2 > maxX) maxX = x2;
+    if (y2 > maxY) maxY = y2;
   }
   if (maxX <= minX || maxY <= minY) return null;
-  return [minX, minY, maxX - minX, maxY - minY];
+  return [minX, minY, maxX, maxY];
 }

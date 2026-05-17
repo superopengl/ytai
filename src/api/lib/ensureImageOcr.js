@@ -11,7 +11,7 @@
 //
 // Tracking the in-flight promise in IN_FLIGHT lets the find_text_on_image
 // handler await it instead of returning empty when Brain asks faster than
-// PaddleOCR can answer.
+// EasyOCR can answer.
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -66,7 +66,7 @@ export default function ensureImageOcr({ imageId, storageUrl, log }) {
         return 'failed';
       }
 
-      log?.info({ imageId, baseUrl }, 'ensureImageOcr: running PaddleOCR');
+      log?.info({ imageId, baseUrl }, 'ensureImageOcr: running EasyOCR');
       const result = await runOcr({
         bytes,
         baseUrl,

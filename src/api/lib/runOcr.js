@@ -1,4 +1,4 @@
-// PaddleOCR client. Calls the OCR sidecar's /ocr-json with raw image bytes
+// EasyOCR client. Calls the OCR sidecar's /ocr-json with raw image bytes
 // and returns { modelVersion, width, height, lines }. Lines are sorted top
 // to bottom — the order Brain will most naturally walk a worksheet.
 //
@@ -30,7 +30,7 @@ export default async function runOcr({ bytes, baseUrl, apiKey, signal } = {}) {
   lines.sort((a, b) => (a?.bbox?.[1] ?? 0) - (b?.bbox?.[1] ?? 0));
 
   return {
-    modelVersion: typeof json.modelVersion === 'string' ? json.modelVersion : 'paddleocr',
+    modelVersion: typeof json.modelVersion === 'string' ? json.modelVersion : 'easyocr',
     width: Number(json.width) || 0,
     height: Number(json.height) || 0,
     lines: lines.map((l) => ({

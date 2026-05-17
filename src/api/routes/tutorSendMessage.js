@@ -15,6 +15,7 @@ import findTextOnImage from '../lib/findTextOnImage.js';
 import hashBuffer from '../lib/hashBuffer.js';
 import loadImageDataUrl from '../lib/loadImageDataUrl.js';
 import persistImage from '../lib/persistImage.js';
+import snapAnnotationBbox from '../lib/snapAnnotationBbox.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -140,7 +141,7 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
 
   const { baseUrl, apiKey, model } = visionConfig();
   log.info({ imageId: image.id, question, model }, 'running Eyes (lookup_on_image)');
-  const { answer, bbox, modelVersion } = await askVision({
+  const { answer, bbox, rawBbox, modelVersion } = await askVision({
     imageDataUrl,
     question,
     baseUrl,
@@ -162,6 +163,10 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
     {
       imageId: image.id,
       questionHash: questionHash.slice(0, 12),
+      // Native 0–1000 [x1,y1,x2,y2] straight from the VLM, before any
+      // padding/scale correction. Useful for spotting whether the model
+      // itself is drifting vs. our coord math.
+      rawBbox,
       bbox,
       answerPreview: answer.slice(0, 200)
     },
@@ -500,6 +505,41 @@ export default function tutorSendMessage(fastify) {
             }
             sse('lookup', { id: call.id, question, result: toolResult });
           } else if (call.name === 'draw_annotation') {
+            // Tighten the bbox using OCR before the UI sees it. Brain may
+            // have handed us a loose Eyes-style region; the snap shrinks
+            // it to hug the actual printed text. No-op when OCR isn't
+            // ready, no OCR lines overlap, or the supplied region is too
+            // large to be a single-phrase target. Bbox is corners
+            // [x1, y1, x2, y2] end-to-end now.
+            const supplied = [call.args?.x1, call.args?.y1, call.args?.x2, call.args?.y2];
+            if (activeImage && supplied.every((v) => typeof v === 'number')) {
+              try {
+                const snap = await snapAnnotationBbox({
+                  imageId: activeImage.id,
+                  bbox: supplied,
+                  log: request.log
+                });
+                if (snap.snapped) {
+                  call.args = {
+                    ...call.args,
+                    x1: snap.bbox[0],
+                    y1: snap.bbox[1],
+                    x2: snap.bbox[2],
+                    y2: snap.bbox[3]
+                  };
+                } else {
+                  request.log.info(
+                    { sessionId, reason: snap.reason },
+                    'draw_annotation: snap skipped — forwarding original bbox'
+                  );
+                }
+              } catch (err) {
+                request.log.warn(
+                  { err: err.message, sessionId },
+                  'draw_annotation: snap failed — forwarding original bbox'
+                );
+              }
+            }
             visibleToolCalls.push(call);
             sse('tool', call);
             toolResult = { ok: true };

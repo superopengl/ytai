@@ -1,7 +1,7 @@
-# OCR sidecar — RapidOCR (ONNX Runtime wrapper around PaddleOCR's PP-OCRv4
-# models). We swapped off PaddlePaddle because Paddle's CPU build segfaults
-# under QEMU emulation on Apple Silicon hosts; ONNX Runtime ships native
-# arm64 wheels so the same image works on Linux/amd64 and Darwin/arm64.
+# OCR sidecar — EasyOCR (CRAFT detector + CRNN recognizer) on CPU PyTorch.
+# We use the CPU-only torch wheels (see requirements.txt's --extra-index-url)
+# to keep the image small; CUDA wheels are multi-GB and would never be used
+# in the sidecar's CPU-only deploy targets anyway.
 
 FROM python:3.11-slim
 
@@ -9,8 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# RapidOCR pulls in the full opencv-python (libGL), plus libgomp for ORT.
-# Without libgl1 you get `ImportError: libGL.so.1` on first import.
+# EasyOCR pulls in opencv-python (libGL), libgomp1 for torch, and the usual
+# headless-X11 stubs for Pillow / OpenCV image decoding.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgl1 \
@@ -28,10 +28,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py .
 
-# Warm the model cache during build so the first request doesn't pay the
-# initial ONNX download. RapidOCR ships its models inside the package, so
-# this is a quick instantiation rather than a large network fetch.
-RUN python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()"
+# Pre-download CRAFT detector + CRNN recognizer weights (~80MB) at build
+# time so the first request after a fresh container start doesn't pay the
+# network fetch.
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False)"
 
 EXPOSE 8000
 

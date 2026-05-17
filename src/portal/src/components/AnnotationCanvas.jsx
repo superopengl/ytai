@@ -1,5 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Ellipse, Rect, Text } from 'react-konva';
+// Konva primitives we use for AI annotations:
+//   - Rect: highlight (default), rect outline
+//   - Ellipse: circle
+//   - Line: pen strokes
+//   - Text: optional label
 import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
 import { ClearOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
 
@@ -265,45 +270,65 @@ function fitToContainer(image, container) {
   return { width: image.width * ratio, height: image.height * ratio };
 }
 
+// Time it takes a highlight to sweep from its left edge to its right edge.
+// Tuned so a typical question-width highlight feels like a tutor drawing
+// the marker across rather than something instantly snapping into place.
+const HIGHLIGHT_SWEEP_MS = 900;
+// Easing on the sweep — ease-out reads as "slowing into place" rather than
+// the linear "machine-paced" look. Pure cubic ease-out keyframe.
+function easeOut(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
 function AiAnnotation({ annotation, fitWidth, fitHeight }) {
   const args = annotation?.args;
-  if (!args || typeof args.x !== 'number' || typeof args.y !== 'number') return null;
-  const x = clamp01(args.x) * fitWidth;
-  const y = clamp01(args.y) * fitHeight;
-  const w = clamp01(args.width ?? 0) * fitWidth;
-  const h = clamp01(args.height ?? 0) * fitHeight;
+  // Animation progress 0..1. Set unconditionally so hook order is stable;
+  // shapes that don't animate just leave it at 1.
+  const [progress, setProgress] = useState(0);
+
+  // Restart the draw-in animation whenever this annotation's id changes
+  // (the parent generates a fresh id per draw_annotation call). rAF gives
+  // a smooth 60fps sweep without pulling in a tween library.
+  useEffect(() => {
+    const id = annotation?.id;
+    if (!id) return undefined;
+    setProgress(0);
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / HIGHLIGHT_SWEEP_MS);
+      setProgress(easeOut(t));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [annotation?.id]);
+
+  // Bbox is delivered as normalized 0..1 corners [x1, y1, x2, y2] — the
+  // same format Eyes / find_text_on_image return. We compute pixel-space
+  // x/y/w/h here for Konva, which works in absolute pixels.
+  const coords = readCornerBbox(args);
+  if (!coords) return null;
+  const x = coords.x1 * fitWidth;
+  const y = coords.y1 * fitHeight;
+  const w = (coords.x2 - coords.x1) * fitWidth;
+  const h = (coords.y2 - coords.y1) * fitHeight;
   const color = isCssColor(args.color) ? args.color : DEFAULT_AI_COLOR;
   const label = typeof args.label === 'string' ? args.label.slice(0, 24) : '';
 
-  const labelNode = label ? (
-    <Text
-      text={label}
-      x={x}
-      y={Math.max(0, y - 18)}
-      fontSize={14}
-      fontStyle="bold"
-      fill={color}
-      shadowColor="rgba(255,255,255,0.9)"
-      shadowBlur={4}
-    />
-  ) : null;
-
-  if (args.shape === 'highlight') {
-    return (
-      <>
-        <Rect
-          x={x}
-          y={y}
-          width={Math.max(w, 4)}
-          height={Math.max(h, 4)}
-          fill={color}
-          opacity={0.25}
-          cornerRadius={4}
-        />
-        {labelNode}
-      </>
-    );
-  }
+  const labelNode =
+    label && progress >= 1 ? (
+      <Text
+        text={label}
+        x={x}
+        y={Math.max(0, y - 18)}
+        fontSize={14}
+        fontStyle="bold"
+        fill={color}
+        shadowColor="rgba(255,255,255,0.9)"
+        shadowBlur={4}
+      />
+    ) : null;
 
   if (args.shape === 'rect') {
     return (
@@ -323,14 +348,37 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
     );
   }
 
-  // default: circle (ellipse fits any aspect)
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const rx = Math.max(w / 2, 12);
-  const ry = Math.max(h / 2, 12);
+  if (args.shape === 'circle') {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const rx = Math.max(w / 2, 12);
+    const ry = Math.max(h / 2, 12);
+    return (
+      <>
+        <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />
+        {labelNode}
+      </>
+    );
+  }
+
+  // Default: highlight. A soft semi-transparent sweep that draws itself
+  // left-to-right like a tutor's marker. The visible width grows from 0 to
+  // the full bbox width via the rAF tick above; once `progress` reaches 1
+  // the rect is at its final size and the label fades in.
+  const fullWidth = Math.max(w, 4);
+  const fullHeight = Math.max(h, 4);
+  const sweptWidth = Math.max(fullWidth * progress, 0);
   return (
     <>
-      <Ellipse x={cx} y={cy} radiusX={rx} radiusY={ry} stroke={color} strokeWidth={4} />
+      <Rect
+        x={x}
+        y={y}
+        width={sweptWidth}
+        height={fullHeight}
+        fill={color}
+        opacity={0.25}
+        cornerRadius={4}
+      />
       {labelNode}
     </>
   );
@@ -341,6 +389,27 @@ function clamp01(n) {
   if (n < 0) return 0;
   if (n > 1) return 1;
   return n;
+}
+
+// Read a corner-format bbox from a draw_annotation args object. Returns
+// null if the corners are missing or describe a zero-area / inverted
+// region. The cmp swap is a safety net in case Brain or a tool returns
+// the corners out of order — we always render with x1 <= x2 and y1 <= y2.
+function readCornerBbox(args) {
+  if (!args) return null;
+  const x1raw = args.x1;
+  const y1raw = args.y1;
+  const x2raw = args.x2;
+  const y2raw = args.y2;
+  if ([x1raw, y1raw, x2raw, y2raw].some((v) => typeof v !== 'number' || Number.isNaN(v))) {
+    return null;
+  }
+  const x1 = clamp01(Math.min(x1raw, x2raw));
+  const y1 = clamp01(Math.min(y1raw, y2raw));
+  const x2 = clamp01(Math.max(x1raw, x2raw));
+  const y2 = clamp01(Math.max(y1raw, y2raw));
+  if (x2 <= x1 || y2 <= y1) return null;
+  return { x1, y1, x2, y2 };
 }
 
 function isCssColor(s) {
