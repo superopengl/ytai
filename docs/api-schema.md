@@ -59,7 +59,10 @@ Fetch the full transcript for a session, ordered by `created_at`.
 `toolCalls` contains only **user-visible** tool calls (e.g. `draw_annotation`) so the client can re-render past AI annotations on the canvas. Internal `lookup_on_image` calls are not surfaced here.
 
 ### `POST /api/tutor/:sessionId/message`
-Send a chat message. The server runs Brain (deepseek-v4-flash) in a tool-call loop: when Brain calls `lookup_on_image`, the server runs Qwen2.5-VL on the current image bytes and feeds the result back; when Brain calls `draw_annotation`, the server forwards it over SSE to the client.
+Send a chat message. The server runs Brain (deepseek-v4-flash) in a tool-call loop with three tools:
+- `find_text_on_image(query)` — string match against the EasyOCR result in `image_ocr.lines`; returns up to 5 matches + a union bbox, or a status of `no-match | pending | failed | unavailable`. Cheap and deterministic — no model call.
+- `lookup_on_image(question)` — runs Qwen2.5-VL on the current image bytes; cached in `vision_extraction` per `(image_id, sha256(question))`.
+- `draw_annotation(shape, x1, y1, x2, y2, color?)` — server snaps the bbox to the OCR line union (`snapAnnotationBbox`) and forwards it over SSE for Konva to render.
 
 **Body**:
 ```json
@@ -86,11 +89,21 @@ data: { "id": "<msgId>", "role": "user", "content": "...", "createdAt": "..." }
 event: token
 data: { "delta": "Sure! " }
 
+event: lookup-start
+data: { "id": "<toolCallId>", "question": "Where is question 3?" }
+# For find_text_on_image, `question` is rendered as `find: "<query>"`.
+
 event: lookup
-data: { "id": "<toolCallId>", "question": "Where is question 3?", "result": { "answer": "...", "bbox": [0.7, 0.05, 0.25, 0.1] } }
+data: { "id": "<toolCallId>", "question": "Where is question 3?",
+        "result": { "answer": "...", "bbox": [0.70, 0.05, 0.95, 0.15] } }
+# For find_text_on_image, `result` is { status, matches[], unionBbox? } —
+# see findTextOnImage.js. Bboxes are corner format [x1, y1, x2, y2] in 0..1.
 
 event: tool
-data: { "id": "<toolCallId>", "name": "draw_annotation", "args": { "shape": "rect", "x": 0.7, "y": 0.05, "width": 0.25, "height": 0.1 } }
+data: { "id": "<toolCallId>", "name": "draw_annotation",
+        "args": { "shape": "highlight", "x1": 0.70, "y1": 0.05, "x2": 0.95, "y2": 0.15 } }
+# The server has already snapped the bbox to the OCR line union by the
+# time the client sees this. shape ∈ { highlight (default), circle, rect }.
 
 event: error
 data: { "error": "..." }
@@ -99,8 +112,8 @@ event: done
 data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "interrupted": false, "toolCalls": [...], "createdAt": "..." }
 ```
 
-- `lookup` events are informational — the client can show a "looking at the page…" indicator but does not need to act on them.
-- `tool` events for `draw_annotation` should be rendered on the canvas.
+- `lookup-start` lets the client show a "looking at the page…" indicator without waiting for the result; `lookup` carries the actual answer.
+- `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right).
 - Closing the stream from the client triggers `AbortController`, which interrupts both Brain and any in-flight vision call. The partial assistant message is persisted with `interrupted=true`.
 
 ## WebSocket *(deferred)*

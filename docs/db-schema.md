@@ -60,6 +60,21 @@ Unique index on `(session_id, content_hash)`.
 ### `tutor_session.current_image_id`
 The most recently active `session_image` for the session. Text-only turns reuse the bytes referenced by this id; uploading a new image (different `content_hash`) advances it.
 
+### `image_ocr`
+Cheap, deterministic OCR pre-pass on the flattened image bytes. Populated asynchronously by the EasyOCR sidecar once per `image_id` (`ensureImageOcr.js`). Brain queries this through `find_text_on_image` to get tight bboxes for printed worksheet text without paying for a VLM call; Eyes (`vision_extraction`) remains the fallback for handwriting, math notation, and diagrams.
+
+| Column | Type | Notes |
+|---|---|---|
+| `image_id` | uuid | PK + FK → `session_image.id` (one OCR row per image) |
+| `status` | text | `pending` \| `ready` \| `failed` |
+| `lines` | jsonb | array of `{ text, confidence, bbox: [x, y, w, h] }`, normalized 0..1; null until `ready` |
+| `error` | text | failure message when `status='failed'`; null otherwise |
+| `model_version` | text | e.g. `easyocr-1.7.2/craft+crnn` |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+Insert uses `onConflictDoNothing` so the row is created exactly once per image. Find-text matches consume corner bboxes; `lines.bbox` stays in xywh on disk and gets translated to `[x1, y1, x2, y2]` on the way out.
+
 ### `vision_extraction`
 Cache layer for Brain's on-demand vision lookups. Each row is one `lookup_on_image(question)` call's result, keyed by `(image_id, sha256(question))` so repeated lookups during a session are free. The image_id changes whenever the photo bytes change (including when the student adds or erases strokes), which naturally invalidates the cache.
 
@@ -102,7 +117,8 @@ Chat transcript. Ordered by `created_at`. Only `user` and `assistant` messages a
 
 ```
 user ──< login_request
-user ──< tutor_session ──< session_image ──< vision_extraction
+user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
+                       │                   └──< vision_extraction
                        └──< session_message ──┐
                                               └─ optional FK → session_image
 ```

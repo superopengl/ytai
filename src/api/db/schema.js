@@ -60,11 +60,12 @@ export const sessionImage = ytai.table(
   })
 );
 
-// Cheap, deterministic OCR pass on the unannotated base image. Populated
-// asynchronously by the OCR sidecar (PaddleOCR PP-OCRv4) once per image_id.
-// Brain queries this through find_text_on_image to get tight bboxes for
-// printed worksheet text — Eyes (vision_extraction) stays the fallback for
-// handwriting, math notation, and diagrams.
+// Cheap, deterministic OCR pass on the flattened image bytes. Populated
+// asynchronously by the OCR sidecar (EasyOCR — CRAFT detector + CRNN
+// recognizer, see devops/ocr/) once per image_id. Brain queries this
+// through find_text_on_image to get tight bboxes for printed worksheet
+// text — Eyes (vision_extraction) stays the fallback for handwriting,
+// math notation, and diagrams.
 export const imageOcr = ytai.table('image_ocr', {
   imageId: uuid('image_id')
     .primaryKey()

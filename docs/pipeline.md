@@ -1,8 +1,13 @@
-# Eyes/Brain Pipeline
+# OCR / Eyes / Brain Pipeline
 
-YouTutorAI runs a two-model AI pipeline: **Qwen2.5-VL ("Eyes")** for vision and **deepseek-v4-flash ("Brain")** for chat, both accessed through OpenRouter. Brain drives every turn; it calls Eyes as a tool whenever it needs to see the page.
+YouTutorAI runs a three-stage pipeline:
+- **EasyOCR** ("OCR") — local Docker sidecar, reads printed text on upload, populates `image_ocr`.
+- **Qwen2.5-VL** ("Eyes") — semantic vision through OpenRouter, called on demand.
+- **deepseek-v4-flash** ("Brain") — chat through OpenRouter, runs every turn and picks which of the above to call.
 
-We do **not** run a structured upfront extraction. VLMs are good at answering questions about an image but unreliable at producing stable schemas with coordinates — so instead of trying to read the whole page into JSON, Brain just asks one focused question at a time when it needs to know something.
+Brain prefers OCR (cheap, deterministic, tight bboxes) for any printed text it already knows the wording of, and falls back to Eyes for handwriting, math notation, diagrams, or anything semantic.
+
+We do **not** run a structured upfront *vision* extraction. VLMs are good at answering questions about an image but unreliable at producing stable schemas with coordinates — so instead of trying to read the whole page into JSON, Brain just asks one focused question at a time when it needs to know something. OCR is fine to run eagerly because it's cheap and deterministic.
 
 ## Flow
 
@@ -28,9 +33,18 @@ We do **not** run a structured upfront extraction. VLMs are good at answering qu
           │  dedup by sha256(bytes); store on disk; remember
           │  current_image_id on the session.
           ▼
-   ┌──────────────┐
-   │ session_image│   No eager vision call. The image just sits here
-   └──────────────┘   until Brain asks for it.
+   ┌──────────────┐         ──►  ┌───────────────────────────┐
+   │ session_image│              │  ensureImageOcr (async)   │
+   └──────────────┘              │  ─────────────────────    │
+                                 │  POST to EasyOCR sidecar  │  ◄── local Docker
+                                 │  (port 9531)              │      sidecar
+                                 │                           │
+                                 │  Result lands in          │
+                                 │  image_ocr.lines          │
+                                 │  (status: pending→ready)  │
+                                 └───────────────────────────┘
+
+   No eager *vision* call — Eyes only runs when Brain asks.
 
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -43,8 +57,9 @@ We do **not** run a structured upfront extraction. VLMs are good at answering qu
    ┌──────────────────────────────────┐
    │  Assemble:                       │
    │   • persona system prompt        │
-   │   • "image attached — call       │
-   │      lookup_on_image to read it" │
+   │   • "image attached — try        │
+   │      find_text_on_image first,   │
+   │      escalate to lookup_on_image"│
    │   • prior transcript             │
    │   • new user message             │
    └────────────────┬─────────────────┘
@@ -55,50 +70,58 @@ We do **not** run a structured upfront extraction. VLMs are good at answering qu
             │   (chat, tools)   │
             └────────┬──────────┘
                      │
-        ┌────────────┴────────────┐
-        │                         │
-        ▼                         ▼
-   plain tokens         tool_call: lookup_on_image
-        │                         │
-        ▼                         ▼
-   ┌──────────┐            ┌────────────────────────┐
-   │  SSE     │            │ server runs Qwen2.5-VL │
-   │ stream   │            │   on the CURRENT image │  ◄── "Eyes"
-   └──────────┘            │   bytes + the question │      on demand
-                           └─────────┬──────────────┘
-                                     │
-                                     ▼
-                          ┌────────────────────┐
-                          │ vision_extraction  │   ◄── cache by
-                          │  (image_id,        │       (image, q)
-                          │   sha256(question))│
-                          └─────────┬──────────┘
-                                    │
-                                    ▼
-                            ┌──────────────┐
-                            │ tool result  │
-                            │ feeds back   │
-                            │ into Brain   │
-                            └──────┬───────┘
-                                   │
-                                   ▼  (loop until Brain stops calling tools)
-                            ┌──────────────┐
-                            │ Brain emits  │
-                            │ final tokens │
-                            └──────────────┘
+   ┌─────────────────┼─────────────────┐
+   │                 │                 │
+   ▼                 ▼                 ▼
+plain tokens   tool: find_text   tool: lookup_on_image
+   │                 │                 │
+   ▼                 ▼                 ▼
+┌──────┐    ┌──────────────────┐  ┌────────────────────────┐
+│ SSE  │    │ string match vs. │  │ server runs Qwen2.5-VL │
+│ out  │    │ image_ocr.lines  │  │ on the CURRENT image   │  ◄── "Eyes"
+└──────┘    │ (no model call)  │  │ bytes + the question   │      on demand
+            │                  │  └─────────┬──────────────┘
+            │ returns up to 5  │            │
+            │ matches + union  │            ▼
+            │ bbox, OR status= │  ┌────────────────────┐
+            │ no-match | pend- │  │ vision_extraction  │   ◄── cache by
+            │ ing | failed |   │  │  (image_id,        │       (image, q)
+            │ unavailable      │  │   sha256(question))│
+            └────────┬─────────┘  └─────────┬──────────┘
+                     │                      │
+                     └──────────┬───────────┘
+                                ▼
+                        ┌──────────────┐
+                        │ tool result  │
+                        │ feeds back   │
+                        │ into Brain   │
+                        └──────┬───────┘
+                               │
+                               ▼  (loop until Brain stops calling tools)
+                        ┌──────────────┐
+                        │ Brain emits  │
+                        │ final tokens │
+                        └──────────────┘
 
-  Brain may also call draw_annotation with a normalized 0..1 bbox
-  (often one lookup_on_image just handed back) — the server forwards
-  that to the frontend over SSE so Konva draws the shape on top.
+  Brain may also call draw_annotation(shape, x1, y1, x2, y2, color?)
+  with a corner bbox from a prior lookup. Before forwarding, the
+  server calls snapAnnotationBbox which tightens the region to the
+  union of image_ocr lines that fall inside it (when OCR is ready
+  and the supplied region is small enough to be a single phrase).
+  The snapped bbox is sent over SSE and Konva draws the shape only
+  — no text label.
 ```
 
 ## Key properties
 
-- **Vision runs on demand**, not eagerly. Brain decides what it needs to know and asks one focused question per call. Cost scales with what the student actually asks about, not with what's on the page.
-- **`vision_extraction` is a question-answer cache**, keyed by `(image_id, sha256(question))`. The same lookup twice in a session is free; annotations changing produces a new `image_id`, which correctly invalidates the cache.
+- **OCR runs eagerly, vision runs on demand.** EasyOCR is cheap and deterministic so paying it once per image is fine; Eyes is expensive so it only fires when Brain has a focused question OCR couldn't answer.
+- **`image_ocr` is a per-image cache**, one row per `image_id` with a `pending → ready/failed` lifecycle. `vision_extraction` is a per-question cache keyed by `(image_id, sha256(question))`. Both are naturally invalidated when annotations change (new bytes → new `image_id`).
+- **`find_text_on_image` does no model call.** It's pure string matching against `image_ocr.lines` — substring first, then a token-overlap score with a 0.6 floor. Statuses `no-match | pending | failed | unavailable` are signals for Brain to escalate to Eyes.
+- **`draw_annotation` snaps to OCR.** Before the bbox hits the wire, `snapAnnotationBbox` tightens it to the union of OCR lines that sit inside the supplied region. No-op when OCR isn't ready, no lines overlap, or the region is too large (≥35% of the page) to be a single-phrase target.
 - **Strokes are bytes, not bboxes.** The frontend flattens the Konva stage (photo + freehand layer) into a single PNG before sending. Eyes sees the student's circles and underlines directly; the server never has to reason about stroke geometry.
-- **deepseek-v4-flash only ever sees text** (system prompt + transcript + tool results). The image bytes go to Eyes; what Brain receives is the natural-language answer Eyes produced.
+- **deepseek-v4-flash only ever sees text** (system prompt + transcript + tool results). The image bytes go to OCR and Eyes; what Brain receives is the OCR match list and/or the natural-language answer Eyes produced.
 - **SSE + AbortController** is the single channel where streaming and "Stop" both live. The client closing mid-turn cancels both the Brain stream and any in-flight Eyes call.
+- **OCR is optional.** Leaving `YTAI_OCR_BASE_URL` unset disables OCR entirely: `find_text_on_image` returns `unavailable`, the bbox snap is a no-op, and Brain falls through to Eyes for every question.
 
 ## Why on-demand instead of eager extraction
 
