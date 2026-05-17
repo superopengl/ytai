@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, Tooltip, Typography } from 'antd';
 import {
   AudioMutedOutlined,
+  AudioOutlined,
   LoadingOutlined,
   SendOutlined,
   SoundOutlined,
@@ -10,6 +11,7 @@ import {
 import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
+import useSpeechRecognition from '../hooks/useSpeechRecognition.js';
 import MarkdownMessage from './MarkdownMessage.jsx';
 
 export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations, onCastImage }) {
@@ -24,6 +26,11 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const voice = useTutorVoice(sessionId);
+  const speech = useSpeechRecognition();
+  // What was already in the composer when the mic was switched on. Live
+  // transcript is appended to this so the student can dictate on top of
+  // text they'd already started typing without losing it.
+  const dictationBaseRef = useRef('');
   // Hash of the last image dataUrl successfully sent to the server. Lets us
   // skip resending bytes when neither the photo nor the user's annotations
   // have changed since the previous turn — the server keeps the cached
@@ -92,9 +99,36 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     lastSentImageHashRef.current = null;
   }, [imageUrl]);
 
+  // Mirror the live dictation transcript into the textarea while listening.
+  // Once the mic stops we leave the input alone so the student can edit
+  // before sending.
+  useEffect(() => {
+    if (!speech.listening) return;
+    const base = dictationBaseRef.current;
+    const next = speech.transcript ? (base ? `${base} ${speech.transcript}` : speech.transcript) : base;
+    setInput(next);
+  }, [speech.transcript, speech.listening]);
+
+  const toggleDictation = useCallback(() => {
+    if (!speech.supported || busy) return;
+    if (speech.listening) {
+      speech.stop();
+      return;
+    }
+    dictationBaseRef.current = input.replace(/\s+$/, '');
+    speech.start();
+  }, [busy, input, speech]);
+
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || busy || !sessionId) return;
+
+    // If the student hit Send mid-dictation, end the recognition session
+    // before clearing the input so the trailing transcript doesn't get
+    // written back on top of the empty box.
+    if (speech.listening) speech.stop();
+    speech.reset();
+    dictationBaseRef.current = '';
 
     setInput('');
     setError(null);
@@ -266,12 +300,13 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       setBusy(false);
       setAwaitingTokens(false);
     }
-  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations, voice]);
+  }, [busy, input, sessionId, imageUrl, getImage, onAiAnnotations, voice, speech]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     voice.stop();
-  }, [voice]);
+    if (speech.listening) speech.stop();
+  }, [voice, speech]);
 
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -362,17 +397,59 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         />
       )}
 
+      {speech.error && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          message={dictationErrorMessage(speech.error)}
+          onClose={speech.reset}
+          style={{ margin: '0 12px 8px' }}
+        />
+      )}
+
       <div style={composerStyle}>
+        {speech.supported && (
+          <Tooltip
+            title={
+              speech.listening
+                ? 'Stop dictation'
+                : busy
+                  ? 'Wait for the tutor to finish before dictating.'
+                  : 'Dictate your question'
+            }
+          >
+            <Button
+              icon={<AudioOutlined />}
+              onClick={toggleDictation}
+              disabled={busy && !speech.listening}
+              danger={speech.listening}
+              type={speech.listening ? 'primary' : 'default'}
+              aria-pressed={speech.listening}
+              aria-label={speech.listening ? 'Stop dictation' : 'Start dictation'}
+            />
+          </Tooltip>
+        )}        
         <Input.TextArea
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={onKeyDown}
           autoSize={{ minRows: 1, maxRows: 5 }}
           placeholder={
-            busy ? 'Tutor is responding…' : 'Ask about a question, or circle something on the photo first…'
+            speech.listening
+              ? 'Listening… speak now, then click the mic to stop.'
+              : busy
+                ? 'Tutor is responding…'
+                : 'Ask about a question, or circle something on the photo first…'
           }
+          readOnly={speech.listening}
           maxLength={2000}
-          style={{ flex: 1, borderRadius: 12 }}
+          style={{
+            flex: 1,
+            borderRadius: 12,
+            borderColor: speech.listening ? '#ff4d4f' : undefined,
+            boxShadow: speech.listening ? '0 0 0 2px rgba(255, 77, 79, 0.15)' : undefined
+          }}
         />
         {busy || voice.speaking ? (
           <Button danger icon={<StopOutlined />} onClick={stop}>
@@ -534,6 +611,19 @@ function SpeakingIcon() {
       `}</style>
     </span>
   );
+}
+
+function dictationErrorMessage(code) {
+  if (code === 'not-allowed' || code === 'service-not-allowed') {
+    return 'Microphone access was blocked. Allow it in your browser settings to dictate.';
+  }
+  if (code === 'audio-capture') {
+    return 'No microphone was detected.';
+  }
+  if (code === 'network') {
+    return 'Voice input needs an internet connection.';
+  }
+  return 'Voice input is unavailable right now.';
 }
 
 function EmptyHint() {

@@ -20,6 +20,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 ) {
   const containerRef = useRef(null);
   const stageRef = useRef(null);
+  const aiLayerRef = useRef(null);
   const drawing = useRef(false);
   const [image, setImage] = useState(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -36,16 +37,24 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
         const fit = fitToContainer(image, containerSize);
         if (fit.width === 0) return null;
         const pixelRatio = image.width / fit.width;
-        return {
-          // Strokes are drawn on top of the image inside the Stage, so
-          // toDataURL captures them baked into the bytes. Eyes sees the
-          // student's circles and underlines directly when Brain calls
-          // lookup_on_image — no separate stroke bbox needed.
-          dataUrl: stage.toDataURL({ mimeType: 'image/png', pixelRatio }),
-          width: image.width,
-          height: image.height,
-          hasAnnotations: lines.length > 0
-        };
+        // Hide the AI annotations layer during export so the assistant's own
+        // marks don't bake into the bytes — otherwise the image hash flips
+        // every time Brain draws, the client re-uploads, and Eyes ends up
+        // looking at a page covered in its own highlights on the next turn.
+        // Student strokes are still captured (they're a different layer).
+        const aiLayer = aiLayerRef.current;
+        const aiWasVisible = aiLayer?.visible() ?? true;
+        if (aiLayer) aiLayer.visible(false);
+        try {
+          return {
+            dataUrl: stage.toDataURL({ mimeType: 'image/png', pixelRatio }),
+            width: image.width,
+            height: image.height,
+            hasAnnotations: lines.length > 0
+          };
+        } finally {
+          if (aiLayer) aiLayer.visible(aiWasVisible);
+        }
       }
     }),
     [image, containerSize, lines]
@@ -208,7 +217,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
             <Layer listening={false}>
               <KonvaImage image={image} width={fit.width} height={fit.height} />
             </Layer>
-            <Layer listening={false}>
+            <Layer listening={false} ref={aiLayerRef}>
               {aiAnnotations.map((anno) => (
                 <AiAnnotation
                   key={anno.id}
