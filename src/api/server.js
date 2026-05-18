@@ -3,6 +3,7 @@ import healthcheck from './routes/healthcheck.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
 import tutorGetImage from './routes/tutorGetImage.js';
 import tutorGetMessages from './routes/tutorGetMessages.js';
+import tutorListSessions from './routes/tutorListSessions.js';
 import tutorSendMessage from './routes/tutorSendMessage.js';
 import tutorSpeak from './routes/tutorSpeak.js';
 
@@ -13,6 +14,7 @@ export default async function server() {
   tutorCreateSession(app);
   tutorGetImage(app);
   tutorGetMessages(app);
+  tutorListSessions(app);
   tutorSendMessage(app);
   tutorSpeak(app);
 

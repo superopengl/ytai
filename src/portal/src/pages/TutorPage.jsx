@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Splitter, Typography } from 'antd';
+import { Layout, Splitter, Typography } from 'antd';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import AnnotationCanvas from '../components/AnnotationCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 
 export default function TutorPage() {
   const { sessionId: routeSessionId } = useParams();
@@ -11,10 +12,31 @@ export default function TutorPage() {
   const [imageUrl, setImageUrl] = useState(null);
   const [sessionId, setSessionId] = useState(routeSessionId ?? null);
   const [aiAnnotations, setAiAnnotations] = useState([]);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
   const clearAiAnnotations = useCallback(() => setAiAnnotations([]), []);
+
+  // Switching sessions wipes the canvas: each session has its own image
+  // history and the previous photo doesn't belong on a different session's
+  // page. We don't restore the prior session's current_image yet — the
+  // canvas just starts blank.
+  useEffect(() => {
+    setImageUrl((prev) => {
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setAiAnnotations([]);
+  }, [sessionId]);
+
+  const onSelectSession = useCallback(
+    (id) => {
+      if (!id || id === sessionId) return;
+      navigate(`/tutor/${id}`);
+    },
+    [navigate, sessionId]
+  );
 
   useEffect(() => {
     if (routeSessionId) {
@@ -82,42 +104,63 @@ export default function TutorPage() {
           YouTutorAI
         </Typography.Title>
       </header>
-      <Splitter style={{ flex: 1, minHeight: 0, background: '#fff' }}>
-        <Splitter.Panel defaultSize="58%" min="30%" max="80%">
-          <div
-            style={{
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 16,
-              boxSizing: 'border-box'
-            }}
-          >
-            {imageUrl ? (
-              <AnnotationCanvas
-                ref={canvasRef}
-                imageUrl={imageUrl}
-                onReplace={onReplace}
-                aiAnnotations={aiAnnotations}
-                onClearAiAnnotations={clearAiAnnotations}
-              />
-            ) : (
-              <PhotoCapture onSelectFile={onSelectFile} />
-            )}
-          </div>
-        </Splitter.Panel>
-        <Splitter.Panel>
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <ChatPanel
-              sessionId={sessionId}
-              imageUrl={imageUrl}
-              getImage={getCanvasImage}
-              onAiAnnotations={setAiAnnotations}
-              onCastImage={onCastImage}
-            />
-          </div>
-        </Splitter.Panel>
-      </Splitter>
+      <Layout style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+        <Layout.Sider
+          collapsible
+          collapsed={siderCollapsed}
+          onCollapse={setSiderCollapsed}
+          collapsedWidth={48}
+          width={260}
+          theme="light"
+          trigger={null}
+          style={{ background: '#fff', borderRight: '1px solid #ececf3' }}
+        >
+          <TutorSessionsSider
+            currentSessionId={sessionId}
+            collapsed={siderCollapsed}
+            onToggleCollapsed={() => setSiderCollapsed((c) => !c)}
+            onSelect={onSelectSession}
+          />
+        </Layout.Sider>
+        <Layout.Content style={{ background: '#fff', minWidth: 0 }}>
+          <Splitter style={{ height: '100%', minHeight: 0 }}>
+            <Splitter.Panel defaultSize="58%" min="30%" max="80%">
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 16,
+                  boxSizing: 'border-box'
+                }}
+              >
+                {imageUrl ? (
+                  <AnnotationCanvas
+                    ref={canvasRef}
+                    imageUrl={imageUrl}
+                    onReplace={onReplace}
+                    aiAnnotations={aiAnnotations}
+                    onClearAiAnnotations={clearAiAnnotations}
+                  />
+                ) : (
+                  <PhotoCapture onSelectFile={onSelectFile} />
+                )}
+              </div>
+            </Splitter.Panel>
+            <Splitter.Panel>
+              <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <ChatPanel
+                  sessionId={sessionId}
+                  imageUrl={imageUrl}
+                  getImage={getCanvasImage}
+                  onAiAnnotations={setAiAnnotations}
+                  onCastImage={onCastImage}
+                />
+              </div>
+            </Splitter.Panel>
+          </Splitter>
+        </Layout.Content>
+      </Layout>
     </div>
   );
 }
