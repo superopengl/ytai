@@ -140,3 +140,24 @@ export const sessionMessage = ytai.table('session_message', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
+
+// Post-session classification report for the parent/teacher view. One row
+// per session, lazy-generated on first GET. `questions` holds an array of
+// { question, studentAnswer, correctAnswer, correct, mistakeType,
+// nswOutcomeCode, nswOutcomeText, stage, subject } objects keyed against
+// src/api/data/nswSyllabus.json.
+export const sessionReport = ytai.table('session_report', {
+  sessionId: uuid('session_id')
+    .primaryKey()
+    .references(() => tutorSession.id),
+  // pending | ready | failed
+  status: text('status').notNull().default('pending'),
+  summary: text('summary'),
+  questions: jsonb('questions'),
+  modelVersion: text('model_version'),
+  error: text('error'),
+  promptTokens: integer('prompt_tokens'),
+  completionTokens: integer('completion_tokens'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});

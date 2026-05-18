@@ -22,7 +22,43 @@ import tutorPrompt from '../lib/tutorPrompt.js';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 // Safety cap: Brain can chain lookups, but if it keeps calling tools without
 // emitting content something is wrong — bail before we melt the OpenRouter bill.
-const MAX_TOOL_ROUNDS = 6;
+// 10 is comfortable for the "list page → find text → draw → read q → grade
+// student answer → respond" chain; 6 was too tight when both subjects
+// (the question and the student's answer) needed their own lookup.
+const MAX_TOOL_ROUNDS = 10;
+
+// Catches first-person claims of having drawn on the page. Used to detect
+// the hallucination case where Brain narrates a highlight it never actually
+// produced via draw_annotation. Intentionally first-person ("I've") only —
+// "the student highlighted" or "the page has a circle around" are legitimate
+// descriptions of someone else's marks.
+const ANNOTATION_NARRATION_RE =
+  /\bI(?:'ve| have| 've)?\s+(?:just|now|already)?\s*(?:put\s+(?:a|an)\s+\w+\s+(?:highlight|circle|box|mark)|highlighted|circled|underlined|marked|drawn?\s+(?:a\s+)?(?:circle|box|highlight))\b/i;
+
+function looksLikeAnnotationAnnouncement(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  return ANNOTATION_NARRATION_RE.test(text);
+}
+
+// Strip phantom-highlight sentences from a past assistant message before
+// feeding it back to Brain. If an earlier turn narrated a highlight
+// without actually calling draw_annotation, leaving that sentence in the
+// model's conversation history teaches it the lie is a valid pattern —
+// next turn it copies the form. Returns the cleaned content (which may
+// be empty if the entire message was the false claim).
+function sanitizeAssistantContentForBrain(row) {
+  const content = typeof row.content === 'string' ? row.content : '';
+  if (!content) return content;
+  const hadDrawAnnotation =
+    Array.isArray(row.toolCalls) && row.toolCalls.some((c) => c?.name === 'draw_annotation');
+  if (hadDrawAnnotation) return content;
+  if (!ANNOTATION_NARRATION_RE.test(content)) return content;
+  return content
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((s) => !ANNOTATION_NARRATION_RE.test(s))
+    .join(' ')
+    .trim();
+}
 
 function brainConfig() {
   return {
@@ -327,8 +363,18 @@ export default function tutorSendMessage(fastify) {
         guidanceLevel: session.guidanceLevel
       }),
       // Skip empty-content rows: those are image-attachment markers for the UI,
-      // not anything Brain needs in its conversational context.
-      ...history.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content })),
+      // not anything Brain needs in its conversational context. For prior
+      // assistant turns, strip any phantom-highlight narration that wasn't
+      // backed by a real draw_annotation call — otherwise the lie compounds
+      // across turns as Brain treats its own past hallucinations as a template.
+      ...history
+        .map((m) => {
+          if (m.role === 'assistant') {
+            return { role: m.role, content: sanitizeAssistantContentForBrain(m) };
+          }
+          return { role: m.role, content: m.content };
+        })
+        .filter((m) => m.content),
       { role: 'user', content }
     ];
 
@@ -379,7 +425,12 @@ export default function tutorSendMessage(fastify) {
     let completionTokens = null;
     let interrupted = false;
     let fatalError = null;
-    const visibleToolCalls = []; // draw_annotation calls surfaced to the UI
+    // Every tool call this turn, with the result Brain saw. Persisted to
+    // session_message.tool_calls so a cap-hit can be debugged from the DB
+    // (the lookup chain is otherwise only in the live pino-pretty log).
+    // The UI ignores any entry whose name isn't 'draw_annotation' — see
+    // ChatPanel.jsx history restore.
+    const allToolCalls = [];
 
     let hitRoundCap = false;
     try {
@@ -537,73 +588,110 @@ export default function tutorSendMessage(fastify) {
             }
             sse('lookup', { id: call.id, question, result: toolResult });
           } else if (call.name === 'draw_annotation') {
-            // Normalize the color: Brain emits a palette name, the canvas
-            // expects a hex. Persist both — name for future used-color
-            // tracking, hex for rendering. If Brain skipped the field or
-            // gave us a duplicate / unknown name, fall back to the first
-            // still-unused palette entry so the mark never collides with
-            // an earlier one.
-            const requestedName =
-              typeof call.args?.color === 'string' ? call.args.color.toLowerCase() : null;
-            let colorName = requestedName && resolveAnnotationColor(requestedName)
-              ? requestedName
-              : null;
-            if (!colorName || usedColorsForTurn.has(colorName)) {
-              colorName =
-                ANNOTATION_COLOR_NAMES.find((c) => !usedColorsForTurn.has(c)) ||
-                colorName ||
-                ANNOTATION_COLOR_NAMES[0];
-            }
-            usedColorsForTurn.add(colorName);
-            call.args = {
-              ...call.args,
-              color: resolveAnnotationColor(colorName),
-              colorName,
-              label: typeof call.args?.label === 'string' ? call.args.label.slice(0, 60) : ''
-            };
+            // Reject up front when Brain omitted or mangled the bbox.
+            // Without this, the canvas silently drops the annotation
+            // (readCornerBbox returns null) and Brain has no feedback to
+            // retry — it just burns rounds. The error string nudges Brain
+            // toward the specific corner(s) it forgot.
+            const cornerKeys = ['x1', 'y1', 'x2', 'y2'];
+            const missingCorners = cornerKeys.filter(
+              (k) => typeof call.args?.[k] !== 'number' || Number.isNaN(call.args[k])
+            );
+            if (missingCorners.length > 0) {
+              toolResult = {
+                error:
+                  `draw_annotation requires all four corners (${cornerKeys.join(', ')}). ` +
+                  `Missing or non-number: ${missingCorners.join(', ')}. ` +
+                  `Resend the full call with every corner — get the bbox from your last lookup result.`
+              };
+              request.log.warn(
+                { sessionId, missing: missingCorners, args: call.args },
+                'draw_annotation: missing bbox corners — asking Brain to retry'
+              );
+            } else if (call.args.x2 <= call.args.x1 || call.args.y2 <= call.args.y1) {
+              toolResult = {
+                error:
+                  `draw_annotation needs x2 > x1 and y2 > y1. Got x1=${call.args.x1}, ` +
+                  `y1=${call.args.y1}, x2=${call.args.x2}, y2=${call.args.y2}.`
+              };
+              request.log.warn(
+                { sessionId, args: call.args },
+                'draw_annotation: zero-area or inverted bbox — asking Brain to retry'
+              );
+            } else {
+              // Normalize the color: Brain emits a palette name, the canvas
+              // expects a hex. Persist both — name for future used-color
+              // tracking, hex for rendering. If Brain skipped the field or
+              // gave us a duplicate / unknown name, fall back to the first
+              // still-unused palette entry so the mark never collides with
+              // an earlier one.
+              const requestedName =
+                typeof call.args?.color === 'string' ? call.args.color.toLowerCase() : null;
+              let colorName = requestedName && resolveAnnotationColor(requestedName)
+                ? requestedName
+                : null;
+              if (!colorName || usedColorsForTurn.has(colorName)) {
+                colorName =
+                  ANNOTATION_COLOR_NAMES.find((c) => !usedColorsForTurn.has(c)) ||
+                  colorName ||
+                  ANNOTATION_COLOR_NAMES[0];
+              }
+              usedColorsForTurn.add(colorName);
+              call.args = {
+                ...call.args,
+                color: resolveAnnotationColor(colorName),
+                colorName,
+                label: typeof call.args?.label === 'string' ? call.args.label.slice(0, 60) : ''
+              };
 
-            // Tighten the bbox using OCR before the UI sees it. Brain may
-            // have handed us a loose Eyes-style region; the snap shrinks
-            // it to hug the actual printed text. No-op when OCR isn't
-            // ready, no OCR lines overlap, or the supplied region is too
-            // large to be a single-phrase target. Bbox is corners
-            // [x1, y1, x2, y2] end-to-end now.
-            const supplied = [call.args?.x1, call.args?.y1, call.args?.x2, call.args?.y2];
-            if (activeImage && supplied.every((v) => typeof v === 'number')) {
-              try {
-                const snap = await snapAnnotationBbox({
-                  imageId: activeImage.id,
-                  bbox: supplied,
-                  log: request.log
-                });
-                if (snap.snapped) {
-                  call.args = {
-                    ...call.args,
-                    x1: snap.bbox[0],
-                    y1: snap.bbox[1],
-                    x2: snap.bbox[2],
-                    y2: snap.bbox[3]
-                  };
-                } else {
-                  request.log.info(
-                    { sessionId, reason: snap.reason },
-                    'draw_annotation: snap skipped — forwarding original bbox'
+              // Tighten the bbox using OCR before the UI sees it. Brain may
+              // have handed us a loose Eyes-style region; the snap shrinks
+              // it to hug the actual printed text. No-op when OCR isn't
+              // ready, no OCR lines overlap, or the supplied region is too
+              // large to be a single-phrase target.
+              const supplied = [call.args.x1, call.args.y1, call.args.x2, call.args.y2];
+              if (activeImage) {
+                try {
+                  const snap = await snapAnnotationBbox({
+                    imageId: activeImage.id,
+                    bbox: supplied,
+                    log: request.log
+                  });
+                  if (snap.snapped) {
+                    call.args = {
+                      ...call.args,
+                      x1: snap.bbox[0],
+                      y1: snap.bbox[1],
+                      x2: snap.bbox[2],
+                      y2: snap.bbox[3]
+                    };
+                  } else {
+                    request.log.info(
+                      { sessionId, reason: snap.reason },
+                      'draw_annotation: snap skipped — forwarding original bbox'
+                    );
+                  }
+                } catch (err) {
+                  request.log.warn(
+                    { err: err.message, sessionId },
+                    'draw_annotation: snap failed — forwarding original bbox'
                   );
                 }
-              } catch (err) {
-                request.log.warn(
-                  { err: err.message, sessionId },
-                  'draw_annotation: snap failed — forwarding original bbox'
-                );
               }
+              sse('tool', call);
+              toolResult = { ok: true };
             }
-            visibleToolCalls.push(call);
-            sse('tool', call);
-            toolResult = { ok: true };
           } else {
             request.log.warn({ sessionId, name: call.name }, 'Brain requested unknown tool — ignoring');
             toolResult = { error: `Unknown tool: ${call.name}` };
           }
+
+          allToolCalls.push({
+            id: call.id,
+            name: call.name,
+            args: call.args,
+            result: toolResult
+          });
 
           modelMessages.push({
             role: 'tool',
@@ -622,6 +710,19 @@ export default function tutorSendMessage(fastify) {
         request.log.warn(
           { sessionId, maxRounds: MAX_TOOL_ROUNDS },
           'Brain hit the tool-call round cap without emitting a final answer — aborting'
+        );
+      }
+
+      // Hallucination check: Brain sometimes writes "I've highlighted X in
+      // yellow…" without actually calling draw_annotation. The persona
+      // forbids this but DeepSeek occasionally pattern-matches off prior
+      // assistant turns. Log it so we can measure how often, and consider
+      // a retry loop if it stays frequent.
+      const drewSomething = allToolCalls.some((c) => c.name === 'draw_annotation');
+      if (!drewSomething && looksLikeAnnotationAnnouncement(assistantContent)) {
+        request.log.warn(
+          { sessionId, contentPreview: assistantContent.slice(0, 200) },
+          'Brain narrated a highlight without calling draw_annotation — annotation hallucinated'
         );
       }
     } catch (err) {
@@ -645,7 +746,7 @@ export default function tutorSendMessage(fastify) {
           promptTokens,
           completionTokens,
           interrupted,
-          toolCalls: visibleToolCalls.length > 0 ? visibleToolCalls : null
+          toolCalls: allToolCalls.length > 0 ? allToolCalls : null
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
@@ -663,7 +764,9 @@ export default function tutorSendMessage(fastify) {
           promptTokens,
           completionTokens,
           interrupted,
-          toolCalls: visibleToolCalls,
+          // 'done' payload keeps its historical shape: only the UI-facing
+          // draw_annotation calls. The full lookup chain lives in DB.
+          toolCalls: allToolCalls.filter((c) => c.name === 'draw_annotation'),
           createdAt: assistantRow.createdAt
         });
       }

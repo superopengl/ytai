@@ -1,0 +1,146 @@
+{
+  "version": "NSW K-10 Syllabus (2022)",
+  "publisher": "NSW Education Standards Authority (NESA)",
+  "lastUpdated": "2026-05-18",
+  "sources": [
+    "https://curriculum.nsw.edu.au/learning-areas/mathematics/mathematics-k-10-2022/outcomes",
+    "https://curriculum.nsw.edu.au/learning-areas/english/english-k-10-2022/outcomes"
+  ],
+  "notes": "Stage 2 = Years 3-4. Stage 3 = Years 5-6. Stage 4 = Years 7-8. MAO-WM-01 (Working mathematically) is the cross-stage Mathematics process outcome and applies alongside the relevant content outcome for any maths question. Only Stage 4 Core outcomes are listed for Mathematics (Path/Adv outcomes belong to Stage 5/Y9-10 and are out of scope for Y3-7).",
+  "stages": [
+    {
+      "stage": "Stage 2",
+      "years": [3, 4],
+      "subjects": [
+        {
+          "subject": "Mathematics",
+          "outcomes": [
+            { "code": "MAO-WM-01", "strand": "Working mathematically", "focusArea": "Working mathematically", "text": "develops understanding and fluency in mathematics through exploring and connecting mathematical concepts, choosing and applying mathematical techniques to solve problems, and communicating their thinking and reasoning coherently and clearly" },
+            { "code": "MA2-RN-01", "strand": "Number and algebra", "focusArea": "Representing numbers using place value", "text": "applies an understanding of place value and the role of zero to represent numbers to at least tens of thousands" },
+            { "code": "MA2-RN-02", "strand": "Number and algebra", "focusArea": "Representing numbers using place value", "text": "represents and compares decimals up to 2 decimal places using place value" },
+            { "code": "MA2-AR-01", "strand": "Number and algebra", "focusArea": "Additive relations", "text": "selects and uses mental and written strategies for addition and subtraction involving 2- and 3-digit numbers" },
+            { "code": "MA2-AR-02", "strand": "Number and algebra", "focusArea": "Additive relations", "text": "completes number sentences involving addition and subtraction by finding missing values" },
+            { "code": "MA2-MR-01", "strand": "Number and algebra", "focusArea": "Multiplicative relations", "text": "represents and uses the structure of multiplicative relations to 10 × 10 to solve problems" },
+            { "code": "MA2-MR-02", "strand": "Number and algebra", "focusArea": "Multiplicative relations", "text": "completes number sentences involving multiplication and division by finding missing values" },
+            { "code": "MA2-PF-01", "strand": "Number and algebra", "focusArea": "Partitioned fractions", "text": "represents and compares halves, quarters, thirds and fifths as lengths on a number line and their related fractions formed by halving (eighths, sixths and tenths)" },
+            { "code": "MA2-GM-01", "strand": "Measurement and space", "focusArea": "Geometric measure — position", "text": "uses grid maps and directional language to locate positions and follow routes" },
+            { "code": "MA2-GM-02", "strand": "Measurement and space", "focusArea": "Geometric measure — length", "text": "measures and estimates lengths in metres, centimetres and millimetres" },
+            { "code": "MA2-GM-03", "strand": "Measurement and space", "focusArea": "Geometric measure — angles", "text": "identifies angles and classifies them by comparing to a right angle" },
+            { "code": "MA2-2DS-01", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — shapes", "text": "compares two-dimensional shapes and describes their features" },
+            { "code": "MA2-2DS-02", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — shapes", "text": "performs transformations by combining and splitting two-dimensional shapes" },
+            { "code": "MA2-2DS-03", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — area", "text": "estimates, measures and compares areas using square centimetres and square metres" },
+            { "code": "MA2-3DS-01", "strand": "Measurement and space", "focusArea": "Three-dimensional spatial structure — objects", "text": "makes and sketches models and nets of three-dimensional objects including prisms and pyramids" },
+            { "code": "MA2-3DS-02", "strand": "Measurement and space", "focusArea": "Three-dimensional spatial structure — volume and capacity", "text": "estimates, measures and compares capacities (internal volumes) using litres, millilitres and volumes using cubic centimetres" },
+            { "code": "MA2-NSM-01", "strand": "Measurement and space", "focusArea": "Non-spatial measure — mass", "text": "estimates, measures and compares the masses of objects using kilograms and grams" },
+            { "code": "MA2-NSM-02", "strand": "Measurement and space", "focusArea": "Non-spatial measure — time", "text": "represents and interprets analog and digital time in hours, minutes and seconds" },
+            { "code": "MA2-DATA-01", "strand": "Statistics and probability", "focusArea": "Data", "text": "collects discrete data and constructs graphs using a given scale" },
+            { "code": "MA2-DATA-02", "strand": "Statistics and probability", "focusArea": "Data", "text": "interprets data in tables, dot plots and column graphs" },
+            { "code": "MA2-CHAN-01", "strand": "Statistics and probability", "focusArea": "Chance", "text": "records and compares the results of chance experiments" }
+          ]
+        },
+        {
+          "subject": "English",
+          "outcomes": [
+            { "code": "EN2-OLC-01", "focusArea": "Oral language and communication", "text": "communicates with familiar audiences for social and learning purposes, by interacting, understanding and presenting" },
+            { "code": "EN2-VOCAB-01", "focusArea": "Vocabulary", "text": "builds knowledge and use of Tier 1, Tier 2 and Tier 3 vocabulary through interacting, wide reading and writing, and by defining and analysing words" },
+            { "code": "EN2-REFLU-01", "focusArea": "Reading fluency", "text": "sustains independent reading with accuracy, automaticity, rate and prosody suited to purpose, audience and meaning" },
+            { "code": "EN2-RECOM-01", "focusArea": "Reading comprehension", "text": "reads and comprehends texts for wide purposes using knowledge of text structures and language, and by monitoring comprehension" },
+            { "code": "EN2-CWT-01", "focusArea": "Creating written texts — imaginative", "text": "plans, creates and revises written texts for imaginative purposes, using text features, sentence-level grammar, punctuation and word-level language for a target audience" },
+            { "code": "EN2-CWT-02", "focusArea": "Creating written texts — informative", "text": "plans, creates and revises written texts for informative purposes, using text features, sentence-level grammar, punctuation and word-level language for a target audience" },
+            { "code": "EN2-CWT-03", "focusArea": "Creating written texts — persuasive", "text": "plans, creates and revises written texts for persuasive purposes, using text features, sentence-level grammar, punctuation and word-level language for a target audience" },
+            { "code": "EN2-SPELL-01", "focusArea": "Spelling", "text": "selects, applies and describes appropriate phonological, orthographic and morphological generalisations and strategies when spelling in a range of contexts" },
+            { "code": "EN2-HANDW-01", "focusArea": "Handwriting", "text": "forms legible joined letters to develop handwriting fluency" },
+            { "code": "EN2-HANDW-02", "focusArea": "Handwriting and digital transcription", "text": "uses digital technologies to create texts" },
+            { "code": "EN2-UARL-01", "focusArea": "Understanding and responding to literature", "text": "identifies and describes how ideas are represented in literature and strategically uses similar representations when creating texts" }
+          ]
+        }
+      ]
+    },
+    {
+      "stage": "Stage 3",
+      "years": [5, 6],
+      "subjects": [
+        {
+          "subject": "Mathematics",
+          "outcomes": [
+            { "code": "MAO-WM-01", "strand": "Working mathematically", "focusArea": "Working mathematically", "text": "develops understanding and fluency in mathematics through exploring and connecting mathematical concepts, choosing and applying mathematical techniques to solve problems, and communicating their thinking and reasoning coherently and clearly" },
+            { "code": "MA3-RN-01", "strand": "Number and algebra", "focusArea": "Representing numbers", "text": "applies an understanding of place value and the role of zero to represent the properties of numbers" },
+            { "code": "MA3-RN-02", "strand": "Number and algebra", "focusArea": "Representing numbers", "text": "compares and orders decimals up to 3 decimal places" },
+            { "code": "MA3-RN-03", "strand": "Number and algebra", "focusArea": "Representing numbers", "text": "determines percentages of quantities, and finds equivalent fractions and decimals for benchmark percentage values" },
+            { "code": "MA3-AR-01", "strand": "Number and algebra", "focusArea": "Additive relations", "text": "selects and applies appropriate strategies to solve addition and subtraction problems" },
+            { "code": "MA3-MR-01", "strand": "Number and algebra", "focusArea": "Multiplicative relations", "text": "selects and applies appropriate strategies to solve multiplication and division problems" },
+            { "code": "MA3-MR-02", "strand": "Number and algebra", "focusArea": "Multiplicative relations", "text": "constructs and completes number sentences involving multiplicative relations, applying the order of operations to calculations" },
+            { "code": "MA3-RQF-01", "strand": "Number and algebra", "focusArea": "Representing quantity fractions", "text": "compares and orders fractions with denominators of 2, 3, 4, 5, 6, 8 and 10" },
+            { "code": "MA3-RQF-02", "strand": "Number and algebra", "focusArea": "Representing quantity fractions", "text": "determines 1/2, 1/4, 1/5 and 1/10 of measures and quantities" },
+            { "code": "MA3-GM-01", "strand": "Measurement and space", "focusArea": "Geometric measure — position", "text": "locates and describes points on a coordinate plane" },
+            { "code": "MA3-GM-02", "strand": "Measurement and space", "focusArea": "Geometric measure — length", "text": "selects and uses the appropriate unit and device to measure lengths and distances including perimeters" },
+            { "code": "MA3-GM-03", "strand": "Measurement and space", "focusArea": "Geometric measure — angles", "text": "estimates, measures and compares angles using degrees" },
+            { "code": "MA3-2DS-01", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — shapes", "text": "investigates and classifies two-dimensional shapes, including triangles and quadrilaterals based on their properties" },
+            { "code": "MA3-2DS-02", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — area", "text": "selects and uses the appropriate unit to calculate areas, including areas of rectangles" },
+            { "code": "MA3-2DS-03", "strand": "Measurement and space", "focusArea": "Two-dimensional spatial structure — area", "text": "combines, splits and rearranges shapes to determine the area of parallelograms and triangles" },
+            { "code": "MA3-3DS-01", "strand": "Measurement and space", "focusArea": "Three-dimensional spatial structure — objects", "text": "visualises, sketches and constructs three-dimensional objects, including prisms and pyramids, making connections to two-dimensional representations" },
+            { "code": "MA3-3DS-02", "strand": "Measurement and space", "focusArea": "Three-dimensional spatial structure — volume and capacity", "text": "selects and uses the appropriate unit to estimate, measure and calculate volumes and capacities" },
+            { "code": "MA3-NSM-01", "strand": "Measurement and space", "focusArea": "Non-spatial measure — mass", "text": "selects and uses the appropriate unit and device to measure the masses of objects" },
+            { "code": "MA3-NSM-02", "strand": "Measurement and space", "focusArea": "Non-spatial measure — time", "text": "measures and compares duration, using 12- and 24-hour time and am and pm notation" },
+            { "code": "MA3-DATA-01", "strand": "Statistics and probability", "focusArea": "Data", "text": "constructs graphs using many-to-one scales" },
+            { "code": "MA3-DATA-02", "strand": "Statistics and probability", "focusArea": "Data", "text": "interprets data displays, including timelines and line graphs" },
+            { "code": "MA3-CHAN-01", "strand": "Statistics and probability", "focusArea": "Chance", "text": "conducts chance experiments and quantifies the probability" }
+          ]
+        },
+        {
+          "subject": "English",
+          "outcomes": [
+            { "code": "EN3-OLC-01", "focusArea": "Oral language and communication", "text": "communicates to wide audiences with social and cultural awareness, by interacting and presenting, and by analysing and evaluating for understanding" },
+            { "code": "EN3-VOCAB-01", "focusArea": "Vocabulary", "text": "extends Tier 2 and Tier 3 vocabulary through interacting, wide reading and writing, morphological analysis and generating precise definitions for specific contexts" },
+            { "code": "EN3-RECOM-01", "focusArea": "Reading comprehension", "text": "fluently reads and comprehends texts for wide purposes, analysing text structures and language, and by monitoring comprehension" },
+            { "code": "EN3-CWT-01", "focusArea": "Creating written texts", "text": "plans, creates and revises written texts for multiple purposes and audiences through selection of text features, sentence-level grammar, punctuation and word-level language" },
+            { "code": "EN3-SPELL-01", "focusArea": "Spelling", "text": "automatically applies taught phonological, orthographic and morphological generalisations and strategies when spelling in a range of contexts, and justifies spelling strategies used to spell unfamiliar words" },
+            { "code": "EN3-HANDW-01", "focusArea": "Handwriting", "text": "sustains a legible, fluent and automatic handwriting style" },
+            { "code": "EN3-HANDW-02", "focusArea": "Handwriting and digital transcription", "text": "selects digital technologies to suit audience and purpose to create texts" },
+            { "code": "EN3-UARL-01", "focusArea": "Understanding and responding to literature", "text": "analyses representations of ideas in literature through narrative, character, imagery, symbol and connotation, and adapts these representations when creating texts" },
+            { "code": "EN3-UARL-02", "focusArea": "Understanding and responding to literature", "text": "analyses representations of ideas in literature through genre and theme that reflect perspective and context, argument and authority, and adapts these representations when creating texts" }
+          ]
+        }
+      ]
+    },
+    {
+      "stage": "Stage 4",
+      "years": [7, 8],
+      "subjects": [
+        {
+          "subject": "Mathematics",
+          "outcomes": [
+            { "code": "MAO-WM-01", "strand": "Working mathematically", "focusArea": "Working mathematically", "text": "develops understanding and fluency in mathematics through exploring and connecting mathematical concepts, choosing and applying mathematical techniques to solve problems, and communicating their thinking and reasoning coherently and clearly" },
+            { "code": "MA4-INT-C-01", "strand": "Number and algebra", "focusArea": "Computation with integers", "text": "compares, orders and calculates with integers to solve problems" },
+            { "code": "MA4-FRC-C-01", "strand": "Number and algebra", "focusArea": "Fractions, decimals and percentages", "text": "represents and operates with fractions, decimals and percentages to solve problems" },
+            { "code": "MA4-RAT-C-01", "strand": "Number and algebra", "focusArea": "Ratios and rates", "text": "solves problems involving ratios and rates, and analyses distance–time graphs" },
+            { "code": "MA4-ALG-C-01", "strand": "Number and algebra", "focusArea": "Algebraic techniques", "text": "generalises number properties to operate with algebraic expressions including expansion and factorisation" },
+            { "code": "MA4-IND-C-01", "strand": "Number and algebra", "focusArea": "Indices", "text": "operates with primes and roots, positive-integer and zero indices involving numerical bases and establishes the relevant index laws" },
+            { "code": "MA4-EQU-C-01", "strand": "Number and algebra", "focusArea": "Equations", "text": "solves linear equations of up to 2 steps and quadratic equations of the form ax² = c" },
+            { "code": "MA4-LIN-C-01", "strand": "Number and algebra", "focusArea": "Linear relationships", "text": "creates and displays number patterns and finds graphical solutions to problems involving linear relationships" },
+            { "code": "MA4-LEN-C-01", "strand": "Measurement and space", "focusArea": "Length", "text": "applies knowledge of the perimeter of plane shapes and the circumference of circles to solve problems" },
+            { "code": "MA4-PYT-C-01", "strand": "Measurement and space", "focusArea": "Right-angled triangles (Pythagoras' theorem)", "text": "applies Pythagoras' theorem to solve problems in various contexts" },
+            { "code": "MA4-ARE-C-01", "strand": "Measurement and space", "focusArea": "Area", "text": "applies knowledge of area and composite area involving triangles, quadrilaterals and circles to solve problems" },
+            { "code": "MA4-VOL-C-01", "strand": "Measurement and space", "focusArea": "Volume", "text": "applies knowledge of volume and capacity to solve problems involving right prisms and cylinders" },
+            { "code": "MA4-ANG-C-01", "strand": "Measurement and space", "focusArea": "Angle relationships", "text": "applies angle relationships to solve problems, including those related to transversals on sets of parallel lines" },
+            { "code": "MA4-GEO-C-01", "strand": "Measurement and space", "focusArea": "Properties of geometrical figures", "text": "identifies and applies the properties of triangles and quadrilaterals to solve problems" },
+            { "code": "MA4-DAT-C-01", "strand": "Statistics and probability", "focusArea": "Data classification and visualisation", "text": "classifies and displays data using a variety of graphical representations" },
+            { "code": "MA4-DAT-C-02", "strand": "Statistics and probability", "focusArea": "Data analysis", "text": "analyses simple datasets using measures of centre, range and shape of the data" },
+            { "code": "MA4-PRO-C-01", "strand": "Statistics and probability", "focusArea": "Probability", "text": "solves problems involving the probabilities of simple chance experiments" }
+          ]
+        },
+        {
+          "subject": "English",
+          "outcomes": [
+            { "code": "EN4-RVL-01", "focusArea": "Reading, viewing and listening to texts", "text": "uses a range of personal, creative and critical strategies to read texts that are complex in their ideas and construction" },
+            { "code": "EN4-URA-01", "focusArea": "Understanding and responding to texts A", "text": "analyses how meaning is created through the use of and response to language forms, features and structures" },
+            { "code": "EN4-URB-01", "focusArea": "Understanding and responding to texts B", "text": "examines and explains how texts represent ideas, experiences and values" },
+            { "code": "EN4-URC-01", "focusArea": "Understanding and responding to texts C", "text": "identifies and explains ways of valuing texts and the connections between them" },
+            { "code": "EN4-ECA-01", "focusArea": "Expressing ideas and composing texts A", "text": "creates personal, creative and critical texts for a range of audiences by using linguistic and stylistic conventions of language to express ideas" },
+            { "code": "EN4-ECB-01", "focusArea": "Expressing ideas and composing texts B", "text": "uses processes of planning, monitoring, revising and reflecting to support and develop composition of texts" }
+          ]
+        }
+      ]
+    }
+  ]
+}
