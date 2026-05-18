@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Input, Tooltip, Typography } from 'antd';
+import { Alert, Button, Input, Segmented, Tooltip, Typography } from 'antd';
 import {
   AudioMutedOutlined,
   AudioOutlined,
@@ -23,6 +23,11 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   // i.e. moments where Brain is working but nothing is visibly streaming.
   const [awaitingTokens, setAwaitingTokens] = useState(false);
   const [error, setError] = useState(null);
+  // 'guided' | 'balanced' | 'direct'. Read from the session on history load
+  // and PATCHed back to the server when the student flips the Segmented
+  // control. The persona pace section Brain sees on the next turn comes
+  // from this value — turns already in history are NOT rewritten.
+  const [guidanceLevel, setGuidanceLevel] = useState('direct');
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const voice = useTutorVoice(sessionId);
@@ -61,6 +66,9 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         const loaded = body.messages ?? [];
         setMessages(loaded);
         setHistoryLoaded(true);
+        if (body.session?.guidanceLevel) {
+          setGuidanceLevel(body.session.guidanceLevel);
+        }
         if (onAiAnnotations) {
           const restored = [];
           for (const m of loaded) {
@@ -114,6 +122,32 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     const next = speech.transcript ? (base ? `${base} ${speech.transcript}` : speech.transcript) : base;
     setInput(next);
   }, [speech.transcript, speech.listening]);
+
+  const changeGuidanceLevel = useCallback(
+    async (next) => {
+      if (!sessionId || next === guidanceLevel) return;
+      const previous = guidanceLevel;
+      // Optimistic update: flip the UI immediately so the student sees the
+      // segmented control respond, then reconcile with the server. On
+      // failure, revert and surface the error in the existing Alert strip.
+      setGuidanceLevel(next);
+      try {
+        const res = await fetch(`/api/tutor/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guidanceLevel: next })
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Could not change tutor mode (${res.status})`);
+        }
+      } catch (err) {
+        setGuidanceLevel(previous);
+        setError(err.message || 'Could not change tutor mode.');
+      }
+    },
+    [guidanceLevel, sessionId]
+  );
 
   const toggleDictation = useCallback(() => {
     if (!speech.supported) return;
@@ -355,7 +389,27 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={headerStyle}>
-        <Typography.Text strong>Tutor chat</Typography.Text>
+        <Tooltip
+          title={
+            guidanceLevel === 'guided'
+              ? 'Guided: one tiny step at a time, lots of check-ins'
+              : guidanceLevel === 'balanced'
+                ? 'Balanced: short chunks with a check-in between'
+                : 'Direct: full walkthrough in one message'
+          }
+        >
+          <Segmented
+            size="small"
+            value={guidanceLevel}
+            onChange={changeGuidanceLevel}
+            options={[
+              { label: 'Guided', value: 'guided' },
+              { label: 'Balanced', value: 'balanced' },
+              { label: 'Direct', value: 'direct' }
+            ]}
+            style={{ marginLeft: 'auto' }}
+          />
+        </Tooltip>
         <Tooltip
           title={
             !voice.supported
@@ -372,7 +426,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             aria-pressed={voice.enabled}
             icon={voice.enabled ? <SoundOutlined /> : <AudioMutedOutlined />}
             onClick={() => voice.setEnabled(!voice.enabled)}
-            style={{ marginLeft: 'auto', color: voice.enabled ? '#5b8def' : undefined }}
+            style={{ color: voice.enabled ? '#5b8def' : undefined }}
           />
         </Tooltip>
       </div>

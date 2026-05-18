@@ -204,7 +204,11 @@ export default function tutorSendMessage(fastify) {
     }
 
     const [session] = await db()
-      .select({ id: tutorSession.id, currentImageId: tutorSession.currentImageId })
+      .select({
+        id: tutorSession.id,
+        currentImageId: tutorSession.currentImageId,
+        guidanceLevel: tutorSession.guidanceLevel
+      })
       .from(tutorSession)
       .where(eq(tutorSession.id, sessionId));
 
@@ -317,7 +321,11 @@ export default function tutorSendMessage(fastify) {
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
     const modelMessages = [
-      ...tutorPrompt({ hasImage: !!activeImage, usedColors }),
+      ...tutorPrompt({
+        hasImage: !!activeImage,
+        usedColors,
+        guidanceLevel: session.guidanceLevel
+      }),
       // Skip empty-content rows: those are image-attachment markers for the UI,
       // not anything Brain needs in its conversational context.
       ...history.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content })),

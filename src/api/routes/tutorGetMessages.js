@@ -7,7 +7,7 @@ export default function tutorGetMessages(fastify) {
     const { sessionId } = request.params;
 
     const [session] = await db()
-      .select({ id: tutorSession.id })
+      .select({ id: tutorSession.id, guidanceLevel: tutorSession.guidanceLevel })
       .from(tutorSession)
       .where(eq(tutorSession.id, sessionId));
 
@@ -30,6 +30,9 @@ export default function tutorGetMessages(fastify) {
       .where(eq(sessionMessage.sessionId, sessionId))
       .orderBy(asc(sessionMessage.createdAt));
 
-    return { messages };
+    return {
+      session: { id: session.id, guidanceLevel: session.guidanceLevel },
+      messages
+    };
   });
 }

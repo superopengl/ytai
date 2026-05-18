@@ -3,18 +3,38 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ANNOTATION_COLOR_NAMES } from './annotationPalette.js';
 
-const PERSONA_PATH = path.resolve(
+const PROMPTS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../prompts/tutorPersona.md'
+  '../prompts'
 );
 
-// Loaded once at module init — edit src/api/prompts/tutorPersona.md to change
-// Brain's persona, boundaries, or tool-use rules; restart the server to pick
-// up the change.
-const PERSONA = readFileSync(PERSONA_PATH, 'utf8').trimEnd();
+function loadPrompt(name) {
+  return readFileSync(path.join(PROMPTS_DIR, name), 'utf8').trimEnd();
+}
 
-export default function tutorPrompt({ hasImage, usedColors = [] } = {}) {
-  const messages = [{ role: 'system', content: PERSONA }];
+// Loaded once at module init — edit the markdown files under
+// src/api/prompts/ to change Brain's persona, pacing, or tool-use rules,
+// then restart the server to pick up the change.
+const PERSONA = loadPrompt('tutorPersona.md');
+const PACE_BY_LEVEL = {
+  guided: loadPrompt('tutorPace.guided.md'),
+  balanced: loadPrompt('tutorPace.balanced.md'),
+  direct: loadPrompt('tutorPace.direct.md')
+};
+
+export const GUIDANCE_LEVELS = Object.freeze(['guided', 'balanced', 'direct']);
+export const DEFAULT_GUIDANCE_LEVEL = 'direct';
+
+export function isGuidanceLevel(value) {
+  return typeof value === 'string' && GUIDANCE_LEVELS.includes(value);
+}
+
+export default function tutorPrompt({ hasImage, usedColors = [], guidanceLevel } = {}) {
+  const level = isGuidanceLevel(guidanceLevel) ? guidanceLevel : DEFAULT_GUIDANCE_LEVEL;
+  const messages = [
+    { role: 'system', content: PERSONA },
+    { role: 'system', content: PACE_BY_LEVEL[level] }
+  ];
 
   if (hasImage) {
     messages.push({

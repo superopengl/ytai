@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { tutorSession, user } from '../db/schema.js';
+import { DEFAULT_GUIDANCE_LEVEL, isGuidanceLevel } from '../lib/tutorPrompt.js';
 
 const DEV_USER_NAME = 'dev';
 
 export default function tutorCreateSession(fastify) {
-  fastify.post('/api/tutor/session', async () => {
+  fastify.post('/api/tutor/session', async (request) => {
     let [bootstrapUser] = await db()
       .select({ id: user.id })
       .from(user)
@@ -18,11 +19,14 @@ export default function tutorCreateSession(fastify) {
         .returning({ id: user.id });
     }
 
+    const requestedLevel = request.body?.guidanceLevel;
+    const guidanceLevel = isGuidanceLevel(requestedLevel) ? requestedLevel : DEFAULT_GUIDANCE_LEVEL;
+
     const [session] = await db()
       .insert(tutorSession)
-      .values({ userId: bootstrapUser.id })
-      .returning({ id: tutorSession.id });
+      .values({ userId: bootstrapUser.id, guidanceLevel })
+      .returning({ id: tutorSession.id, guidanceLevel: tutorSession.guidanceLevel });
 
-    return { sessionId: session.id };
+    return { sessionId: session.id, guidanceLevel: session.guidanceLevel };
   });
 }

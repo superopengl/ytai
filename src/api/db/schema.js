@@ -35,6 +35,12 @@ export const tutorSession = ytai.table('tutor_session', {
   // Most recent image attached to the session. Text-only turns reuse its
   // cached vision_extraction so Brain doesn't need the bytes resent.
   currentImageId: uuid('current_image_id'),
+  // How Brain paces explanations: 'guided' (Socratic, one tiny step per
+  // message), 'balanced' (a couple of sentences then a check-in), or
+  // 'direct' (full reasoning in one message). Student-tunable mid-session
+  // via the chat-panel control. Default 'direct' so new sessions feel
+  // useful without configuration.
+  guidanceLevel: text('guidance_level').notNull().default('direct'),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
