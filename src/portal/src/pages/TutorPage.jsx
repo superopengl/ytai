@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Layout, Splitter, Typography } from 'antd';
+import { message, Splitter, Tabs, Typography } from 'antd';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import AnnotationCanvas from '../components/AnnotationCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import SessionReportPanel from '../components/SessionReportPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 
 export default function TutorPage() {
@@ -12,7 +13,8 @@ export default function TutorPage() {
   const [imageUrl, setImageUrl] = useState(null);
   const [sessionId, setSessionId] = useState(routeSessionId ?? null);
   const [aiAnnotations, setAiAnnotations] = useState([]);
-  const [siderCollapsed, setSiderCollapsed] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [rightTab, setRightTab] = useState('chat');
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
@@ -37,6 +39,21 @@ export default function TutorPage() {
     },
     [navigate, sessionId]
   );
+
+  const onNewSession = useCallback(async () => {
+    if (creatingSession) return;
+    setCreatingSession(true);
+    try {
+      const res = await fetch('/api/tutor/session', { method: 'POST' });
+      if (!res.ok) throw new Error(`Could not start session (${res.status})`);
+      const body = await res.json();
+      navigate(`/tutor/${body.sessionId}`);
+    } catch (err) {
+      message.error(err.message || 'Could not start a new session');
+    } finally {
+      setCreatingSession(false);
+    }
+  }, [creatingSession, navigate]);
 
   useEffect(() => {
     if (routeSessionId) {
@@ -104,25 +121,21 @@ export default function TutorPage() {
           YouTutorAI
         </Typography.Title>
       </header>
-      <Layout style={{ flex: 1, minHeight: 0, background: '#fff' }}>
-        <Layout.Sider
+      <Splitter style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+        <Splitter.Panel
+          defaultSize={260}
+          min={180}
+          max="40%"
           collapsible
-          collapsed={siderCollapsed}
-          onCollapse={setSiderCollapsed}
-          collapsedWidth={48}
-          width={260}
-          theme="light"
-          trigger={null}
-          style={{ background: '#fff', borderRight: '1px solid #ececf3' }}
         >
           <TutorSessionsSider
             currentSessionId={sessionId}
-            collapsed={siderCollapsed}
-            onToggleCollapsed={() => setSiderCollapsed((c) => !c)}
             onSelect={onSelectSession}
+            onNewSession={onNewSession}
+            creatingSession={creatingSession}
           />
-        </Layout.Sider>
-        <Layout.Content style={{ background: '#fff', minWidth: 0 }}>
+        </Splitter.Panel>
+        <Splitter.Panel>
           <Splitter style={{ height: '100%', minHeight: 0 }}>
             <Splitter.Panel defaultSize="58%" min="30%" max="80%">
               <div
@@ -148,19 +161,39 @@ export default function TutorPage() {
               </div>
             </Splitter.Panel>
             <Splitter.Panel>
-              <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <ChatPanel
-                  sessionId={sessionId}
-                  imageUrl={imageUrl}
-                  getImage={getCanvasImage}
-                  onAiAnnotations={setAiAnnotations}
-                  onCastImage={onCastImage}
-                />
-              </div>
+              <Tabs
+                className="ytai-fill-tabs"
+                activeKey={rightTab}
+                onChange={setRightTab}
+                destroyInactiveTabPane={false}
+                tabBarStyle={{ padding: '0 16px', marginBottom: 0 }}
+                items={[
+                  {
+                    key: 'chat',
+                    label: 'Tutor chat',
+                    children: (
+                      <ChatPanel
+                        sessionId={sessionId}
+                        imageUrl={imageUrl}
+                        getImage={getCanvasImage}
+                        onAiAnnotations={setAiAnnotations}
+                        onCastImage={onCastImage}
+                      />
+                    )
+                  },
+                  {
+                    key: 'report',
+                    label: 'Report',
+                    children: (
+                      <SessionReportPanel sessionId={sessionId} active={rightTab === 'report'} />
+                    )
+                  }
+                ]}
+              />
             </Splitter.Panel>
           </Splitter>
-        </Layout.Content>
-      </Layout>
+        </Splitter.Panel>
+      </Splitter>
     </div>
   );
 }

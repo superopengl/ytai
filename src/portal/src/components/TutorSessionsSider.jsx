@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Empty, Spin, Tooltip, Typography } from 'antd';
-import { LoadingOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Spin, Typography } from 'antd';
+import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 
-export default function TutorSessionsSider({ currentSessionId, collapsed, onToggleCollapsed, onSelect }) {
+export default function TutorSessionsSider({
+  currentSessionId,
+  onSelect,
+  onNewSession,
+  creatingSession
+}) {
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
 
@@ -23,32 +28,23 @@ export default function TutorSessionsSider({ currentSessionId, collapsed, onTogg
     load();
   }, [load, currentSessionId]);
 
-  const toggle = (
-    <Tooltip title={collapsed ? 'Show sessions' : 'Hide sessions'} placement="right">
-      <Button
-        type="text"
-        size="small"
-        aria-label={collapsed ? 'Expand sessions list' : 'Collapse sessions list'}
-        onClick={onToggleCollapsed}
-        icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-      />
-    </Tooltip>
-  );
-
-  if (collapsed) {
-    return (
-      <div style={containerStyle}>
-        <div style={collapsedHeaderStyle}>{toggle}</div>
-      </div>
-    );
-  }
-
   return (
     <div style={containerStyle}>
       <div style={headerStyle}>
-        {toggle}
         <Typography.Text strong>Your sessions</Typography.Text>
       </div>
+      {onNewSession ? (
+        <div style={actionStyle}>
+          <Button
+            block
+            icon={<PlusOutlined />}
+            onClick={onNewSession}
+            loading={creatingSession}
+          >
+            New session
+          </Button>
+        </div>
+      ) : null}
       <div style={scrollStyle}>
         {sessions === null ? (
           <div style={centeredHint}>
@@ -129,10 +125,8 @@ const headerStyle = {
   alignItems: 'center',
   gap: 8
 };
-const collapsedHeaderStyle = {
-  padding: '8px 0',
-  display: 'flex',
-  justifyContent: 'center',
+const actionStyle = {
+  padding: '8px 12px',
   borderBottom: '1px solid #ececf3'
 };
 const scrollStyle = {
