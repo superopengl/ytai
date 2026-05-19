@@ -10,7 +10,18 @@ import tutorSpeak from './routes/tutorSpeak.js';
 import tutorUpdateSession from './routes/tutorUpdateSession.js';
 
 export default async function server() {
-  const app = Fastify({ logger: true, bodyLimit: 20 * 1024 * 1024 });
+  const isProd = process.env.NODE_ENV === 'production';
+  const app = Fastify({
+    logger: isProd
+      ? true
+      : {
+          transport: {
+            target: 'pino-pretty',
+            options: { colorize: true, translateTime: 'SYS:HH:MM:ss.l' }
+          }
+        },
+    bodyLimit: 20 * 1024 * 1024
+  });
 
   healthcheck(app);
   tutorCreateSession(app);
@@ -24,6 +35,17 @@ export default async function server() {
 
   const port = Number(process.env.YTAI_API_PORT ?? 9521);
   await app.listen({ port, host: '0.0.0.0' });
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, async () => {
+      try {
+        await app.close();
+      } finally {
+        process.exit(0);
+      }
+    });
+  }
+
   return app;
 }
 
