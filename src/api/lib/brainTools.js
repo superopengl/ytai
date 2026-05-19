@@ -21,6 +21,10 @@ const brainTools = [
         '("Question 3", "x + 5 = 12", "Show your work"). It is cheap, deterministic, and returns ' +
         'tighter coordinates than the vision model. Returns up to 5 best matches and a unionBbox ' +
         'covering them all (normalized 0..1 corners [x1, y1, x2, y2], top-left + bottom-right). ' +
+        'For multi-line blocks (a whole question, a worked solution), also pass `end_query` with a ' +
+        'distinctive phrase from the LAST line — the tool then returns one unionBbox spanning the ' +
+        'whole region (every line in between is included, even when the middle lines are wider than ' +
+        'the anchor rows). For a single-line target, omit `end_query`. ' +
         'If status is "no-match", "pending", "failed", or "unavailable", fall back to lookup_on_image. ' +
         'Does not read handwriting, math notation, or diagrams — use lookup_on_image for those.',
       parameters: {
@@ -31,7 +35,16 @@ const brainTools = [
             type: 'string',
             description:
               'The exact printed text (or a distinctive phrase from it) to find on the page. ' +
-              'Examples: "Question 3", "Name:", "Show your work below".'
+              'For a multi-line region, this is the FIRST line\'s phrase. ' +
+              'Examples: "Question 3", "Name:", "Daniel has 24 pens".'
+          },
+          end_query: {
+            type: 'string',
+            description:
+              'Optional. A distinctive phrase from the LAST line of a multi-line region (a whole ' +
+              'question, a worked solution block). When provided, the tool returns a unionBbox ' +
+              'spanning from the start phrase down to this end phrase, covering every line in between. ' +
+              'Omit for a single-line target. Examples: "have at first?", "= 47", "Show your work".'
           }
         },
         required: ['query']

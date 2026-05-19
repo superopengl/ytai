@@ -44,6 +44,8 @@ export default function makeTutorTools({
 
 async function dispatchFindText(call, { activeImage, log, emit }) {
   const query = typeof call.args?.query === 'string' ? call.args.query.trim() : '';
+  const endQuery =
+    typeof call.args?.end_query === 'string' ? call.args.end_query.trim() : '';
   if (!activeImage) {
     return { result: { error: 'No image is attached to this session.' }, progress: false };
   }
@@ -53,24 +55,26 @@ async function dispatchFindText(call, { activeImage, log, emit }) {
       progress: false
     };
   }
-  emit('lookup-start', { id: call.id, question: `find: "${query}"` });
+  const label = endQuery ? `find: "${query}" → "${endQuery}"` : `find: "${query}"`;
+  emit('lookup-start', { id: call.id, question: label });
   let result;
   try {
     result = await findTextOnImage({
       imageId: activeImage.id,
       storageUrl: activeImage.storageUrl,
       query,
+      endQuery: endQuery || undefined,
       log
     });
   } catch (err) {
-    log?.error({ err, query }, 'find_text_on_image failed');
+    log?.error({ err, query, endQuery }, 'find_text_on_image failed');
     result = {
       status: 'failed',
       matches: [],
       error: `OCR call failed: ${err.message?.slice(0, 200) ?? 'unknown error'}`
     };
   }
-  emit('lookup', { id: call.id, question: `find: "${query}"`, result });
+  emit('lookup', { id: call.id, question: label, result });
   // "ready" with at least one match means Brain now has a bbox to use —
   // that's progress. All other statuses (no-match, pending, failed,
   // unavailable) leave Brain empty-handed.

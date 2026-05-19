@@ -1,11 +1,19 @@
 // Match a Brain-supplied query against the OCR'd lines of an image and
 // return the best matches with tight, normalized 0..1 bboxes.
 //
+// Two modes:
+//   - Single-phrase (default): pass `query`. Returns matching lines + a
+//     unionBbox over them. Use for short, single-line targets.
+//   - Region: also pass `endQuery`. Returns a spanning bbox from the start
+//     anchor's line down to the end anchor's line, expanded horizontally to
+//     cover every OCR line that sits between them. Use for highlighting a
+//     whole multi-line question or worked-solution block.
+//
 // Returns:
 //   { status, matches, unionBbox?, error? }
 //     status: 'ready' | 'pending' | 'failed' | 'unavailable' | 'no-match'
 //     matches: [{ text, bbox, confidence, score }]   (best first, ≤ 5)
-//     unionBbox: [x, y, w, h]                        (covers all matches, if 1+)
+//     unionBbox: [x1, y1, x2, y2]                    (covers the region)
 //
 // Brain reads `status`:
 //   - 'ready' + matches      → use unionBbox / first bbox for draw_annotation
@@ -28,12 +36,16 @@ const MAX_MATCHES = 5;
 // without freezing the chat if the sidecar is sick.
 const OCR_WAIT_MS = 8000;
 
-export default async function findTextOnImage({ imageId, storageUrl, query, log }) {
+export default async function findTextOnImage({ imageId, storageUrl, query, endQuery, log }) {
   const trimmed = typeof query === 'string' ? query.trim() : '';
+  const trimmedEnd = typeof endQuery === 'string' ? endQuery.trim() : '';
   if (!trimmed) return { status: 'no-match', matches: [], error: 'empty query' };
   if (!imageId) return { status: 'unavailable', matches: [], error: 'no image' };
 
-  log?.info({ imageId, query: trimmed }, 'running OCR (find_text_on_image)');
+  log?.info(
+    { imageId, query: trimmed, endQuery: trimmedEnd || undefined },
+    'running OCR (find_text_on_image)'
+  );
 
   let row = await readOcrRow(imageId);
 
@@ -81,31 +93,110 @@ export default async function findTextOnImage({ imageId, storageUrl, query, log 
     return { status: 'no-match', matches: [] };
   }
 
-  const matches = rankMatches(trimmed, lines);
-  if (matches.length === 0) {
+  const startMatches = rankMatches(trimmed, lines);
+
+  // Single-phrase mode (no end_query): behave exactly as before — return
+  // every line that matched the one query, with their union as the bbox.
+  if (!trimmedEnd) {
+    if (startMatches.length === 0) {
+      log?.info(
+        { imageId, query: trimmed, status: 'no-match', lineCount: lines.length },
+        'OCR find complete'
+      );
+      return { status: 'no-match', matches: [] };
+    }
+    const unionBbox = unionOf(startMatches.map((m) => m.bbox));
     log?.info(
-      { imageId, query: trimmed, status: 'no-match', lineCount: lines.length },
+      {
+        imageId,
+        query: trimmed,
+        status: 'ready',
+        matchCount: startMatches.length,
+        topMatch: startMatches[0].text.slice(0, 120),
+        topScore: startMatches[0].score,
+        topBbox: startMatches[0].bbox,
+        unionBbox
+      },
       'OCR find complete'
     );
-    return { status: 'no-match', matches: [] };
+    return { status: 'ready', matches: startMatches, unionBbox };
   }
 
-  const unionBbox = unionOf(matches.map((m) => m.bbox));
+  // Region mode: locate the end anchor too, then build a bbox spanning from
+  // the start row to the end row, widened to include any OCR line that sits
+  // vertically between them. This catches middle lines that extend further
+  // left/right than the anchor rows (very common with worksheet questions
+  // where the first line is indented past the body).
+  const endMatches = rankMatches(trimmedEnd, lines);
+  if (startMatches.length === 0 || endMatches.length === 0) {
+    const missing = startMatches.length === 0 ? 'start' : 'end';
+    log?.info(
+      {
+        imageId,
+        query: trimmed,
+        endQuery: trimmedEnd,
+        status: 'no-match',
+        missing,
+        lineCount: lines.length
+      },
+      'OCR region find: anchor missing'
+    );
+    return {
+      status: 'no-match',
+      matches: missing === 'end' ? startMatches : [],
+      error:
+        missing === 'start'
+          ? `start query "${trimmed}" not found — try a different phrase from the beginning of the region.`
+          : `end query "${trimmedEnd}" not found — try a different phrase from the end of the region.`
+    };
+  }
+
+  const startBox = startMatches[0].bbox;
+  const endBox = endMatches[0].bbox;
+  // min/max handles the case where Brain swapped start/end or the end
+  // anchor happened to land slightly above the start (multi-column layouts).
+  const regionY1 = Math.min(startBox[1], endBox[1]);
+  const regionY2 = Math.max(startBox[3], endBox[3]);
+  let regionX1 = Math.min(startBox[0], endBox[0]);
+  let regionX2 = Math.max(startBox[2], endBox[2]);
+
+  // Walk every OCR line whose vertical center sits between the anchors and
+  // pull its horizontal extent into the region. Without this, a question
+  // whose middle lines extend further right than the first line would get
+  // its right edge clipped.
+  let middleLineCount = 0;
+  for (const line of lines) {
+    const lb = line?.bbox;
+    if (!Array.isArray(lb) || lb.length < 4) continue;
+    const [lx, ly, lw, lh] = lb;
+    if (lw <= 0 || lh <= 0) continue;
+    const lyCenter = ly + lh / 2;
+    if (lyCenter < regionY1 || lyCenter > regionY2) continue;
+    middleLineCount += 1;
+    if (lx < regionX1) regionX1 = lx;
+    if (lx + lw > regionX2) regionX2 = lx + lw;
+  }
+
+  const regionBbox = [regionX1, regionY1, regionX2, regionY2];
   log?.info(
     {
       imageId,
       query: trimmed,
+      endQuery: trimmedEnd,
       status: 'ready',
-      matchCount: matches.length,
-      topMatch: matches[0].text.slice(0, 120),
-      topScore: matches[0].score,
-      topBbox: matches[0].bbox,
-      unionBbox
+      startMatch: startMatches[0].text.slice(0, 80),
+      endMatch: endMatches[0].text.slice(0, 80),
+      middleLineCount,
+      regionBbox
     },
-    'OCR find complete'
+    'OCR region find complete'
   );
 
-  return { status: 'ready', matches, unionBbox };
+  return {
+    status: 'ready',
+    matches: [startMatches[0], endMatches[0]],
+    unionBbox: regionBbox
+  };
 }
 
 async function readOcrRow(imageId) {
