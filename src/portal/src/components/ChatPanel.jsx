@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, Select, Tooltip, Typography } from 'antd';
 import {
-  AudioMutedOutlined,
   AudioOutlined,
   LoadingOutlined,
+  MutedOutlined,
   SendOutlined,
   SoundOutlined,
   StopOutlined
@@ -406,7 +406,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           }
         >
           <Select
-            size="small"
             value={guidanceLevel}
             onChange={changeGuidanceLevel}
             options={[
@@ -428,12 +427,11 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         >
           <Button
             type="text"
-            size="small"
             disabled={!voice.supported}
             aria-pressed={voice.enabled}
-            icon={voice.enabled ? <SoundOutlined /> : <AudioMutedOutlined />}
+            icon={voice.enabled ? <SoundOutlined /> : <MutedOutlined />}
             onClick={() => voice.setEnabled(!voice.enabled)}
-            style={{ color: voice.enabled ? '#5b8def' : undefined }}
+            type={voice.enabled ? 'primary' : 'default'}
           />
         </Tooltip>
       </div>

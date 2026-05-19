@@ -140,11 +140,12 @@ export default function SessionReportPanel({ sessionId, active }) {
           NSW K-10 Syllabus (2022) classification
         </Typography.Text>
         <Button
-          size="small"
           icon={<ReloadOutlined />}
           onClick={() => load({ force: true })}
           loading={loading}
           disabled={!sessionId}
+          color="green" 
+          variant="solid"
         >
           Regenerate
         </Button>
