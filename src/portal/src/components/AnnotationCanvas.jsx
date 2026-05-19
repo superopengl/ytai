@@ -134,7 +134,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Space style={{ marginBottom: 12, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
+      <Space style={{ marginTop:4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
         <Tooltip title="Undo last stroke">
           <Button
             icon={<UndoOutlined />}

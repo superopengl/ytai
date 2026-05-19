@@ -125,7 +125,8 @@ export default function SessionReportPanel({ sessionId, active }) {
         minWidth: 0,
         overflowY: 'auto',
         overflowX: 'hidden',
-        padding: '16px 20px'
+        padding: '16px 20px',
+        background: '#e6f4ff'
       }}
     >
       <div

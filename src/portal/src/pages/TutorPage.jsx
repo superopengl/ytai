@@ -150,6 +150,7 @@ export default function TutorPage() {
                   display: 'flex',
                   flexDirection: 'column',
                   padding: 4,
+                  // paddingTop: 12,
                   boxSizing: 'border-box'
                 }}
               >
