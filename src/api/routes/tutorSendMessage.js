@@ -27,6 +27,15 @@ const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 // student answer → respond" chain; 6 was too tight when both subjects
 // (the question and the student's answer) needed their own lookup.
 const MAX_TOOL_ROUNDS = 10;
+// After this many consecutive rounds where Brain made tool calls but emitted
+// no new text, treat it as a tool-spam loop (typically hunting for an OCR
+// bbox that doesn't exist) and drop the tools on the next round so Brain
+// must answer in plain text. Counts CONSECUTIVE silent rounds, so a lead-in
+// like "Let me look that up." resets the counter — only the runaway pattern
+// fires. 3 is tight enough to catch obvious spam without false-positives on
+// a legitimate "lookup → find → draw" chain (each step typically has at
+// least a few words of accompanying narration).
+const TOOL_SPAM_THRESHOLD = 3;
 
 // Catches first-person claims of having drawn on the page. Used to detect
 // the hallucination case where Brain narrates a highlight it never actually
@@ -178,7 +187,7 @@ async function resolveImage({ sessionId, imageDataUrl, dimensions, log }) {
 // second-and-onwards calls free. Keyed by (imageId, hashedQuestion); when
 // annotations change the imageId changes too, so cached answers correctly
 // expire.
-async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) {
+async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log, signal }) {
   const questionHash = hashQuestion(question);
   const [cached] = await db()
     .select({ extracted: visionExtraction.extracted })
@@ -202,7 +211,8 @@ async function lookupOnImage({ image, question, imageDataUrlForThisTurn, log }) 
     question,
     baseUrl,
     apiKey,
-    model
+    model,
+    signal
   });
 
   const extracted = { question, answer };
@@ -434,9 +444,46 @@ export default function tutorSendMessage(fastify) {
     const allToolCalls = [];
 
     let hitRoundCap = false;
+    // True once we've already injected the "please answer now" reminder for
+    // an empty-stop turn this request, so we don't loop on it forever.
+    let emptyStopRecovery = false;
+    // Sticky: once we've decided Brain is in a tool-spam loop, keep tools off
+    // for the rest of the turn so it can't relapse into the same chain.
+    let forceTextOnly = false;
+    // Consecutive rounds where Brain made tool calls but emitted no text.
+    // Reset whenever Brain says anything; threshold trips forceTextOnly. We
+    // can't use `assistantContent.length === 0` — a single lead-in sentence
+    // like "Let me check what question 4 says." would prevent the safety net
+    // from ever firing.
+    let consecutiveSilentToolRounds = 0;
     try {
       let round = 0;
       for (; round < MAX_TOOL_ROUNDS; round += 1) {
+        // Detect tool-spam loops: Brain has used several tool-call rounds in
+        // a row without saying anything new to the student. The model isn't
+        // going to give up on its own (we've tried prompting), so pull tools
+        // out from under it and force a plain-text reply with what it has.
+        if (
+          !forceTextOnly &&
+          activeImage &&
+          consecutiveSilentToolRounds >= TOOL_SPAM_THRESHOLD
+        ) {
+          forceTextOnly = true;
+          request.log.warn(
+            { sessionId, round, consecutiveSilentToolRounds },
+            'Brain is in a tool-spam loop with no text — disabling tools and forcing a text reply'
+          );
+          modelMessages.push({
+            role: 'user',
+            content:
+              "You've called tools several times in a row without writing anything to the " +
+              'student. Answer the student now in plain text using what you already learned ' +
+              'from earlier tool calls. Do not call any more tools. Skip draw_annotation ' +
+              "entirely if you do not have a confirmed bbox — the student's answer matters " +
+              'more than a mark on the page.'
+          });
+        }
+
         const toolCallAccum = new Map();
         let assistantContentThisRound = '';
         let reasoningThisRound = '';
@@ -447,7 +494,7 @@ export default function tutorSendMessage(fastify) {
           apiKey,
           model: modelId,
           messages: modelMessages,
-          tools: activeImage ? brainTools : undefined,
+          tools: activeImage && !forceTextOnly ? brainTools : undefined,
           signal: abortController.signal
         })) {
           if (chunk.delta) {
@@ -543,6 +590,27 @@ export default function tutorSendMessage(fastify) {
         );
 
         if (pendingCalls.length === 0) {
+          // Brain emitted no tool calls. If it also emitted no text, it
+          // produced a degenerate empty turn — leave the student staring at
+          // a blank reply. Push one forced "answer the student now" reminder
+          // and let the loop iterate once more before giving up. emptyStop
+          // guards against doing this twice in a row if Brain still won't
+          // respond.
+          if (assistantContentThisRound.length === 0 && !emptyStopRecovery) {
+            emptyStopRecovery = true;
+            request.log.warn(
+              { sessionId, round },
+              'Brain stopped with no content and no tool calls — injecting forced answer reminder'
+            );
+            modelMessages.push({
+              role: 'user',
+              content:
+                "You haven't answered yet — please write your reply to the student now in plain " +
+                'text. Use what you already learned from earlier tool calls; do not call any more ' +
+                'tools. Skip draw_annotation if you do not have a bbox.'
+            });
+            continue;
+          }
           // Plain text turn — done with Brain.
           break;
         }
@@ -611,7 +679,8 @@ export default function tutorSendMessage(fastify) {
                   image: activeImage,
                   question,
                   imageDataUrlForThisTurn: imageDataUrl,
-                  log: request.log
+                  log: request.log,
+                  signal: abortController.signal
                 });
               } catch (err) {
                 request.log.error({ err, sessionId, question }, 'lookup_on_image failed');
@@ -736,6 +805,15 @@ export default function tutorSendMessage(fastify) {
           // Provider says it's done but we still have tool calls — feed them
           // back and continue. Otherwise let the loop iterate.
         }
+
+        // Track silent tool rounds for the spam-loop detector. Counts only
+        // when Brain made tool calls but emitted zero new text this round.
+        // Any text emission (even a one-liner lead-in) resets the counter.
+        if (assistantContentThisRound.length > 0) {
+          consecutiveSilentToolRounds = 0;
+        } else if (pendingCalls.length > 0) {
+          consecutiveSilentToolRounds += 1;
+        }
       }
       if (round >= MAX_TOOL_ROUNDS) {
         hitRoundCap = true;
@@ -786,9 +864,15 @@ export default function tutorSendMessage(fastify) {
         sse('error', {
           error: fatalError.message?.slice(0, 600) || 'The tutor lost its train of thought. Try again?'
         });
-      } else if (hitRoundCap && !assistantContent) {
+      } else if (!assistantContent && !interrupted) {
+        // Catches both the round-cap-hit case and the case where Brain
+        // emitted nothing even after forceTextOnly + emptyStopRecovery
+        // tried to coax a reply out of it. Either way the student is
+        // staring at a blank bubble — give them something useful instead.
         sse('error', {
-          error: 'The tutor kept looking at the page without finishing a thought. Try rephrasing your question.'
+          error:
+            "Hmm, I couldn't put together an answer for that one. Could you say a bit more about " +
+            'what you want help with? (For example: which question, and what part is confusing.)'
         });
       } else {
         sse('done', {

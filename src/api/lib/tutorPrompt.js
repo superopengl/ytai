@@ -52,7 +52,16 @@ export default function tutorPrompt({ hasImage, usedColors = [], guidanceLevel }
         'highlighted. Returns a short text answer — no coordinates. To draw on something you read ' +
         'this way, follow up with find_text_on_image using the exact wording you got back.\n' +
         '\n' +
-        'Chain calls if you need more. Each call is one focused query.'
+        'Chain calls if you need more. Each call is one focused query.\n' +
+        '\n' +
+        'Important: draw_annotation is OPTIONAL. The student\'s answer matters more than a mark on ' +
+        'the page. If find_text_on_image returns no-match, pending, failed, or unavailable on your ' +
+        'first try, do NOT keep retrying with reworded queries — just answer the student in plain ' +
+        'text without an annotation. Two rules of thumb:\n' +
+        '- If you already have the answer from lookup_on_image, REPLY TO THE STUDENT next. Skip ' +
+        '  draw_annotation entirely if OCR can\'t find a bbox for it.\n' +
+        '- Never call lookup_on_image twice for the same thing. If you already learned what the ' +
+        '  question says, answer the student — do not re-ask Eyes for confirmation.'
     });
 
     const usedSet = new Set(

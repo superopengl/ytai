@@ -7,3 +7,10 @@
   top: 16px;
   /* transform: translateX(-50%); */
 }
+
+/* AntD Splitter.Panel ships with 1px of padding; the sessions sider wants its
+   dark background to butt right up to the divider, so strip it on the first
+   panel only. */
+.ytai-sider-splitter > .ant-splitter-panel:first-child {
+  padding: 0;
+}

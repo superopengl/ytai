@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { message, Splitter, Tabs, Typography } from 'antd';
+import { Avatar, message, Splitter, Tabs, Typography } from 'antd';
+import { UserOutlined } from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import AnnotationCanvas from '../components/AnnotationCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
@@ -119,6 +120,10 @@ export default function TutorPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           YouTutorAI
         </Typography.Title>
+        <Avatar
+          icon={<UserOutlined />}
+          style={{ marginLeft: 'auto', backgroundColor: '#5b8def' }}
+        />
       </header>
       <Splitter 
       className="ytai-sider-splitter" style={{ flex: 1, minHeight: 0, background: '#fff' }}
@@ -144,7 +149,7 @@ export default function TutorPage() {
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  padding: 16,
+                  padding: 4,
                   boxSizing: 'border-box'
                 }}
               >

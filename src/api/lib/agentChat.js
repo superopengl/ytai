@@ -1,4 +1,19 @@
-export default async function* agentChat({ baseUrl, apiKey, model, messages, tools, signal }) {
+// Bail if the upstream model stops sending chunks for this long. Without
+// this, a stalled OpenRouter / DeepSeek connection wedges the whole turn —
+// fetch's signal doesn't fire on idle, only on close. 60s is generous for
+// inter-token latency once streaming has started; the very first chunk on a
+// cold start can take 10-20s with thinking models, so leave headroom.
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+
+export default async function* agentChat({
+  baseUrl,
+  apiKey,
+  model,
+  messages,
+  tools,
+  signal,
+  idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
+}) {
   if (!baseUrl) throw new Error('baseUrl is required');
   if (!model) throw new Error('model is required');
 
@@ -21,18 +36,57 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
   };
   if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal
-  });
+  // Wrap the caller's signal with our own so we can also fire on idle. Caller
+  // aborts → our controller aborts → fetch aborts. Idle timer fires → our
+  // controller aborts → fetch aborts → we throw a specific timeout error so
+  // the caller can distinguish stall from cancellation.
+  const aborter = new AbortController();
+  let timedOut = false;
+  let idleTimer = null;
+  const resetIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (!idleTimeoutMs) return;
+    idleTimer = setTimeout(() => {
+      timedOut = true;
+      aborter.abort();
+    }, idleTimeoutMs);
+  };
+  const onUpstreamAbort = () => aborter.abort();
+  if (signal) {
+    if (signal.aborted) aborter.abort();
+    else signal.addEventListener('abort', onUpstreamAbort);
+  }
+
+  resetIdle();
+
+  let res;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: aborter.signal
+    });
+  } catch (err) {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (signal) signal.removeEventListener('abort', onUpstreamAbort);
+    if (timedOut) {
+      throw new Error(`Brain upstream stalled (no chunk for ${idleTimeoutMs}ms before request started)`);
+    }
+    throw err;
+  }
 
   if (!res.ok) {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (signal) signal.removeEventListener('abort', onUpstreamAbort);
     const detail = await res.text().catch(() => '');
     throw new Error(`API ${res.status} from ${endpoint}: ${detail.slice(0, 500)}`);
   }
-  if (!res.body) throw new Error(`No response body from ${endpoint}`);
+  if (!res.body) {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (signal) signal.removeEventListener('abort', onUpstreamAbort);
+    throw new Error(`No response body from ${endpoint}`);
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -41,8 +95,18 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
 
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      let value;
+      let done;
+      try {
+        ({ value, done } = await reader.read());
+      } catch (err) {
+        if (timedOut) {
+          throw new Error(`Brain upstream stalled (no chunk for ${idleTimeoutMs}ms)`);
+        }
+        throw err;
+      }
       if (done) break;
+      resetIdle();
       buffer += decoder.decode(value, { stream: true });
 
       let idx;
@@ -115,6 +179,8 @@ export default async function* agentChat({ baseUrl, apiKey, model, messages, too
       }
     }
   } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (signal) signal.removeEventListener('abort', onUpstreamAbort);
     try {
       reader.releaseLock();
     } catch {
