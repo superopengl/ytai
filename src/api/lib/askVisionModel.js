@@ -26,7 +26,7 @@ const SYSTEM = [
   '{ "answer": string }'
 ].join('\n');
 
-export default async function askVision({ imageDataUrl, question, baseUrl, apiKey, model, signal }) {
+export default async function askVisionModel({ imageDataUrl, question, baseUrl, apiKey, model, signal }) {
   if (!imageDataUrl) throw new Error('imageDataUrl is required');
   if (!question) throw new Error('question is required');
   if (!baseUrl) throw new Error('baseUrl is required');

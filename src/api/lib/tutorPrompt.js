@@ -54,14 +54,14 @@ export default function tutorPrompt({ hasImage, usedColors = [], guidanceLevel }
         '\n' +
         'Chain calls if you need more. Each call is one focused query.\n' +
         '\n' +
-        'Important: draw_annotation is OPTIONAL. The student\'s answer matters more than a mark on ' +
-        'the page. If find_text_on_image returns no-match, pending, failed, or unavailable on your ' +
-        'first try, do NOT keep retrying with reworded queries — just answer the student in plain ' +
-        'text without an annotation. Two rules of thumb:\n' +
-        '- If you already have the answer from lookup_on_image, REPLY TO THE STUDENT next. Skip ' +
-        '  draw_annotation entirely if OCR can\'t find a bbox for it.\n' +
+        'Annotation is the default — almost every turn that references the page should call ' +
+        'draw_annotation. But do not loop on OCR failures:\n' +
+        '- Try find_text_on_image once with the most distinctive printed phrase. If it returns ' +
+        '  no-match, try ONE more shorter or alternate phrase from the same area (a number, a ' +
+        '  keyword). After two no-match results, give up on the annotation and just answer the ' +
+        '  student in plain text — do not keep guessing queries.\n' +
         '- Never call lookup_on_image twice for the same thing. If you already learned what the ' +
-        '  question says, answer the student — do not re-ask Eyes for confirmation.'
+        '  question says, move on — don\'t re-ask Eyes for confirmation.'
     });
 
     const usedSet = new Set(
