@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
+import { jsonrepair } from 'jsonrepair';
 import db from '../db/index.js';
 import {
   sessionImage,
@@ -489,21 +490,43 @@ export default function tutorSendMessage(fastify) {
             continue;
           }
           let args = {};
+          let parseError = null;
           if (acc.argsRaw) {
             try {
               args = JSON.parse(acc.argsRaw);
-            } catch (err) {
-              request.log.error(
-                { sessionId, name: acc.name, argsRaw: acc.argsRaw, err: err.message },
-                'Failed to parse tool call arguments — dropping tool call'
-              );
-              sse('error', {
-                error: `Tool call "${acc.name}" had unparseable arguments and was dropped.`
-              });
-              continue;
+            } catch (strictErr) {
+              // Brain (deepseek-v4-flash) occasionally streams malformed JSON
+              // tool-call arguments — unterminated strings, trailing commas,
+              // missing closing braces. Try jsonrepair as a salvage pass
+              // before giving up; this recovers most cases without burning
+              // an extra Brain round.
+              try {
+                args = JSON.parse(jsonrepair(acc.argsRaw));
+                request.log.warn(
+                  { sessionId, name: acc.name, argsRaw: acc.argsRaw, strictErr: strictErr.message },
+                  'Tool call arguments needed jsonrepair to parse'
+                );
+              } catch (repairErr) {
+                // Even jsonrepair can't make sense of it. Feed the failure
+                // back as a tool result error so the next round can retry.
+                // The UI shouldn't see this — it's not actionable for the
+                // student.
+                request.log.warn(
+                  {
+                    sessionId,
+                    name: acc.name,
+                    argsRaw: acc.argsRaw,
+                    strictErr: strictErr.message,
+                    repairErr: repairErr.message
+                  },
+                  'Tool call arguments unsalvageable — feeding error back to Brain to retry'
+                );
+                parseError = strictErr.message;
+                args = {};
+              }
             }
           }
-          pendingCalls.push({ id: acc.id, name: acc.name, args });
+          pendingCalls.push({ id: acc.id, name: acc.name, args, parseError });
         }
 
         request.log.info(
@@ -538,7 +561,16 @@ export default function tutorSendMessage(fastify) {
 
         for (const call of pendingCalls) {
           let toolResult;
-          if (call.name === 'find_text_on_image') {
+          if (call.parseError) {
+            // Streamed arguments didn't parse as JSON. Hand Brain a short
+            // explanation and let it re-issue the call on the next round.
+            toolResult = {
+              error:
+                `Your previous ${call.name} tool call had malformed JSON arguments ` +
+                `(parser said: ${call.parseError}). Please call ${call.name} again with ` +
+                `valid JSON containing every required field.`
+            };
+          } else if (call.name === 'find_text_on_image') {
             const query = typeof call.args?.query === 'string' ? call.args.query.trim() : '';
             if (!activeImage) {
               toolResult = { error: 'No image is attached to this session.' };
