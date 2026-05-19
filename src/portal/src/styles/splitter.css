@@ -1,0 +1,9 @@
+/* Move the session-sider Splitter's collapse handle from the vertical
+   midpoint to near the top of the divider, so it sits alongside the
+   sider's "Sessions" header rather than floating in the middle of the
+   long vertical bar. AntD's default centerStyle pins it at top: 50%
+   with a Y translate; we override both. */
+.ytai-sider-splitter > .ant-splitter-bar > .ant-splitter-bar-collapse-bar {
+  top: 16px;
+  /* transform: translateX(-50%); */
+}

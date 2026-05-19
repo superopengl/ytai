@@ -20,10 +20,9 @@ export default function TutorPage() {
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
   const clearAiAnnotations = useCallback(() => setAiAnnotations([]), []);
 
-  // Switching sessions wipes the canvas: each session has its own image
-  // history and the previous photo doesn't belong on a different session's
-  // page. We don't restore the prior session's current_image yet — the
-  // canvas just starts blank.
+  // Switching sessions wipes the canvas first; ChatPanel re-hydrates it
+  // with the session's current_image once history loads (if there is one),
+  // so resuming a session restores the photo the student was last working on.
   useEffect(() => {
     setImageUrl((prev) => {
       if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
@@ -121,12 +120,15 @@ export default function TutorPage() {
           YouTutorAI
         </Typography.Title>
       </header>
-      <Splitter style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+      <Splitter 
+      className="ytai-sider-splitter" style={{ flex: 1, minHeight: 0, background: '#fff' }}
+      >
         <Splitter.Panel
           defaultSize={260}
           min={180}
           max="40%"
           collapsible
+          collapsible={{ start: true, end: true, showCollapsibleIcon: true }}
         >
           <TutorSessionsSider
             currentSessionId={sessionId}
@@ -170,7 +172,7 @@ export default function TutorPage() {
                 items={[
                   {
                     key: 'chat',
-                    label: 'Tutor chat',
+                    label: 'Tutor Chat',
                     children: (
                       <ChatPanel
                         sessionId={sessionId}

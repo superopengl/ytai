@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Input, Segmented, Tooltip, Typography } from 'antd';
+import { Alert, Button, Input, Select, Tooltip, Typography } from 'antd';
 import {
   AudioMutedOutlined,
   AudioOutlined,
@@ -24,7 +24,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   const [awaitingTokens, setAwaitingTokens] = useState(false);
   const [error, setError] = useState(null);
   // 'guided' | 'balanced' | 'direct'. Read from the session on history load
-  // and PATCHed back to the server when the student flips the Segmented
+  // and PATCHed back to the server when the student flips the Select
   // control. The persona pace section Brain sees on the next turn comes
   // from this value — turns already in history are NOT rewritten.
   const [guidanceLevel, setGuidanceLevel] = useState('direct');
@@ -68,6 +68,13 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         setHistoryLoaded(true);
         if (body.session?.guidanceLevel) {
           setGuidanceLevel(body.session.guidanceLevel);
+        }
+        // Restore the last image the student worked on in this session so the
+        // canvas isn't blank when they resume. onCastImage clears AI marks as
+        // a side-effect, so call it BEFORE onAiAnnotations(restored) — the
+        // final aiAnnotations state will be the restored set.
+        if (onCastImage && body.session?.currentImageId) {
+          onCastImage(`/api/tutor/${sessionId}/image/${body.session.currentImageId}`);
         }
         if (onAiAnnotations) {
           const restored = [];
@@ -398,7 +405,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
                 : 'Direct: full walkthrough in one message'
           }
         >
-          <Segmented
+          <Select
             size="small"
             value={guidanceLevel}
             onChange={changeGuidanceLevel}
@@ -407,7 +414,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
               { label: 'Balanced', value: 'balanced' },
               { label: 'Direct', value: 'direct' }
             ]}
-            style={{ marginLeft: 'auto' }}
+            style={{ marginLeft: 'auto', width: 110 }}
           />
         </Tooltip>
         <Tooltip

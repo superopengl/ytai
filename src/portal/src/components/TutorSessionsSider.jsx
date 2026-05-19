@@ -31,7 +31,7 @@ export default function TutorSessionsSider({
   return (
     <div style={containerStyle}>
       <div style={headerStyle}>
-        <Typography.Text strong>Your sessions</Typography.Text>
+        <Typography.Text strong>All Sessions</Typography.Text>
       </div>
       {onNewSession ? (
         <div style={actionStyle}>
@@ -41,7 +41,7 @@ export default function TutorSessionsSider({
             onClick={onNewSession}
             loading={creatingSession}
           >
-            New session
+            New Session
           </Button>
         </div>
       ) : null}
@@ -94,7 +94,7 @@ function SessionRow({ session, active, onSelect }) {
 
 function previewLabel(session) {
   const raw = typeof session.preview === 'string' ? session.preview.trim() : '';
-  if (!raw) return 'New session';
+  if (!raw) return 'New Session';
   // Single-line preview — strip newlines so they don't break the row.
   const flat = raw.replace(/\s+/g, ' ');
   return flat.length > 60 ? `${flat.slice(0, 57)}…` : flat;
