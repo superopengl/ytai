@@ -127,7 +127,6 @@ export default function TutorPage() {
           defaultSize={260}
           min={180}
           max="40%"
-          collapsible
           collapsible={{ start: true, end: true, showCollapsibleIcon: true }}
         >
           <TutorSessionsSider
@@ -185,7 +184,7 @@ export default function TutorPage() {
                   },
                   {
                     key: 'report',
-                    label: 'Report',
+                    label: 'Analysis Report',
                     children: (
                       <SessionReportPanel sessionId={sessionId} active={rightTab === 'report'} />
                     )
