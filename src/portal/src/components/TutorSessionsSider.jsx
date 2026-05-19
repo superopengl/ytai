@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Empty, Spin, Typography } from 'antd';
+import { Alert, Button, ConfigProvider, Empty, Spin, theme, Typography } from 'antd';
 import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 
 export default function TutorSessionsSider({
@@ -29,47 +29,53 @@ export default function TutorSessionsSider({
   }, [load, currentSessionId]);
 
   return (
-    <div style={containerStyle}>
-      <div style={headerStyle}>
-        <Typography.Text strong>All Sessions</Typography.Text>
-      </div>
-      {onNewSession ? (
-        <div style={actionStyle}>
-          <Button
-            block
-            icon={<PlusOutlined />}
-            onClick={onNewSession}
-            loading={creatingSession}
-          >
-            New Session
-          </Button>
+    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+      <div style={containerStyle}>
+        <div style={headerStyle}>
+          <Typography.Text strong style={{ color: TEXT_PRIMARY }}>
+            All Sessions
+          </Typography.Text>
         </div>
-      ) : null}
-      <div style={scrollStyle}>
-        {sessions === null ? (
-          <div style={centeredHint}>
-            <Spin indicator={<LoadingOutlined spin />} size="small" />
+        {onNewSession ? (
+          <div style={actionStyle}>
+            <Button
+              ghost
+              type="primary"
+              block
+              icon={<PlusOutlined />}
+              onClick={onNewSession}
+              loading={creatingSession}
+            >
+              New Session
+            </Button>
           </div>
-        ) : error ? (
-          <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
-        ) : sessions.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No sessions yet"
-            style={{ marginTop: 24 }}
-          />
-        ) : (
-          sessions.map((s) => (
-            <SessionRow
-              key={s.id}
-              session={s}
-              active={s.id === currentSessionId}
-              onSelect={onSelect}
+        ) : null}
+        <div style={scrollStyle}>
+          {sessions === null ? (
+            <div style={centeredHint}>
+              <Spin indicator={<LoadingOutlined spin />} size="small" />
+            </div>
+          ) : error ? (
+            <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
+          ) : sessions.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={<span style={{ color: TEXT_MUTED }}>No sessions yet</span>}
+              style={{ marginTop: 24 }}
             />
-          ))
-        )}
+          ) : (
+            sessions.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                active={s.id === currentSessionId}
+                onSelect={onSelect}
+              />
+            ))
+          )}
+        </div>
       </div>
-    </div>
+    </ConfigProvider>
   );
 }
 
@@ -82,8 +88,8 @@ function SessionRow({ session, active, onSelect }) {
       onClick={() => onSelect?.(session.id)}
       style={{
         ...rowStyle,
-        background: active ? '#eef2ff' : 'transparent',
-        borderLeft: active ? '3px solid #5b8def' : '3px solid transparent'
+        background: active ? ACTIVE_BG : 'transparent',
+        borderLeft: active ? `3px solid ${ACCENT}` : '3px solid transparent'
       }}
     >
       <div style={rowTitleStyle}>{title}</div>
@@ -112,22 +118,31 @@ function formatRelative(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
+const SIDER_BG = '#1f2330';
+const SIDER_BORDER = '#2d3344';
+const TEXT_PRIMARY = '#e5e8f0';
+const TEXT_MUTED = '#8b93a8';
+const ACTIVE_BG = '#2a3148';
+const ACCENT = '#5b8def';
+
 const containerStyle = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  minHeight: 0
+  minHeight: 0,
+  background: SIDER_BG,
+  color: TEXT_PRIMARY
 };
 const headerStyle = {
   padding: '8px 12px',
-  borderBottom: '1px solid #ececf3',
+  borderBottom: `1px solid ${SIDER_BORDER}`,
   display: 'flex',
   alignItems: 'center',
   gap: 8
 };
 const actionStyle = {
   padding: '8px 12px',
-  borderBottom: '1px solid #ececf3'
+  // borderBottom: `1px solid ${SIDER_BORDER}`
 };
 const scrollStyle = {
   flex: 1,
@@ -148,11 +163,12 @@ const rowStyle = {
   padding: '10px 13px',
   border: 'none',
   cursor: 'pointer',
-  fontFamily: 'inherit'
+  fontFamily: 'inherit',
+  color: 'inherit'
 };
 const rowTitleStyle = {
   fontSize: 13,
-  color: '#1d2233',
+  color: TEXT_PRIMARY,
   lineHeight: 1.35,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
@@ -160,6 +176,6 @@ const rowTitleStyle = {
 };
 const rowMetaStyle = {
   fontSize: 11,
-  color: '#5d6478',
+  color: TEXT_MUTED,
   marginTop: 2
 };
