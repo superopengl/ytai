@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, ConfigProvider, Empty, Spin, theme, Typography } from 'antd';
-import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { Alert, Button, ConfigProvider, Empty, message, Popconfirm, Spin, theme, Typography, Space } from 'antd';
+import { DeleteOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 
 export default function TutorSessionsSider({
   currentSessionId,
   onSelect,
   onNewSession,
+  onSessionDeleted,
   creatingSession
 }) {
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -28,9 +30,27 @@ export default function TutorSessionsSider({
     load();
   }, [load, currentSessionId]);
 
+  const handleDelete = useCallback(
+    async (sessionId) => {
+      setDeletingId(sessionId);
+      try {
+        const res = await fetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+        setSessions((prev) => (prev ? prev.filter((s) => s.id !== sessionId) : prev));
+        onSessionDeleted?.(sessionId);
+      } catch (err) {
+        message.error(err.message || 'Could not delete session');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [onSessionDeleted]
+  );
+
   return (
     <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
       <div style={containerStyle}>
+        <style>{ROW_CSS}</style>
         <div style={headerStyle}>
           <Typography.Text strong style={{ color: TEXT_PRIMARY }}>
             All Sessions
@@ -69,7 +89,9 @@ export default function TutorSessionsSider({
                 key={s.id}
                 session={s}
                 active={s.id === currentSessionId}
+                deleting={deletingId === s.id}
                 onSelect={onSelect}
+                onDelete={handleDelete}
               />
             ))
           )}
@@ -79,22 +101,67 @@ export default function TutorSessionsSider({
   );
 }
 
-function SessionRow({ session, active, onSelect }) {
+function SessionRow({ session, active, deleting, onSelect, onDelete }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const title = previewLabel(session);
   const when = formatRelative(session.lastActivityAt);
+  const alwaysShow = confirmOpen || deleting;
   return (
-    <button
-      type="button"
-      onClick={() => onSelect?.(session.id)}
+    <div
+      className={`ytai-session-row ${alwaysShow ? 'show-delete' : ''}`}
       style={{
         ...rowStyle,
+        position: 'relative',
         background: active ? ACTIVE_BG : 'transparent',
         borderLeft: active ? `3px solid ${ACCENT}` : '3px solid transparent'
       }}
+      onClick={() => onSelect?.(session.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect?.(session.id);
+        }
+      }}
     >
-      <div style={rowTitleStyle}>{title}</div>
-      <div style={rowMetaStyle}>{when}</div>
-    </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={rowTitleStyle}>{title}</div>
+          <div style={rowMetaStyle}>{when}</div>
+        </div>
+        <span className="ytai-session-row-delete" onClick={(e) => e.stopPropagation()}>
+          <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
+            <Popconfirm
+              title="Delete this session?"
+              description="This will permanently remove the chat, images, and report. This cannot be undone."
+              okText="Delete"
+              okButtonProps={{ danger: true, loading: deleting }}
+              cancelText="Cancel"
+              open={confirmOpen}
+              onOpenChange={(o) => setConfirmOpen(o)}
+              onConfirm={(e) => {
+                e?.stopPropagation?.();
+                onDelete?.(session.id);
+              }}
+              onCancel={(e) => e?.stopPropagation?.()}
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<DeleteOutlined style={{ color: TEXT_MUTED }} />}
+                loading={deleting}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmOpen(true);
+                }}
+                aria-label="Delete session"
+              />
+            </Popconfirm>
+          </ConfigProvider>
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -158,7 +225,6 @@ const centeredHint = {
 };
 const rowStyle = {
   display: 'block',
-  width: '100%',
   textAlign: 'left',
   padding: '10px 13px',
   border: 'none',
@@ -179,3 +245,22 @@ const rowMetaStyle = {
   color: TEXT_MUTED,
   marginTop: 2
 };
+
+const ROW_CSS = `
+.ytai-session-row {
+  outline: none;
+}
+.ytai-session-row-delete {
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.ytai-session-row:hover .ytai-session-row-delete,
+.ytai-session-row:focus-within .ytai-session-row-delete,
+.ytai-session-row.show-delete .ytai-session-row-delete {
+  opacity: 1;
+}
+.ytai-session-row-delete:hover .anticon-delete {
+  color: #ff6b6b !important;
+}
+`;

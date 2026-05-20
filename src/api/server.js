@@ -4,6 +4,7 @@ import authGoogle from './routes/authGoogle.js';
 import healthcheck from './routes/healthcheck.js';
 import meGetWeaknesses from './routes/meGetWeaknesses.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
+import tutorDeleteSession from './routes/tutorDeleteSession.js';
 import tutorGetImage from './routes/tutorGetImage.js';
 import tutorGetMessages from './routes/tutorGetMessages.js';
 import tutorGetReport from './routes/tutorGetReport.js';
@@ -36,6 +37,7 @@ export default async function server() {
   authGoogle(app);
   meGetWeaknesses(app);
   tutorCreateSession(app);
+  tutorDeleteSession(app);
   tutorGetImage(app);
   tutorGetMessages(app);
   tutorGetReport(app);

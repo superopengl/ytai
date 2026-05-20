@@ -51,6 +51,13 @@ export default function TutorPage() {
     [navigate, sessionId]
   );
 
+  const onSessionDeleted = useCallback(
+    (deletedId) => {
+      if (deletedId === sessionId) navigate('/tutor', { replace: true });
+    },
+    [navigate, sessionId]
+  );
+
   const onNewSession = useCallback(async () => {
     if (creatingSession) return;
     setCreatingSession(true);
@@ -232,6 +239,7 @@ export default function TutorPage() {
             currentSessionId={sessionId}
             onSelect={onSelectSession}
             onNewSession={onNewSession}
+            onSessionDeleted={onSessionDeleted}
             creatingSession={creatingSession}
           />
         </Splitter.Panel>
