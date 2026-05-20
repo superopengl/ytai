@@ -12,14 +12,28 @@ import {
 
 export const ytai = pgSchema('ytai');
 
-export const user = ytai.table('user', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  role: text('role').notNull(),
-  status: text('status').notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-});
+export const user = ytai.table(
+  'user',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    role: text('role').notNull(),
+    status: text('status').notNull().default('pending'),
+    // 'local' for name/role-only signups (legacy & dev bootstrap user), 'google'
+    // for users who came in through Google Identity Services. Determines which
+    // fields are populated below — Google users always have email + googleId.
+    authProvider: text('auth_provider').notNull().default('local'),
+    email: text('email'),
+    googleId: text('google_id'),
+    picture: text('picture'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => ({
+    userEmailUnique: uniqueIndex('user_email_uq').on(t.email),
+    userGoogleIdUnique: uniqueIndex('user_google_id_uq').on(t.googleId)
+  })
+);
 
 export const loginRequest = ytai.table('login_request', {
   id: uuid('id').primaryKey().defaultRandom(),

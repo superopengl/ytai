@@ -7,7 +7,7 @@ Schema defined in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 ## Tables
 
 ### `user`
-Application users. One row per person. Three roles share the same table: `student`, `parent`, `teacher`, plus `admin`.
+Application users. One row per person. Three roles share the same table: `student`, `parent`, `teacher`, plus `admin`. `auth_provider` distinguishes name/role-only signups (`local`) from Google Identity Services signups (`google`); on Google sign-in we link an existing local row by `email` before falling back to insert.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -15,8 +15,14 @@ Application users. One row per person. Three roles share the same table: `studen
 | `name` | text | display name |
 | `role` | text | `student` \| `parent` \| `teacher` \| `admin` |
 | `status` | text | `pending` \| `approved` \| `rejected` |
+| `auth_provider` | text | `local` \| `google` |
+| `email` | text | nullable; unique when present |
+| `google_id` | text | Google `sub` claim; nullable; unique when present |
+| `picture` | text | profile image URL from Google; nullable |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
+
+Unique indexes on `email` and `google_id`.
 
 ### `login_request`
 A user's request to log in; admin must approve before the user can start a session. The login page polls status by `id`.

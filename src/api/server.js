@@ -1,4 +1,6 @@
 import Fastify from 'fastify';
+import fastifyJwt from '@fastify/jwt';
+import authGoogle from './routes/authGoogle.js';
 import healthcheck from './routes/healthcheck.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
 import tutorGetImage from './routes/tutorGetImage.js';
@@ -23,7 +25,14 @@ export default async function server() {
     bodyLimit: 20 * 1024 * 1024
   });
 
+  const jwtSecret = process.env.YTAI_JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('YTAI_JWT_SECRET is required');
+  }
+  await app.register(fastifyJwt, { secret: jwtSecret });
+
   healthcheck(app);
+  authGoogle(app);
   tutorCreateSession(app);
   tutorGetImage(app);
   tutorGetMessages(app);

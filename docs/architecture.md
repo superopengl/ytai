@@ -76,7 +76,7 @@ Tool: draw_annotation(shape, x1, y1, x2, y2, color?)
 - React 19 + Ant Design 6, bundled via Vite
 - Routing via react-router-dom v7
 - Source in `src/portal/src/`, builds to `dist/public/` (served by Fastify in production)
-- Pages: `HomePage`, `LoginPage`, `TutorPage`, `AdminPage`
+- Pages: `HomePage` (which is also the sign-in surface — Google SSO only), `TutorPage`, `AdminPage`, plus public utility pages `PrivacyPolicyPage`, `TermsOfUsePage`, `LogoPage`
 - Components:
   - `PhotoCapture` — `<input type="file" capture="environment">` for phone camera + upload fallback
   - `AnnotationCanvas` — Konva.js wrapper; renders the photo as a background layer and a transparent drawing layer on top; `exportImage()` returns a flattened dataUrl (strokes baked in) for Eyes to read
@@ -126,9 +126,11 @@ src/
       theme.js                  # Design tokens
       pages/
         HomePage.jsx
-        LoginPage.jsx
         TutorPage.jsx
         AdminPage.jsx
+        PrivacyPolicyPage.jsx
+        TermsOfUsePage.jsx
+        LogoPage.jsx
       components/
         PhotoCapture.jsx
         AnnotationCanvas.jsx    # Konva.js canvas

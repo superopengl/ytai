@@ -7,21 +7,6 @@ Fastify HTTP API. All routes are prefixed with `/api` except `/healthcheck`. Aut
 ### `GET /healthcheck`
 Liveness probe. Returns `200 { ok: true }`. No auth.
 
-## Auth / Login *(planned)*
-
-### `POST /api/login/user`
-Submit a login request. Creates a `user` (if new name+role combination) and a `login_request` with status `pending`.
-
-**Body**: `{ name: string, role: "student" | "parent" | "teacher" }`
-**Returns**: `{ loginRequestId: string }`
-
-### `GET /api/login/:loginRequestId/status`
-Poll the status of a login request. The login page polls this until status flips to `approved` or `rejected`.
-
-**Returns**: `{ status: "pending" | "approved" | "rejected", userId: string | null, token: string | null }`
-
-When `approved`, the response includes a JWT in `token` for subsequent authenticated calls.
-
 ## Admin *(planned)*
 
 ### `POST /api/admin/user`
@@ -29,6 +14,40 @@ Create a user directly (bypasses login request flow). Admin-only.
 
 **Body**: `{ name: string, role: "student" | "parent" | "teacher" | "admin" }`
 **Returns**: `{ userId: string }`
+
+## Auth / Google SSO
+
+### `POST /api/auth/google`
+Verify a Google Identity Services ID token (`credential`), upsert the `user` row, and return a YTAI JWT. The token is verified via Google's `https://oauth2.googleapis.com/tokeninfo` endpoint — issuer, audience, and email-verification claims are all checked. Existing local accounts are linked when the email matches; otherwise a new row is inserted with `auth_provider='google'` and `status='pending'` (admin approval still required).
+
+**Body**:
+```json
+{
+  "credential": "<google_id_token>",
+  "role": "student" | "parent" | "teacher"
+}
+```
+`role` is honoured only on first sign-in for a brand-new account; existing users keep their stored role.
+
+**Returns**:
+```json
+{
+  "token": "<ytai_jwt>",
+  "user": {
+    "id": "uuid",
+    "name": "string",
+    "role": "student" | "parent" | "teacher" | "admin",
+    "status": "pending" | "approved" | "rejected",
+    "email": "string | null",
+    "picture": "string | null"
+  }
+}
+```
+
+**Errors**:
+- `400` — missing `credential`
+- `401` — invalid / expired / audience-mismatched Google token
+- `503` — `YTAI_GOOGLE_CLIENT_ID` is unset on the server
 
 ## Tutor
 

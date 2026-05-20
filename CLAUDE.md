@@ -13,18 +13,19 @@ Students aged 8-14, plus the parents and teachers who help them. Three personas 
 
 ## Core UI
 
-Multi-page app with four views:
+Multi-page app with three views:
 
-1. **Homepage** (`/`) — Public landing page with feature highlights and "Start Tutoring" CTA
-2. **Login** (`/login`) — User enters their name + role (student / parent / teacher); admin approval required for MVP
-3. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
+1. **Homepage** (`/`) — Public landing page with feature highlights and the "Sign in with Google" entry point. Google SSO is the only sign-in path; there is no `/login` or `/signup` page.
+2. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
    - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
-4. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
+3. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
+
+Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sheet).
 
 ## How It Works
 
-1. User visits the homepage, clicks "Start Tutoring," logs in, waits for admin approval
+1. User visits the homepage, signs in with Google, waits for admin approval
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
 3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Bytes are deduped by sha256 and persisted; the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
 4. **deepseek-v4-flash ("Brain")** runs on every turn. Two image tools, used in order of cheapness:
@@ -45,7 +46,7 @@ Pipeline flow diagram: [docs/pipeline.md](docs/pipeline.md)
 
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` ('local' | 'google'), `email`, `google_id`, and `picture` for Google SSO users; `email` and `google_id` are unique.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 
@@ -57,8 +58,7 @@ Fastify HTTP API. All routes prefixed with `/api` except `/healthcheck`. Auth vi
 
 Summary:
 - `GET /healthcheck` — public
-- `POST /api/login/user` — login request *(planned)*
-- `GET /api/login/:loginRequestId/status` — poll login status *(planned)*
+- `POST /api/auth/google` — verify a Google Identity Services ID token, upsert the user (linking by `google_id` then `email`), return a YTAI JWT (`{ token, user }`). New users land in `status: 'pending'`. Returns 503 if `YTAI_GOOGLE_CLIENT_ID` is unset. **This is the only sign-in path.**
 - `POST /api/admin/user` — create a user (admin) *(planned)*
 - `POST /api/tutor/session` — start a tutoring session
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
@@ -134,6 +134,7 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_PORTAL_PORT` | Vite dev server port | `9522` |
 | `YTAI_PUBLIC_URL` | Public-facing app origin | `http://localhost:9522` |
 | `YTAI_JWT_SECRET` | JWT signing secret | *(required)* |
+| `YTAI_GOOGLE_CLIENT_ID` | OAuth 2.0 Web Client ID from the Google Cloud Console. Enables the "Sign in with Google" button on the homepage / signup page and the `POST /api/auth/google` route. Unset disables Google SSO. | *(unset)* |
 | `YTAI_OPENROUTER_API_KEY` | OpenRouter API key (used for both Eyes and Brain) | *(required)* |
 | `YTAI_OPENROUTER_CHAT_MODEL` | Brain model id on OpenRouter | `deepseek/deepseek-chat` |
 | `YTAI_OPENROUTER_VISION_MODEL` | Eyes model id on OpenRouter | `qwen/qwen2.5-vl-72b-instruct` |
