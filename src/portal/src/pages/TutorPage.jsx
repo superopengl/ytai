@@ -79,19 +79,30 @@ export default function TutorPage() {
       return undefined;
     }
     let cancelled = false;
-    fetch('/api/tutor/session', { method: 'POST' })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Could not start session (${res.status})`);
-        return res.json();
-      })
-      .then((body) => {
+    // Land on the most recent session if any exist. Only POST a brand-new
+    // session when the user has none yet — otherwise hitting /tutor would
+    // pile up empty sessions on every visit.
+    (async () => {
+      try {
+        const listRes = await fetch('/api/tutor/sessions');
+        if (!listRes.ok) throw new Error(`Sessions fetch failed (${listRes.status})`);
+        const list = await listRes.json();
+        if (cancelled) return;
+        const top = Array.isArray(list.sessions) ? list.sessions[0] : null;
+        if (top?.id) {
+          navigate(`/tutor/${top.id}`, { replace: true });
+          return;
+        }
+        const createRes = await fetch('/api/tutor/session', { method: 'POST' });
+        if (!createRes.ok) throw new Error(`Could not start session (${createRes.status})`);
+        const body = await createRes.json();
         if (cancelled) return;
         setSessionId(body.sessionId);
         navigate(`/tutor/${body.sessionId}`, { replace: true });
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) console.error(err);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
