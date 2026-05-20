@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import authGoogle from './routes/authGoogle.js';
 import healthcheck from './routes/healthcheck.js';
+import meGetWeaknesses from './routes/meGetWeaknesses.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
 import tutorGetImage from './routes/tutorGetImage.js';
 import tutorGetMessages from './routes/tutorGetMessages.js';
@@ -33,6 +34,7 @@ export default async function server() {
 
   healthcheck(app);
   authGoogle(app);
+  meGetWeaknesses(app);
   tutorCreateSession(app);
   tutorGetImage(app);
   tutorGetMessages(app);

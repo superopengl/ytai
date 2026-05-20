@@ -195,6 +195,7 @@ export default function TutorPage() {
           items={[
             { key: '/', label: 'Home' },
             { key: '/tutor', label: 'Tutor' },
+            { key: '/progress', label: 'My Progress' },
             { key: '/admin', label: 'Admin' },
             { type: 'divider' },
             { key: '/privacy_policy', label: 'Privacy Policy' },
