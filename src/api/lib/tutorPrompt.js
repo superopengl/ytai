@@ -7,6 +7,10 @@ const PROMPTS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../prompts'
 );
+const CATALOG_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../data/nswSyllabus.json'
+);
 
 function loadPrompt(name) {
   return readFileSync(path.join(PROMPTS_DIR, name), 'utf8').trimEnd();
@@ -21,6 +25,10 @@ const PACE_BY_LEVEL = {
   balanced: loadPrompt('tutorPace.balanced.md'),
   direct: loadPrompt('tutorPace.direct.md')
 };
+// NSW K-10 Syllabus (2022) catalog — same file the post-session reporter
+// uses. Injected into every turn's system prompt so Brain can name the
+// outcome code, focus area, and stage/year when it wraps up a question.
+const NSW_CATALOG_RAW = readFileSync(CATALOG_PATH, 'utf8');
 
 export const GUIDANCE_LEVELS = Object.freeze(['guided', 'balanced', 'direct']);
 export const DEFAULT_GUIDANCE_LEVEL = 'direct';
@@ -33,7 +41,16 @@ export default function tutorPrompt({ hasImage, usedColors = [], guidanceLevel }
   const level = isGuidanceLevel(guidanceLevel) ? guidanceLevel : DEFAULT_GUIDANCE_LEVEL;
   const messages = [
     { role: 'system', content: PERSONA },
-    { role: 'system', content: PACE_BY_LEVEL[level] }
+    { role: 'system', content: PACE_BY_LEVEL[level] },
+    {
+      role: 'system',
+      content:
+        'NSW K-10 Syllabus (2022) outcome catalog — use this when wrapping up a question to ' +
+        'name the curriculum outcome, focus area, and stage/year. Pick the single outcome whose ' +
+        '`text` best matches the question. Use the exact `code` string. Stage 2 = Years 3–4, ' +
+        'Stage 3 = Years 5–6, Stage 4 = Years 7–8.\n\n' +
+        NSW_CATALOG_RAW
+    }
   ];
 
   if (hasImage) {
