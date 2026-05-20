@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { tutorSession, user } from '../db/schema.js';
 import { DEFAULT_GUIDANCE_LEVEL, isGuidanceLevel } from '../lib/tutorPrompt.js';
+import isSubject, { DEFAULT_SUBJECT } from '../lib/tutorSubject.js';
 
 const DEV_USER_NAME = 'dev';
 
@@ -22,11 +23,22 @@ export default function tutorCreateSession(fastify) {
     const requestedLevel = request.body?.guidanceLevel;
     const guidanceLevel = isGuidanceLevel(requestedLevel) ? requestedLevel : DEFAULT_GUIDANCE_LEVEL;
 
+    const requestedSubject = request.body?.subject;
+    const subject = isSubject(requestedSubject) ? requestedSubject : DEFAULT_SUBJECT;
+
     const [session] = await db()
       .insert(tutorSession)
-      .values({ userId: bootstrapUser.id, guidanceLevel })
-      .returning({ id: tutorSession.id, guidanceLevel: tutorSession.guidanceLevel });
+      .values({ userId: bootstrapUser.id, guidanceLevel, subject })
+      .returning({
+        id: tutorSession.id,
+        guidanceLevel: tutorSession.guidanceLevel,
+        subject: tutorSession.subject
+      });
 
-    return { sessionId: session.id, guidanceLevel: session.guidanceLevel };
+    return {
+      sessionId: session.id,
+      guidanceLevel: session.guidanceLevel,
+      subject: session.subject
+    };
   });
 }

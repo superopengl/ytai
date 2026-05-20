@@ -10,6 +10,7 @@ export default function tutorGetMessages(fastify) {
       .select({
         id: tutorSession.id,
         guidanceLevel: tutorSession.guidanceLevel,
+        subject: tutorSession.subject,
         currentImageId: tutorSession.currentImageId
       })
       .from(tutorSession)
@@ -38,6 +39,7 @@ export default function tutorGetMessages(fastify) {
       session: {
         id: session.id,
         guidanceLevel: session.guidanceLevel,
+        subject: session.subject,
         currentImageId: session.currentImageId
       },
       messages

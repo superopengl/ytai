@@ -42,6 +42,9 @@ One row per tutoring sitting. A user starts a new session each time they begin t
 |---|---|---|
 | `id` | uuid | PK |
 | `user_id` | uuid | FK → `user.id` |
+| `current_image_id` | uuid | nullable; most recent image attached to the session |
+| `guidance_level` | text | `guided` \| `balanced` \| `direct` — Brain's pacing for this session |
+| `subject` | text | `math` \| `thinking` \| `reading` \| `writing` — subject this session is anchored to |
 | `started_at` | timestamptz | |
 | `ended_at` | timestamptz | nullable |
 | `created_at` | timestamptz | |

@@ -23,6 +23,7 @@ export default function tutorListSessions(fastify) {
     const sessions = await db()
       .select({
         id: tutorSession.id,
+        subject: tutorSession.subject,
         startedAt: tutorSession.startedAt,
         lastActivityAt: lastActivityExpr.as('last_activity_at'),
         messageCount: sql`COUNT(${sessionMessage.id})::int`.as('message_count')

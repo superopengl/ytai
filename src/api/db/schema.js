@@ -55,6 +55,10 @@ export const tutorSession = ytai.table('tutor_session', {
   // via the chat-panel control. Default 'direct' so new sessions feel
   // useful without configuration.
   guidanceLevel: text('guidance_level').notNull().default('direct'),
+  // Subject the session is anchored to: 'math', 'thinking', 'reading',
+  // or 'writing'. Selected by the student on the Tutor page; drives
+  // subject-specific prompt scaffolding later.
+  subject: text('subject').notNull().default('math'),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
