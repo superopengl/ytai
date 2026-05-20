@@ -14,6 +14,7 @@ import AnnotationCanvas from '../components/AnnotationCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import SessionReportPanel from '../components/SessionReportPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
+import authSession from '../lib/authSession.js';
 
 export default function TutorPage() {
   const { sessionId: routeSessionId } = useParams();
@@ -25,6 +26,7 @@ export default function TutorPage() {
   const [rightTab, setRightTab] = useState('chat');
   const [subject, setSubject] = useState('math');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const currentUser = authSession().user;
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
@@ -173,8 +175,12 @@ export default function TutorPage() {
         }}
         footer={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#5b8def' }} />
-            <Typography.Text>Signed in</Typography.Text>
+            <Avatar
+              src={currentUser?.picture || undefined}
+              icon={<UserOutlined />}
+              style={{ backgroundColor: '#5b8def' }}
+            />
+            <Typography.Text strong>{currentUser?.name || 'Guest'}</Typography.Text>
           </div>
         }
       >
