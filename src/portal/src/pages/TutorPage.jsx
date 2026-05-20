@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, message, Splitter, Tabs, Typography } from 'antd';
-import { UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Drawer, Menu, message, Splitter, Tabs, Tag, Typography } from 'antd';
+import {
+  BulbOutlined,
+  CalculatorOutlined,
+  EditOutlined,
+  MenuOutlined,
+  ReadOutlined,
+  UserOutlined
+} from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import AnnotationCanvas from '../components/AnnotationCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
@@ -16,6 +23,8 @@ export default function TutorPage() {
   const [aiAnnotations, setAiAnnotations] = useState([]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [rightTab, setRightTab] = useState('chat');
+  const [subject, setSubject] = useState('math');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const canvasRef = useRef(null);
 
   const getCanvasImage = useCallback(() => canvasRef.current?.exportImage() ?? null, []);
@@ -114,19 +123,97 @@ export default function TutorPage() {
           background: '#fff',
           borderBottom: '1px solid #ececf3',
           display: 'flex',
-          alignItems: 'center'
+          alignItems: 'center',
+          gap: 12
         }}
       >
+        <Button
+          type="text"
+          size="large"
+          icon={<MenuOutlined />}
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open menu"
+        />
         <Typography.Title level={4} style={{ margin: 0 }}>
           YouTutorAI
         </Typography.Title>
-        <Avatar
-          icon={<UserOutlined />}
-          style={{ marginLeft: 'auto', backgroundColor: '#5b8def' }}
-        />
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {SUBJECTS.map((s) => {
+            const active = subject === s.key;
+            return (
+              <Tag.CheckableTag
+                key={s.key}
+                checked={active}
+                onChange={() => setSubject(s.key)}
+                style={{
+                  padding: '4px 14px',
+                  fontSize: 14,
+                  borderRadius: 16,
+                  border: `1px solid ${active ? s.color : 'transparent'}`,
+                  background: active ? s.color : s.tint,
+                  color: active ? '#fff' : s.color
+                }}
+              >
+                {active && <s.icon style={{ marginRight: 6 }} />}
+                {s.label}
+              </Tag.CheckableTag>
+            );
+          })}
+        </div>
       </header>
-      <Splitter 
-      className="ytai-sider-splitter" style={{ flex: 1, minHeight: 0, background: '#fff' }}
+      <Drawer
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={280}
+        title="YouTutorAI"
+        styles={{
+          body: { padding: 0, display: 'flex', flexDirection: 'column' },
+          footer: { padding: 16 }
+        }}
+        footer={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#5b8def' }} />
+            <Typography.Text>Signed in</Typography.Text>
+          </div>
+        }
+      >
+        <Menu
+          mode="inline"
+          selectable={false}
+          style={{ border: 'none', flex: 1 }}
+          onClick={({ key }) => {
+            setDrawerOpen(false);
+            navigate(key);
+          }}
+          items={[
+            { key: '/', label: 'Home' },
+            { key: '/tutor', label: 'Tutor' },
+            { key: '/admin', label: 'Admin' },
+            { type: 'divider' },
+            { key: '/privacy_policy', label: 'Privacy Policy' },
+            { key: '/terms_of_use', label: 'Terms of Use' }
+          ]}
+        />
+      </Drawer>
+      {subject !== 'math' ? (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#fff',
+            color: '#8c8c9a'
+          }}
+        >
+          Coming soon
+        </div>
+      ) : (
+      <Splitter
+        className="ytai-sider-splitter"
+        style={{ flex: 1, minHeight: 0, background: '#fff' }}
       >
         <Splitter.Panel
           defaultSize={260}
@@ -201,6 +288,14 @@ export default function TutorPage() {
           </Splitter>
         </Splitter.Panel>
       </Splitter>
+      )}
     </div>
   );
 }
+
+const SUBJECTS = [
+  { key: 'math', label: 'Math', color: '#5b8def', tint: '#eef3ff', icon: CalculatorOutlined },
+  { key: 'thinking', label: 'Thinking Skill', color: '#9254de', tint: '#f4ecff', icon: BulbOutlined },
+  { key: 'reading', label: 'Reading', color: '#22a06b', tint: '#e6f7ee', icon: ReadOutlined },
+  { key: 'writing', label: 'Writing', color: '#fa8c16', tint: '#fff3e6', icon: EditOutlined }
+];

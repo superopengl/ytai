@@ -426,7 +426,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           }
         >
           <Button
-            type="text"
             disabled={!voice.supported}
             aria-pressed={voice.enabled}
             icon={voice.enabled ? <SoundOutlined /> : <MutedOutlined />}
