@@ -1,5 +1,6 @@
 import { Typography } from 'antd';
 import theme, { palette as brand } from '../theme.js';
+import Logo from '../components/Logo.jsx';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -114,77 +115,6 @@ function pickFg(hex) {
   return luma < 0.55 ? '#ffffff' : brand.text;
 }
 
-function LogoMark({ size = 96 }) {
-  // Circular neumorphism disc with a sage-to-mauve gradient and a white "Y"
-  // mark — the new brand expression.
-  const stroke = Math.max(4, size * 0.085);
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 96 96"
-      aria-label="YouTutorAI logo mark"
-      style={{
-        filter:
-          'drop-shadow(-3px -3px 6px rgba(255,255,255,0.85)) drop-shadow(3px 3px 8px rgba(163,177,198,0.5))'
-      }}
-    >
-      <defs>
-        <linearGradient id="ytai-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={brand.primary} />
-          <stop offset="100%" stopColor={brand.secondary} />
-        </linearGradient>
-      </defs>
-      <circle cx="48" cy="48" r="46" fill="url(#ytai-grad)" />
-      <path
-        d="M28 30 L48 56 L68 30"
-        stroke="#fff"
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="48" y1="56" x2="48" y2="72" stroke="#fff" strokeWidth={stroke} strokeLinecap="round" />
-      <circle cx="76" cy="22" r="6" fill={brand.accentPeach} />
-    </svg>
-  );
-}
-
-function LogoLockup({ size = 64, color = brand.text }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-      <LogoMark size={size} />
-      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-        <span style={{ fontFamily: QUICKSAND, fontSize: size * 0.42, fontWeight: 700, color }}>
-          YouTutor
-          <span
-            style={{
-              background: brand.gradient.text,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}
-          >
-            AI
-          </span>
-        </span>
-        <span
-          style={{
-            fontSize: size * 0.2,
-            color,
-            opacity: 0.7,
-            marginTop: 4,
-            fontFamily: QUICKSAND,
-            fontWeight: 500
-          }}
-        >
-          Homework, made gentler.
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function NeuCard({ children, style }) {
   return (
     <div
@@ -281,8 +211,8 @@ export default function LogoPage() {
           Logo
         </Title>
         <Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
-          A circular disc in the sage-to-mauve brand gradient, with a friendly “Y” mark in white and
-          a peach personality dot.
+          A friendly cheering-figure mark beside the YouTutorAI wordmark. Sage-blue figure, soft
+          mauve “AI” — the two voices of the brand sitting side by side.
         </Paragraph>
 
         <div
@@ -301,7 +231,7 @@ export default function LogoPage() {
               minHeight: 200
             }}
           >
-            <LogoLockup size={72} />
+            <Logo height={64} />
           </NeuCard>
           <div
             style={{
@@ -315,7 +245,7 @@ export default function LogoPage() {
               boxShadow: theme.stickerShadow.card
             }}
           >
-            <LogoLockup size={72} color="#fff" />
+            <Logo height={64} />
           </div>
           <NeuCard
             style={{
@@ -325,12 +255,12 @@ export default function LogoPage() {
               minHeight: 200
             }}
           >
-            <LogoMark size={108} />
+            <Logo variant="mark" height={120} />
           </NeuCard>
         </div>
 
         <Title level={3} style={{ fontFamily: QUICKSAND }}>
-          Mark sizes
+          Lockup sizes
         </Title>
         <NeuCard
           style={{
@@ -341,12 +271,12 @@ export default function LogoPage() {
             flexWrap: 'wrap'
           }}
         >
-          {[32, 48, 64, 96, 128].map((s) => (
-            <div key={s} style={{ textAlign: 'center' }}>
-              <LogoMark size={s} />
+          {[24, 32, 48, 64, 80].map((h) => (
+            <div key={h} style={{ textAlign: 'center' }}>
+              <Logo height={h} />
               <div style={{ marginTop: 12 }}>
                 <Text type="secondary" style={{ fontWeight: 600 }}>
-                  {s}px
+                  {h}px
                 </Text>
               </div>
             </div>

@@ -161,25 +161,6 @@ Staleness: persisted reports carry a `cursor_message_id`. If new `session_messag
 
 ## Me (cross-session views)
 
-### `GET /api/me/weaknesses?subject=math`
-Deterministic per-user aggregation of struggled questions across all sessions for a subject. Computed live from `session_report` rows — does not call the LLM. Currently only `math` is mapped (returns empty `focusAreas` for other subjects until their syllabus mapping lands).
-
-**Returns**:
-```json
-{
-  "subject": "math",
-  "totals": { "attempted": 42, "wrong": 9, "missRate": 0.21 },
-  "focusAreas": [
-    {
-      "focusArea": "Multiplicative relations", "strand": "Number and algebra",
-      "attempted": 12, "wrong": 5, "missRate": 0.42,
-      "outcomes": [{ "code": "MA3-MR-01", "text": "...", "stage": "Stage 3", "attempted": 8, "wrong": 4, "missRate": 0.5 }],
-      "questions": [...]
-    }
-  ]
-}
-```
-
 ### `GET /api/me/subject-reports`
 List every `ready` subject-level report for the current user, newest `generated_at` first. Drives the Reports page.
 

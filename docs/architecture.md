@@ -90,7 +90,7 @@ subject_report (N per (user, subject))
 
 Because `session_message` is append-only and immutable, the cursor is a simple `last_message_id` FK — no content-hash invalidation, no edit detection. Subject-report rollups feed the LLM the *structured* session data (`questions[]` + summaries), never raw transcripts — this keeps cost bounded and is also the safety boundary for user-supplied custom prompts.
 
-The Reports portal page (`/reports`) shows a `subjects × builtin types` grid plus a custom-prompt input. The older Progress page (`/progress`) remains as a dedicated math-weaknesses view computed live from `session_report` (no LLM) via `GET /api/me/weaknesses`.
+The Reports portal page (`/reports`) shows a `subjects × builtin types` grid plus a custom-prompt input.
 
 ## Cost / Model Strategy
 

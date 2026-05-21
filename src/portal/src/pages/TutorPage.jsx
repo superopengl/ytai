@@ -7,6 +7,7 @@ import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import SessionReportPanel from '../components/SessionReportPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
+import Logo from '../components/Logo.jsx';
 import authSession from '../lib/authSession.js';
 import uploadDoc, { appendDocPage } from '../lib/uploadDoc.js';
 import SUBJECTS from '../lib/subjects.js';
@@ -209,9 +210,8 @@ export default function TutorPage() {
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
         />
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          YouTutorAI
-        </Typography.Title>
+        <Logo height={32} />
+
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {SUBJECTS.map((s) => {
             const active = subject === s.key;
@@ -287,7 +287,6 @@ export default function TutorPage() {
           items={[
             { key: '/', label: 'Home' },
             { key: '/tutor', label: 'Tutor' },
-            { key: '/progress', label: 'My Progress' },
             { key: '/reports', label: 'Reports' },
             { type: 'divider' },
             {

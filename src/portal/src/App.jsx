@@ -5,7 +5,6 @@ import theme from './theme.js';
 import HomePage from './pages/HomePage.jsx';
 import TutorPage from './pages/TutorPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
-import ProgressPage from './pages/ProgressPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './pages/TermsOfUsePage.jsx';
@@ -21,7 +20,6 @@ export default function App() {
           <Route path="/tutor" element={<TutorPage />} />
           <Route path="/tutor/:sessionId" element={<TutorPage />} />
           <Route path="/admin" element={<AdminPage />} />
-          <Route path="/progress" element={<ProgressPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/privacy_policy" element={<PrivacyPolicyPage />} />
           <Route path="/terms_of_use" element={<TermsOfUsePage />} />

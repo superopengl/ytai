@@ -1,5 +1,7 @@
 import { Typography } from 'antd';
+import { Link } from 'react-router-dom';
 import theme from '../theme.js';
+import Logo from '../components/Logo.jsx';
 
 const { Title, Paragraph } = Typography;
 
@@ -14,6 +16,9 @@ export default function TermsOfUsePage() {
       }}
     >
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <Link to="/" aria-label="YouTutorAI home" style={{ display: 'inline-block', marginBottom: 32 }}>
+          <Logo height={40} />
+        </Link>
         <Title level={1}>Terms of Use</Title>
         <Paragraph type="secondary">Last updated: May 20, 2026</Paragraph>
 

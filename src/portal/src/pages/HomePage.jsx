@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import { palette, stickerShadow, radius } from '../theme.js';
 import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
+import Logo from '../components/Logo.jsx';
 
 const { Title, Paragraph, Text, Link } = Typography;
 
@@ -66,36 +67,6 @@ function IconCircle({ size = 56, color = MINT, children, style }) {
       }}
     >
       {children}
-    </div>
-  );
-}
-
-function LogoMark({ size = 44 }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: GRAD.primary,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: stickerShadow.button,
-        flexShrink: 0
-      }}
-    >
-      <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" aria-label="YouTutorAI">
-        <path
-          d="M5 5 L12 14 L19 5"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <line x1="12" y1="14" x2="12" y2="20" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
-      </svg>
     </div>
   );
 }
@@ -399,20 +370,8 @@ function NavBar({ onScrollToSignIn }) {
           boxShadow: stickerShadow.button
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <LogoMark size={44} />
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: 21,
-              color: INK,
-              letterSpacing: -0.3,
-              fontFamily: QUICKSAND
-            }}
-          >
-            YouTutor<span className="gradient-text">AI</span>
-          </span>
-        </div>
+        <Logo height={40} />
+
         <button
           type="button"
           className="sticker-btn sticker-press"
@@ -1027,19 +986,8 @@ export default function HomePage() {
           gap: 10
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
-          <LogoMark size={40} />
-          <span
-            style={{
-              fontFamily: QUICKSAND,
-              fontWeight: 700,
-              fontSize: 21,
-              color: '#fff',
-              letterSpacing: -0.3
-            }}
-          >
-            YouTutor<span style={{ color: MINT }}>AI</span>
-          </span>
+        <div style={{ marginBottom: 6 }}>
+          <Logo height={40} />
         </div>
         <Text style={{ color: ON_DARK.text, fontSize: 13, fontWeight: 500 }}>
           Made with <HeartFilled style={{ color: PEACH, fontSize: 12 }} /> for kids who learn out loud.
