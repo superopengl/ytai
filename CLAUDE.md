@@ -13,13 +13,15 @@ Students aged 8-14, plus the parents and teachers who help them. Three personas 
 
 ## Core UI
 
-Multi-page app with three views:
+Multi-page app with these views:
 
 1. **Homepage** (`/`) — Public landing page with feature highlights and the "Sign in with Google" entry point. Google SSO is the only sign-in path; there is no `/login` or `/signup` page.
 2. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
    - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
-3. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
+3. **Progress** (`/progress`) — Per-subject view of struggled questions, computed live from `session_report` rows (no LLM). Currently shows math focus areas mapped to NSW outcomes.
+4. **Reports** (`/reports`) — Grid of `subjects × builtin report types` plus a custom-prompt input. Renders cached `subject_report` rows and triggers generation on demand.
+5. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
 
 Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sheet).
 
@@ -44,9 +46,23 @@ Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
 Pipeline flow diagram: [docs/pipeline.md](docs/pipeline.md)
 
+## Reporting
+
+Two-tier rollup, both layers lazy + cached:
+
+1. **`session_report`** (one per session, structured `questions[]` + summary) — lazy-generated on first GET. Carries `cursor_message_id` pointing at the last folded `session_message`. Because messages are append-only and immutable, staleness is the trivial check `cursor != latest`. On refresh, only messages strictly after the cursor are loaded and the prior `questions[]` is passed to the LLM as starting context — merge, not re-summarize.
+2. **`subject_report`** (N per `(user, subject)`, keyed by `report_type`) — on-demand rollup of all of a user's session reports for one subject. Builtin types:
+   - `wrong_questions` — deterministic aggregation, **no LLM call**
+   - `strengths_weaknesses` — LLM narrative + structured strengths/weaknesses
+   - `curriculum_map` — LLM mapping to focus areas with mastery state
+   - `custom` — user-supplied prompt, keyed by `prompt_hash`; cached so identical prompts share results
+   Generation refreshes any stale session reports first, then runs the rollup. LLM-based types see only the *structured* session data, never raw transcripts.
+
+Subjects are the fixed 4-enum (math / thinking / reading / writing), bound 1:1 to a session and immutable.
+
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` ('local' | 'google'), `email`, `google_id`, and `picture` for Google SSO users; `email` and `google_id` are unique.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` ('local' | 'google'), `email`, `google_id`, and `picture` for Google SSO users; `email` and `google_id` are unique.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 
@@ -64,6 +80,10 @@ Summary:
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
 - `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain hits `find_text_on_image` (EasyOCR cache) first and `lookup_on_image` (Qwen2.5-VL) for anything OCR can't answer. Vision results cached in `vision_extraction` per `(image_id, sha256(question))`; OCR results cached in `image_ocr` per `image_id`.
 - `POST /api/tutor/:sessionId/speak` — synthesize one sentence of MP3 audio (frontend buffers and chunks Brain's stream by sentence). Cached in `tts_audio` per `sha256(text + voice + model)` so kid-tutor catchphrases ("nice work!") are free on repeat. Returns 503 if `YTAI_TTS_BASE_URL` is unset.
+- `GET /api/tutor/:sessionId/report` — lazy-generated session report; **incrementally refreshes** when the session continues (cursor-based, append-only safe). `?force=1` rebuilds from scratch.
+- `GET /api/me/weaknesses?subject=math` — deterministic cross-session weakness aggregation for the Progress page. No LLM call.
+- `GET /api/me/subject-reports` — list all `ready` subject-level reports for the current user.
+- `POST /api/me/subject-report` — generate / refresh a subject-level report. Body: `{ subject, reportType, customPrompt?, force? }`. `reportType ∈ { wrong_questions, strengths_weaknesses, curriculum_map, custom }`. Custom prompts are capped at 1000 chars and only ever see structured session data, never raw transcripts.
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 

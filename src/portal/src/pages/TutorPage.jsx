@@ -288,6 +288,7 @@ export default function TutorPage() {
             { key: '/', label: 'Home' },
             { key: '/tutor', label: 'Tutor' },
             { key: '/progress', label: 'My Progress' },
+            { key: '/reports', label: 'Reports' },
             { type: 'divider' },
             {
               key: 'logout',

@@ -122,12 +122,63 @@ Chat transcript. Ordered by `created_at`. Only `user` and `assistant` messages a
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
+### `session_report`
+Post-session classification report for the parent/teacher view. One row per session; lazy-generated on first `GET /api/tutor/:sessionId/report` and **incrementally refreshed** as the session continues. Because `session_message` is append-only, staleness is the simple check `cursor_message_id != latest_message_id`. When stale and a prior `ready` row exists with `questions` and a `cursor_message_id`, the generator loads only messages strictly after `cursor_message_at` and asks the LLM to *merge* the prior question list with new messages — never re-summarizing already-folded data.
+
+| Column | Type | Notes |
+|---|---|---|
+| `session_id` | uuid | PK + FK → `tutor_session.id` |
+| `status` | text | `pending` \| `ready` \| `failed` |
+| `summary` | text | adult-facing 2–3 sentence overview |
+| `questions` | jsonb | array of `{ question, studentAnswer, correctAnswer, correct, mistakeType, mistakeNotes, nswOutcomeCode, nswOutcomeText, nswFocusArea, nswStrand, nswStage, nswSubject }` |
+| `cursor_message_id` | uuid | FK → `session_message.id`; last message folded in. NULL means never generated. |
+| `cursor_message_at` | timestamptz | mirrors the cursor message's `created_at`; used to query "messages since" without a JOIN |
+| `model_version` | text | LLM that produced the row |
+| `error` | text | failure message when `status='failed'` |
+| `prompt_tokens` | int | |
+| `completion_tokens` | int | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+### `subject_report`
+Rollup of all of a user's `session_report` rows for one `(subject, report_type)`. Multiple types per `(user, subject)`:
+- `wrong_questions` — deterministic aggregation of wrong/struggled questions; no LLM call.
+- `strengths_weaknesses` — LLM-generated narrative + structured strengths/weaknesses.
+- `curriculum_map` — LLM mapping onto curriculum focus areas with mastery state.
+- `custom` — user-supplied prompt, keyed by `prompt_hash` so identical prompts share a cached row.
+
+On generation the orchestrator first refreshes any stale `session_report` for this `(user, subject)` so the rollup sees fresh structured data. The LLM is fed the *structured* session data, never raw transcripts — that keeps cost bounded and is the only thing custom prompts see.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `user.id` |
+| `subject` | text | `math` \| `thinking` \| `reading` \| `writing` |
+| `report_type` | text | `wrong_questions` \| `strengths_weaknesses` \| `curriculum_map` \| `custom` |
+| `prompt_hash` | text | sha256 of the normalized user prompt for `custom`; NULL for builtins |
+| `custom_prompt` | text | verbatim prompt for `custom`; NULL for builtins |
+| `status` | text | `pending` \| `ready` \| `failed` |
+| `content` | jsonb | shape varies by `report_type` (see route docs) |
+| `narrative` | text | optional adult-facing prose for LLM-generated types |
+| `included_sessions` | jsonb | snapshot `[{ sessionId, cursorMessageId }]` of which session reports were folded in. Drives the staleness check: any session whose `cursor_message_id` has moved, or any new session not in the snapshot, invalidates the row. |
+| `model_version` | text | LLM that produced the row (NULL for `wrong_questions`) |
+| `prompt_tokens` | int | |
+| `completion_tokens` | int | |
+| `error` | text | |
+| `generated_at` | timestamptz | when the most recent `ready` was written |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+Unique index on `(user_id, subject, report_type, COALESCE(prompt_hash, ''))` — one row per builtin type and one row per distinct custom prompt.
+
 ## Relationships
 
 ```
 user ──< login_request
 user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
-                       │                   └──< vision_extraction
-                       └──< session_message ──┐
-                                              └─ optional FK → session_image
+     │                 │                   └──< vision_extraction
+     │                 ├──< session_message ──┐
+     │                 │                      └─ optional FK → session_image
+     │                 └── session_report (1:1) ── cursor_message_id → session_message
+     └──< subject_report  (1:N, one per (subject, report_type, prompt_hash))
 ```

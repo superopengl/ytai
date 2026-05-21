@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { sessionReport, tutorSession } from '../db/schema.js';
+import { sessionMessage, sessionReport, tutorSession } from '../db/schema.js';
 import generateSessionReport from '../lib/generateSessionReport.js';
 
 // In-flight generation locks per sessionId. Two parents hitting the report
@@ -28,26 +28,39 @@ export default function tutorGetReport(fastify) {
           status: sessionReport.status,
           summary: sessionReport.summary,
           questions: sessionReport.questions,
+          cursorMessageId: sessionReport.cursorMessageId,
           modelVersion: sessionReport.modelVersion,
           error: sessionReport.error,
           updatedAt: sessionReport.updatedAt
         })
         .from(sessionReport)
         .where(eq(sessionReport.sessionId, sessionId));
+
       if (existing && existing.status === 'ready') {
-        return {
-          status: 'ready',
-          summary: existing.summary || '',
-          questions: Array.isArray(existing.questions) ? existing.questions : [],
-          modelVersion: existing.modelVersion,
-          updatedAt: existing.updatedAt
-        };
+        // Stale iff there's a newer message than the cursor.
+        const [latest] = await db()
+          .select({ id: sessionMessage.id })
+          .from(sessionMessage)
+          .where(eq(sessionMessage.sessionId, sessionId))
+          .orderBy(desc(sessionMessage.createdAt))
+          .limit(1);
+
+        if (!latest || latest.id === existing.cursorMessageId) {
+          return {
+            status: 'ready',
+            summary: existing.summary || '',
+            questions: Array.isArray(existing.questions) ? existing.questions : [],
+            modelVersion: existing.modelVersion,
+            updatedAt: existing.updatedAt
+          };
+        }
+        // else fall through to generation (incremental refresh)
       }
     }
 
     let pending = inFlight.get(sessionId);
     if (!pending) {
-      pending = generateSessionReport({ sessionId, log: request.log }).finally(() => {
+      pending = generateSessionReport({ sessionId, log: request.log, force }).finally(() => {
         inFlight.delete(sessionId);
       });
       inFlight.set(sessionId, pending);

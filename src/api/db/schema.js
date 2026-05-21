@@ -192,6 +192,12 @@ export const sessionMessage = ytai.table('session_message', {
 // { question, studentAnswer, correctAnswer, correct, mistakeType,
 // nswOutcomeCode, nswOutcomeText, stage, subject } objects keyed against
 // src/api/data/nswSyllabus.json.
+//
+// `cursorMessageId` records the last session_message folded into the
+// report. Because session_message is append-only and immutable, the
+// report is stale iff cursor_message_id < the session's latest message.
+// On refresh we either merge the prior questions with new messages
+// since the cursor (incremental) or rebuild from scratch (full).
 export const sessionReport = ytai.table('session_report', {
   sessionId: uuid('session_id')
     .primaryKey()
@@ -200,6 +206,8 @@ export const sessionReport = ytai.table('session_report', {
   status: text('status').notNull().default('pending'),
   summary: text('summary'),
   questions: jsonb('questions'),
+  cursorMessageId: uuid('cursor_message_id').references(() => sessionMessage.id),
+  cursorMessageAt: timestamp('cursor_message_at', { withTimezone: true }),
   modelVersion: text('model_version'),
   error: text('error'),
   promptTokens: integer('prompt_tokens'),
@@ -207,3 +215,38 @@ export const sessionReport = ytai.table('session_report', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
+
+// Subject-level report rolled up from this user's session_reports for one
+// subject. Multiple report_type rows per (user, subject):
+//   - 'wrong_questions'      — deterministic aggregation of wrong/struggled qs
+//   - 'strengths_weaknesses' — LLM-generated narrative + structured fields
+//   - 'curriculum_map'       — LLM mapping to syllabus areas
+//   - 'custom'               — user-supplied prompt, keyed by prompt_hash
+//
+// `includedSessions` snapshots the (sessionId, cursorMessageId) pairs the
+// report was built from. Staleness: any included session report has
+// moved its cursor, or new sessions for this (user, subject) exist that
+// weren't in the snapshot.
+export const subjectReport = ytai.table(
+  'subject_report',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => user.id),
+    subject: text('subject').notNull(),
+    reportType: text('report_type').notNull(),
+    // sha256 of the normalized user prompt for custom reports; NULL otherwise.
+    promptHash: text('prompt_hash'),
+    customPrompt: text('custom_prompt'),
+    status: text('status').notNull().default('pending'),
+    content: jsonb('content'),
+    narrative: text('narrative'),
+    includedSessions: jsonb('included_sessions'),
+    modelVersion: text('model_version'),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    error: text('error'),
+    generatedAt: timestamp('generated_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+  }
+);

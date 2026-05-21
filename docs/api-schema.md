@@ -135,6 +135,109 @@ data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "inter
 - `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right).
 - Closing the stream from the client triggers `AbortController`, which interrupts both Brain and any in-flight vision call. The partial assistant message is persisted with `interrupted=true`.
 
+### `GET /api/tutor/:sessionId/report`
+Lazy-generated post-session report. First call (or any call after new messages have been appended) generates / incrementally refreshes the report.
+
+**Query**: `?force=1` rebuilds from scratch instead of incrementally merging.
+
+**Returns**:
+```json
+{
+  "status": "ready",
+  "summary": "Two or three sentences for an adult reader.",
+  "questions": [
+    {
+      "question": "...", "studentAnswer": "...", "correctAnswer": "...",
+      "correct": true, "mistakeType": null, "mistakeNotes": "",
+      "nswOutcomeCode": "MA2-MR-01", "nswOutcomeText": "...",
+      "nswStrand": "...", "nswFocusArea": "...", "nswStage": "Stage 2", "nswSubject": "Mathematics"
+    }
+  ],
+  "modelVersion": "deepseek/deepseek-chat"
+}
+```
+
+Staleness: persisted reports carry a `cursor_message_id`. If new `session_message` rows exist for this session after the cursor, the next GET refreshes the report — incrementally if the prior questions list is valid, otherwise from scratch. Because `session_message` is append-only and immutable, the cursor never needs invalidation from edits.
+
+## Me (cross-session views)
+
+### `GET /api/me/weaknesses?subject=math`
+Deterministic per-user aggregation of struggled questions across all sessions for a subject. Computed live from `session_report` rows — does not call the LLM. Currently only `math` is mapped (returns empty `focusAreas` for other subjects until their syllabus mapping lands).
+
+**Returns**:
+```json
+{
+  "subject": "math",
+  "totals": { "attempted": 42, "wrong": 9, "missRate": 0.21 },
+  "focusAreas": [
+    {
+      "focusArea": "Multiplicative relations", "strand": "Number and algebra",
+      "attempted": 12, "wrong": 5, "missRate": 0.42,
+      "outcomes": [{ "code": "MA3-MR-01", "text": "...", "stage": "Stage 3", "attempted": 8, "wrong": 4, "missRate": 0.5 }],
+      "questions": [...]
+    }
+  ]
+}
+```
+
+### `GET /api/me/subject-reports`
+List every `ready` subject-level report for the current user, newest `generated_at` first. Drives the Reports page.
+
+**Returns**:
+```json
+{
+  "reports": [
+    {
+      "id": "uuid", "subject": "math", "reportType": "wrong_questions",
+      "status": "ready", "narrative": "", "content": { ... },
+      "customPrompt": null, "promptHash": null,
+      "generatedAt": "...", "includedSessions": [{ "sessionId": "...", "cursorMessageId": "..." }],
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+### `POST /api/me/subject-report`
+Generate or refresh a subject-level report. Returns the cached row if its `included_sessions` snapshot is still up to date; otherwise refreshes any stale session reports first, then runs the rollup. Builtin types use a fixed prompt; `custom` accepts a user prompt and caches by `prompt_hash`.
+
+**Body**:
+```json
+{
+  "subject": "math" | "thinking" | "reading" | "writing",
+  "reportType": "wrong_questions" | "strengths_weaknesses" | "curriculum_map" | "custom",
+  "customPrompt": "string (required when reportType='custom'; max 1000 chars)",
+  "force": false
+}
+```
+
+**Returns**:
+```json
+{
+  "status": "ready" | "empty",
+  "subject": "math",
+  "reportType": "strengths_weaknesses",
+  "content": { ... },
+  "narrative": "string (LLM-generated types)",
+  "generatedAt": "...",
+  "includedSessions": [...],
+  "modelVersion": "deepseek/deepseek-chat",
+  "fresh": true
+}
+```
+
+`content` shape varies by type:
+- `wrong_questions`: `{ items: [{ sessionId, sessionStartedAt, question, studentAnswer, correctAnswer, correct, mistakeType, mistakeNotes, outcomeCode, outcomeText, focusArea }], totals: { sessions, wrongQuestions } }`
+- `strengths_weaknesses`: `{ narrative, strengths: [{ skill, evidence }], weaknesses: [{ skill, evidence, suggestion }] }`
+- `curriculum_map`: `{ narrative, areas: [{ focusArea, outcomeCodes, mastery, evidence }] }`
+- `custom`: `{ narrative, sections?: [{ title, bullets[] }] }`
+
+`status: "empty"` is returned when the user has no sessions for the requested subject yet (no LLM call is made).
+
+**Errors**:
+- `400` — invalid `subject`, invalid `reportType`, missing/too-long `customPrompt`
+- `502` — LLM call failed
+
 ## WebSocket *(deferred)*
 
 ### `WS /api/ws`

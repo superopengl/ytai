@@ -63,6 +63,35 @@ Tool: draw_annotation(shape, x1, y1, x2, y2, color?)
 - Brain's tool-call loop is capped at `MAX_TOOL_ROUNDS = 6` per turn as a runaway guard.
 - Streaming uses SSE + `AbortController` so the Stop button kills both Brain and any in-flight Eyes call. The interrupted partial response is preserved in the transcript.
 
+## Reporting — two-tier rollup
+
+A separate, off-turn pipeline produces parent/teacher-facing reports from the same session data. Two layers, both lazy and cached:
+
+```
+session_message (append-only, immutable)
+        │
+        ▼
+session_report (1 per session)
+   structured questions[] + summary
+   cursor_message_id → last folded message
+        │   incremental refresh:
+        │   load messages strictly after cursor,
+        │   ask LLM to merge prior questions[] with new transcript.
+        │
+        ▼
+subject_report (N per (user, subject))
+   report_type ∈ { wrong_questions, strengths_weaknesses,
+                   curriculum_map, custom }
+   included_sessions[] snapshots which session reports were folded in.
+   Staleness = any included cursor moved, or new session appeared.
+   wrong_questions skips the LLM (deterministic aggregation).
+   custom is keyed by sha256(normalized prompt).
+```
+
+Because `session_message` is append-only and immutable, the cursor is a simple `last_message_id` FK — no content-hash invalidation, no edit detection. Subject-report rollups feed the LLM the *structured* session data (`questions[]` + summaries), never raw transcripts — this keeps cost bounded and is also the safety boundary for user-supplied custom prompts.
+
+The Reports portal page (`/reports`) shows a `subjects × builtin types` grid plus a custom-prompt input. The older Progress page (`/progress`) remains as a dedicated math-weaknesses view computed live from `session_report` (no LLM) via `GET /api/me/weaknesses`.
+
 ## Cost / Model Strategy
 
 - **OCR (EasyOCR)** is free per-token at request time (runs locally, no per-call cost beyond CPU). Eagerly pre-runs once per image (~3–8s on CPU) so subsequent `find_text_on_image` calls hit a DB row, not the sidecar.

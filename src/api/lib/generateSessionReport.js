@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gt } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   imageOcr,
@@ -152,9 +152,17 @@ function reporterConfig() {
   };
 }
 
-async function loadSessionContext(sessionId) {
+async function loadSessionContext(sessionId, { sinceMessageAt } = {}) {
+  const whereClause = sinceMessageAt
+    ? and(
+        eq(sessionMessage.sessionId, sessionId),
+        gt(sessionMessage.createdAt, sinceMessageAt)
+      )
+    : eq(sessionMessage.sessionId, sessionId);
+
   const messages = await db()
     .select({
+      id: sessionMessage.id,
       role: sessionMessage.role,
       content: sessionMessage.content,
       imageId: sessionMessage.imageId,
@@ -162,7 +170,7 @@ async function loadSessionContext(sessionId) {
       createdAt: sessionMessage.createdAt
     })
     .from(sessionMessage)
-    .where(eq(sessionMessage.sessionId, sessionId))
+    .where(whereClause)
     .orderBy(asc(sessionMessage.createdAt));
 
   // Pull image IDs from the session's docs so the report sees every page
@@ -228,20 +236,33 @@ function visionQAToText(visionRows) {
   return out.join('\n\n');
 }
 
-function buildMessages({ transcript, ocrText, visionText }) {
+function buildMessages({ transcript, ocrText, visionText, priorQuestions }) {
+  const isIncremental = Array.isArray(priorQuestions) && priorQuestions.length > 0;
+  const incrementalNote = isIncremental
+    ? ' This is an incremental update. The student has continued the session since the last report. You are given the prior list of questions and only the NEW chat messages since then. Return a MERGED list: keep any prior question that still belongs (updating its correct/mistakeType if a later interaction changes the verdict — e.g. the student initially got it wrong and then got it right after scaffolding), and add any new questions that came up. Do not drop prior questions just because they are not mentioned in the new transcript chunk.'
+    : '';
+
   const system =
     'You are generating a post-session report for a parent or teacher reviewing their kid\'s tutoring session on YouTutorAI. ' +
     'Your job is to extract the worksheet questions the student worked on, judge correctness, classify any mistake, and tag each question to a single NSW K-10 Syllabus (2022) outcome code from the catalog below. ' +
     'Be honest and specific. If the student got something right, say so. If you cannot determine the correct answer from the transcript, leave correctAnswer empty rather than guessing. ' +
     'Write the summary to an adult — not to the student. ' +
-    'Call the submit_report tool exactly once and do not write any other text.\n\n' +
-    'NSW K-10 Syllabus (2022) outcome catalog — pick nswOutcomeCode from this list only:\n\n' +
+    'Call the submit_report tool exactly once and do not write any other text.' +
+    incrementalNote +
+    '\n\nNSW K-10 Syllabus (2022) outcome catalog — pick nswOutcomeCode from this list only:\n\n' +
     CATALOG_RAW;
 
   const userParts = [];
   if (ocrText) userParts.push(`### Worksheet text (OCR)\n${ocrText}`);
   if (visionText) userParts.push(`### What the vision model saw on the page\n${visionText}`);
-  userParts.push(`### Tutoring transcript\n${transcript || '(no chat messages)'}`);
+  if (isIncremental) {
+    userParts.push(
+      `### Prior report — questions already captured (merge with the transcript below)\n${JSON.stringify(priorQuestions, null, 2)}`
+    );
+    userParts.push(`### New transcript since last report\n${transcript || '(no new chat messages)'}`);
+  } else {
+    userParts.push(`### Tutoring transcript\n${transcript || '(no chat messages)'}`);
+  }
 
   return [
     { role: 'system', content: system },
@@ -328,12 +349,63 @@ function normalizeReport(args, { log }) {
   return { summary, subject, stage, questions };
 }
 
-export default async function generateSessionReport({ sessionId, log }) {
+// Returns { id, createdAt } of the most recent session_message, or null.
+async function latestMessage(sessionId) {
+  const rows = await db()
+    .select({ id: sessionMessage.id, createdAt: sessionMessage.createdAt })
+    .from(sessionMessage)
+    .where(eq(sessionMessage.sessionId, sessionId))
+    .orderBy(desc(sessionMessage.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export default async function generateSessionReport({ sessionId, log, force = false }) {
   const [session] = await db()
     .select({ id: tutorSession.id })
     .from(tutorSession)
     .where(eq(tutorSession.id, sessionId));
   if (!session) throw new Error(`Session ${sessionId} not found`);
+
+  const [existing] = await db()
+    .select({
+      status: sessionReport.status,
+      summary: sessionReport.summary,
+      questions: sessionReport.questions,
+      cursorMessageId: sessionReport.cursorMessageId,
+      cursorMessageAt: sessionReport.cursorMessageAt
+    })
+    .from(sessionReport)
+    .where(eq(sessionReport.sessionId, sessionId));
+
+  const latest = await latestMessage(sessionId);
+
+  // Fast path: existing ready report already at the head. Nothing to do.
+  if (
+    !force &&
+    existing?.status === 'ready' &&
+    latest &&
+    existing.cursorMessageId === latest.id
+  ) {
+    return {
+      status: 'ready',
+      summary: existing.summary || '',
+      subject: 'Unknown',
+      stage: 'Unknown',
+      questions: Array.isArray(existing.questions) ? existing.questions : [],
+      fresh: false
+    };
+  }
+
+  // Decide between incremental and full rebuild. Incremental needs a
+  // ready prior report with a cursor that still resolves to a real
+  // message. Otherwise rebuild from scratch.
+  const canIncrement =
+    !force &&
+    existing?.status === 'ready' &&
+    Array.isArray(existing.questions) &&
+    existing.cursorMessageId &&
+    existing.cursorMessageAt;
 
   await db()
     .insert(sessionReport)
@@ -344,12 +416,15 @@ export default async function generateSessionReport({ sessionId, log }) {
     });
 
   try {
-    const { messages, ocrRows, visionRows } = await loadSessionContext(sessionId);
+    const { messages, ocrRows, visionRows } = await loadSessionContext(
+      sessionId,
+      canIncrement ? { sinceMessageAt: existing.cursorMessageAt } : undefined
+    );
     const transcript = transcriptToText(messages);
     const ocrText = ocrToText(ocrRows);
     const visionText = visionQAToText(visionRows);
 
-    if (!transcript && !ocrText && !visionText) {
+    if (!transcript && !ocrText && !visionText && !canIncrement) {
       const empty = {
         summary: 'No activity recorded for this session yet.',
         subject: 'Unknown',
@@ -362,15 +437,55 @@ export default async function generateSessionReport({ sessionId, log }) {
           status: 'ready',
           summary: empty.summary,
           questions: empty.questions,
+          cursorMessageId: latest?.id ?? null,
+          cursorMessageAt: latest?.createdAt ?? null,
           updatedAt: new Date()
         })
         .where(eq(sessionReport.sessionId, sessionId));
-      return { ...empty, status: 'ready' };
+      return { ...empty, status: 'ready', fresh: true };
     }
 
-    const promptMessages = buildMessages({ transcript, ocrText, visionText });
+    // Incremental with no new messages: nothing changed since the cursor.
+    // (Shouldn't happen given the staleness check above, but handle the
+    // race where messages got rolled back, etc.)
+    if (canIncrement && !transcript) {
+      await db()
+        .update(sessionReport)
+        .set({
+          status: 'ready',
+          cursorMessageId: latest?.id ?? existing.cursorMessageId,
+          cursorMessageAt: latest?.createdAt ?? existing.cursorMessageAt,
+          updatedAt: new Date()
+        })
+        .where(eq(sessionReport.sessionId, sessionId));
+      return {
+        status: 'ready',
+        summary: existing.summary || '',
+        subject: 'Unknown',
+        stage: 'Unknown',
+        questions: existing.questions,
+        fresh: false
+      };
+    }
+
+    const promptMessages = buildMessages({
+      transcript,
+      ocrText,
+      visionText,
+      priorQuestions: canIncrement ? existing.questions : null
+    });
     const { baseUrl, apiKey, model } = reporterConfig();
-    log.info({ sessionId, model, transcriptChars: transcript.length, ocrChars: ocrText.length }, 'generateSessionReport: calling Brain');
+    log.info(
+      {
+        sessionId,
+        model,
+        incremental: canIncrement,
+        transcriptChars: transcript.length,
+        ocrChars: ocrText.length,
+        priorQuestions: canIncrement ? existing.questions.length : 0
+      },
+      'generateSessionReport: calling Brain'
+    );
     const { args, usage } = await callReporter({ messages: promptMessages, baseUrl, apiKey, model });
     const normalized = normalizeReport(args, { log });
 
@@ -380,6 +495,8 @@ export default async function generateSessionReport({ sessionId, log }) {
         status: 'ready',
         summary: normalized.summary,
         questions: normalized.questions,
+        cursorMessageId: latest?.id ?? null,
+        cursorMessageAt: latest?.createdAt ?? null,
         modelVersion: model,
         promptTokens: usage?.prompt_tokens ?? null,
         completionTokens: usage?.completion_tokens ?? null,
@@ -393,7 +510,8 @@ export default async function generateSessionReport({ sessionId, log }) {
       summary: normalized.summary,
       subject: normalized.subject,
       stage: normalized.stage,
-      questions: normalized.questions
+      questions: normalized.questions,
+      fresh: true
     };
   } catch (err) {
     log.error({ err, sessionId }, 'generateSessionReport failed');
