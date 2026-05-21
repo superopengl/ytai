@@ -251,6 +251,11 @@ export default function ChatPanel({
       for await (const { event, data } of stream) {
         if (sendGenRef.current !== myGen) break;
         if (event === 'user') {
+          // Keep the local placeholder createdAt: the server timestamp is
+          // strictly later than the assistant placeholder's local time, so
+          // swapping it in would flip the two bubbles in the timeline sort
+          // until the 'done' event lands. Server times are reconciled on
+          // the next history fetch.
           setMessages((prev) =>
             prev.map((m) =>
               m.id === userLocalId
@@ -258,7 +263,7 @@ export default function ChatPanel({
                     id: data.id,
                     role: 'user',
                     content: data.content,
-                    createdAt: data.createdAt
+                    createdAt: m.createdAt
                   }
                 : m
             )
