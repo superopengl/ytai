@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Button, Drawer, Menu, message, Splitter, Tabs, Tag, Typography } from 'antd';
-import {
-  BulbOutlined,
-  CalculatorOutlined,
-  EditOutlined,
-  MenuOutlined,
-  ReadOutlined,
-  UserOutlined
-} from '@ant-design/icons';
+import { MenuOutlined, UserOutlined } from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
@@ -16,6 +9,8 @@ import SessionReportPanel from '../components/SessionReportPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 import authSession from '../lib/authSession.js';
 import uploadDoc, { appendDocPage } from '../lib/uploadDoc.js';
+import SUBJECTS from '../lib/subjects.js';
+import { palette } from '../theme.js';
 
 export default function TutorPage() {
   const { sessionId: routeSessionId } = useParams();
@@ -194,12 +189,12 @@ export default function TutorPage() {
   const currentDoc = docs.find((d) => d.id === currentDocId) ?? null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f7f8fc' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: palette.bgPanel }}>
       <header
         style={{
           padding: '12px 24px',
-          background: '#fff',
-          borderBottom: '1px solid #ececf3',
+          background: palette.surface,
+          borderBottom: `1px solid ${palette.borderSoft}`,
           display: 'flex',
           alignItems: 'center',
           gap: 12
@@ -229,7 +224,7 @@ export default function TutorPage() {
                   borderRadius: 16,
                   border: `1px solid ${active ? s.color : 'transparent'}`,
                   background: active ? s.color : s.tint,
-                  color: active ? '#fff' : s.color
+                  color: active ? palette.surface : s.color
                 }}
               >
                 {active && <s.icon style={{ marginRight: 6 }} />}
@@ -254,7 +249,7 @@ export default function TutorPage() {
             <Avatar
               src={currentUser?.picture || undefined}
               icon={<UserOutlined />}
-              style={{ backgroundColor: '#5b8def' }}
+              style={{ backgroundColor: palette.subjects.math.color }}
             />
             <Typography.Text strong>{currentUser?.name || 'Guest'}</Typography.Text>
           </div>
@@ -287,8 +282,8 @@ export default function TutorPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#fff',
-            color: '#8c8c9a'
+            background: palette.surface,
+            color: palette.textDisabled
           }}
         >
           Coming soon
@@ -296,7 +291,7 @@ export default function TutorPage() {
       ) : (
         <Splitter
           className="ytai-sider-splitter"
-          style={{ flex: 1, minHeight: 0, background: '#fff' }}
+          style={{ flex: 1, minHeight: 0, background: palette.surface }}
         >
           <Splitter.Panel
             defaultSize={260}
@@ -381,9 +376,3 @@ export default function TutorPage() {
   );
 }
 
-const SUBJECTS = [
-  { key: 'math', label: 'Math', color: '#5b8def', tint: '#eef3ff', icon: CalculatorOutlined },
-  { key: 'thinking', label: 'Thinking Skill', color: '#9254de', tint: '#f4ecff', icon: BulbOutlined },
-  { key: 'reading', label: 'Reading', color: '#22a06b', tint: '#e6f7ee', icon: ReadOutlined },
-  { key: 'writing', label: 'Writing', color: '#fa8c16', tint: '#fff3e6', icon: EditOutlined }
-];

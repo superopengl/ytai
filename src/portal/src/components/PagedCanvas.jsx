@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Tooltip, Typography, Upload, message as antMessage } from 'antd';
 import { CameraOutlined, PlusOutlined } from '@ant-design/icons';
 import AnnotationCanvas from './AnnotationCanvas.jsx';
+import { palette } from '../theme.js';
+
+const ACCENT_BLUE = palette.subjects.math.color;
+// Bright orange dot used to flag pages that already have AI annotations.
+// Reuses the writing-subject color since it reads as "attention" without
+// being alarming.
+const ATTENTION_DOT = palette.subjects.writing.color;
 
 // Wraps AnnotationCanvas with multi-page support: a horizontal page strip
 // at the top, per-page stroke state, and per-page routing for AI
@@ -135,7 +142,7 @@ function PageStrip({
         gap: 8,
         padding: '4px 4px 8px',
         overflowX: 'auto',
-        borderBottom: '1px solid #ececf3',
+        borderBottom: `1px solid ${palette.borderSoft}`,
         marginBottom: 6,
         alignItems: 'center'
       }}
@@ -154,11 +161,11 @@ function PageStrip({
               width: 72,
               height: 88,
               padding: 0,
-              border: active ? '2px solid #5b8def' : '2px solid #ececf3',
+              border: `2px solid ${active ? ACCENT_BLUE : palette.borderSoft}`,
               borderRadius: 8,
-              background: '#fff',
+              background: palette.surface,
               cursor: 'pointer',
-              boxShadow: active ? '0 2px 8px rgba(91, 141, 239, 0.25)' : 'none'
+              boxShadow: active ? `0 2px 8px ${ACCENT_BLUE}40` : 'none'
             }}
             aria-label={`Page ${page.pageNumber}${active ? ' (current)' : ''}`}
           >
@@ -172,8 +179,8 @@ function PageStrip({
                 position: 'absolute',
                 left: 4,
                 bottom: 4,
-                background: 'rgba(15, 19, 32, 0.78)',
-                color: '#fff',
+                background: palette.overlay.scrim,
+                color: palette.surface,
                 padding: '1px 5px',
                 borderRadius: 4,
                 fontSize: 10,
@@ -192,8 +199,8 @@ function PageStrip({
                   width: 8,
                   height: 8,
                   borderRadius: '50%',
-                  background: '#fa8c16',
-                  boxShadow: '0 0 0 2px #fff'
+                  background: ATTENTION_DOT,
+                  boxShadow: `0 0 0 2px ${palette.surface}`
                 }}
               />
             )}
@@ -247,5 +254,5 @@ const emptyHint = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#5d6478'
+  color: palette.textHint
 };

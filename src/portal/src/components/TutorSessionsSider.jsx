@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, ConfigProvider, Empty, message, Popconfirm, Spin, theme, Typography, Space } from 'antd';
 import { DeleteOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { palette } from '../theme.js';
+
+const SIDER_BG = palette.sider.bg;
+const SIDER_BORDER = palette.sider.border;
+const TEXT_PRIMARY = palette.sider.textPrimary;
+const TEXT_MUTED = palette.sider.textMuted;
+const ACTIVE_BG = palette.sider.activeBg;
+const ACCENT = palette.sider.accent;
 
 export default function TutorSessionsSider({
   currentSessionId,
@@ -185,13 +193,6 @@ function formatRelative(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-const SIDER_BG = '#1f2330';
-const SIDER_BORDER = '#2d3344';
-const TEXT_PRIMARY = '#e5e8f0';
-const TEXT_MUTED = '#8b93a8';
-const ACTIVE_BG = '#2a3148';
-const ACCENT = '#5b8def';
-
 const containerStyle = {
   height: '100%',
   display: 'flex',
@@ -261,6 +262,6 @@ const ROW_CSS = `
   opacity: 1;
 }
 .ytai-session-row-delete:hover .anticon-delete {
-  color: #ff6b6b !important;
+  color: ${palette.sider.danger} !important;
 }
 `;

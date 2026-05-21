@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Empty, Skeleton, Space, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import { palette } from '../theme.js';
 
 const MISTAKE_COLORS = {
   conceptual: 'volcano',
@@ -126,7 +127,7 @@ export default function SessionReportPanel({ sessionId, active }) {
         overflowY: 'auto',
         overflowX: 'hidden',
         padding: '16px 20px',
-        background: '#e6f4ff'
+        background: palette.tint.primary
       }}
     >
       <div

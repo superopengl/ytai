@@ -13,20 +13,9 @@ import {
   Tag,
   Typography
 } from 'antd';
-import {
-  ArrowLeftOutlined,
-  BulbOutlined,
-  CalculatorOutlined,
-  EditOutlined,
-  ReadOutlined
-} from '@ant-design/icons';
-
-const SUBJECTS = [
-  { key: 'math', label: 'Math', color: '#5b8def', tint: '#eef3ff', icon: CalculatorOutlined, supported: true },
-  { key: 'thinking', label: 'Thinking Skill', color: '#9254de', tint: '#f4ecff', icon: BulbOutlined, supported: false },
-  { key: 'reading', label: 'Reading', color: '#22a06b', tint: '#e6f7ee', icon: ReadOutlined, supported: false },
-  { key: 'writing', label: 'Writing', color: '#fa8c16', tint: '#fff3e6', icon: EditOutlined, supported: false }
-];
+import { ArrowLeftOutlined } from '@ant-design/icons';
+import SUBJECTS from '../lib/subjects.js';
+import { palette } from '../theme.js';
 
 const MISTAKE_LABEL = {
   conceptual: 'Conceptual',
@@ -83,12 +72,12 @@ export default function ProgressPage() {
   }, [subject, activeSubject?.supported]);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
+    <div style={{ minHeight: '100vh', background: palette.bgPanel }}>
       <header
         style={{
           padding: '12px 24px',
-          background: '#fff',
-          borderBottom: '1px solid #ececf3',
+          background: palette.surface,
+          borderBottom: `1px solid ${palette.borderSoft}`,
           display: 'flex',
           alignItems: 'center',
           gap: 12
@@ -118,7 +107,7 @@ export default function ProgressPage() {
                   borderRadius: 16,
                   border: `1px solid ${active ? s.color : 'transparent'}`,
                   background: active ? s.color : s.tint,
-                  color: active ? '#fff' : s.color
+                  color: active ? palette.surface : s.color
                 }}
               >
                 {active && <s.icon style={{ marginRight: 6 }} />}
@@ -163,8 +152,8 @@ function ProgressBody({ data, subjectColor }) {
       <Card style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap' }}>
           <Statistic title="Questions attempted" value={totals.attempted} />
-          <Statistic title="Got right" value={correctCount} valueStyle={{ color: '#3ec28f' }} />
-          <Statistic title="Struggled with" value={totals.wrong} valueStyle={{ color: '#ff6b6b' }} />
+          <Statistic title="Got right" value={correctCount} valueStyle={{ color: palette.state.correct }} />
+          <Statistic title="Struggled with" value={totals.wrong} valueStyle={{ color: palette.state.wrong }} />
           <div style={{ flex: 1, minWidth: 220 }}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Overall success rate
@@ -258,7 +247,7 @@ function QuestionItem({ q }) {
   return (
     <Card size="small" styles={{ body: { padding: 12 } }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <Avatar size="small" style={{ background: '#ff6b6b', flexShrink: 0 }}>
+        <Avatar size="small" style={{ background: palette.state.wrong, flexShrink: 0 }}>
           {q.correct === false ? '✗' : '?'}
         </Avatar>
         <div style={{ flex: 1, minWidth: 0 }}>

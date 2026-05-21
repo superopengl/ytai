@@ -7,6 +7,12 @@ import {
   PlusOutlined,
   UploadOutlined
 } from '@ant-design/icons';
+import { palette } from '../theme.js';
+
+// PDF thumbnail uses a peach tint + warm orange icon — the writing-subject
+// color reads as "document" without competing with chat blues.
+const PDF_TINT = palette.tint.secondary;
+const PDF_ICON = palette.subjects.writing.color;
 
 // Initial-upload screen shown when a session has no doc yet. The student
 // can:
@@ -180,7 +186,7 @@ function PageThumb({ index, src, isPdf, name, onRemove }) {
         borderRadius: 8,
         overflow: 'hidden',
         boxShadow: '0 2px 6px rgba(0, 0, 0, 0.12)',
-        background: '#fff'
+        background: palette.surface
       }}
       title={name}
     >
@@ -194,8 +200,8 @@ function PageThumb({ index, src, isPdf, name, onRemove }) {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
-            background: '#fff1eb',
-            color: '#fa541c',
+            background: PDF_TINT,
+            color: PDF_ICON,
             textAlign: 'center',
             padding: 8
           }}
@@ -215,8 +221,8 @@ function PageThumb({ index, src, isPdf, name, onRemove }) {
           position: 'absolute',
           left: 6,
           top: 6,
-          background: 'rgba(15, 19, 32, 0.78)',
-          color: '#fff',
+          background: palette.overlay.scrim,
+          color: palette.surface,
           padding: '2px 6px',
           borderRadius: 4,
           fontSize: 11,

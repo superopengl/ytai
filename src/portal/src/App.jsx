@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import theme from './theme.js';
@@ -7,7 +8,8 @@ import AdminPage from './pages/AdminPage.jsx';
 import ProgressPage from './pages/ProgressPage.jsx';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './pages/TermsOfUsePage.jsx';
-import LogoPage from './pages/LogoPage.jsx';
+
+const LogoPage = lazy(() => import('./pages/LogoPage.jsx'));
 
 export default function App() {
   return (
@@ -21,7 +23,14 @@ export default function App() {
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/privacy_policy" element={<PrivacyPolicyPage />} />
           <Route path="/terms_of_use" element={<TermsOfUsePage />} />
-          <Route path="/logo" element={<LogoPage />} />
+          <Route
+            path="/logo"
+            element={
+              <Suspense fallback={null}>
+                <LogoPage />
+              </Suspense>
+            }
+          />
         </Routes>
       </BrowserRouter>
     </ConfigProvider>

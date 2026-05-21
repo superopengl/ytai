@@ -2,6 +2,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import { palette } from '../theme.js';
+
+const { overlay: OVERLAY } = palette;
 
 // Renders an assistant message as markdown with GFM extensions (lists,
 // tables, strikethrough) and KaTeX math ($x^2$, $$...$$). Anchor styling
@@ -24,7 +27,7 @@ const components = {
       {...props}
       className={className}
       style={{
-        background: 'rgba(0,0,0,0.06)',
+        background: OVERLAY.inkVeil,
         padding: '0 4px',
         borderRadius: 4,
         fontSize: '0.9em'
@@ -37,7 +40,7 @@ const components = {
     <pre
       {...props}
       style={{
-        background: 'rgba(0,0,0,0.06)',
+        background: OVERLAY.inkVeil,
         padding: 10,
         borderRadius: 8,
         margin: '6px 0',
@@ -59,7 +62,7 @@ const components = {
     <blockquote
       {...props}
       style={{
-        borderLeft: '3px solid rgba(0,0,0,0.18)',
+        borderLeft: `3px solid ${OVERLAY.inkQuote}`,
         margin: '4px 0',
         padding: '0 8px',
         opacity: 0.85
@@ -72,10 +75,10 @@ const components = {
     </div>
   ),
   th: ({ node, ...props }) => (
-    <th {...props} style={{ border: '1px solid rgba(0,0,0,0.15)', padding: '4px 8px', background: 'rgba(0,0,0,0.04)' }} />
+    <th {...props} style={{ border: `1px solid ${OVERLAY.inkRule}`, padding: '4px 8px', background: OVERLAY.inkSheen }} />
   ),
   td: ({ node, ...props }) => (
-    <td {...props} style={{ border: '1px solid rgba(0,0,0,0.15)', padding: '4px 8px' }} />
+    <td {...props} style={{ border: `1px solid ${OVERLAY.inkRule}`, padding: '4px 8px' }} />
   )
 };
 

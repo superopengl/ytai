@@ -13,10 +13,10 @@ import {
 } from 'react-konva';
 import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
 import { ClearOutlined, HighlightOutlined, UndoOutlined } from '@ant-design/icons';
+import { palette } from '../theme.js';
 
-const DEFAULT_AI_COLOR = '#3aa0ff';
-
-const PEN_PRESETS = ['#ff1744', '#22c55e', '#f97316', '#a855f7', '#1d2233', '#ffd60a', '#06b6d4'];
+const DEFAULT_AI_COLOR = palette.aiAnnotationDefault;
+const PEN_PRESETS = palette.penPresets;
 const PEN_WIDTH_MIN = 2;
 const PEN_WIDTH_MAX = 20;
 const PEN_WIDTH_DEFAULT = 7;
@@ -177,7 +177,7 @@ export default function AnnotationCanvas({
               style={{ width: 120, margin: 0 }}
               tooltip={{ formatter: (v) => `${v}px` }}
             />
-            <span style={{ minWidth: 28, fontSize: 12, color: '#5d6478' }}>{penWidth}px</span>
+            <span style={{ minWidth: 28, fontSize: 12, color: palette.textHint }}>{penWidth}px</span>
           </div>
         </Tooltip>
 
@@ -188,7 +188,7 @@ export default function AnnotationCanvas({
         style={{
           flex: 1,
           minHeight: 0,
-          background: '#0f1320',
+          background: palette.canvasVoid,
           borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
@@ -226,7 +226,7 @@ export default function AnnotationCanvas({
                 <Line
                   key={idx}
                   points={normalizedToPixels(line.points, fit.width, fit.height)}
-                  stroke={line.color || '#ff1744'}
+                  stroke={line.color || palette.pens.red}
                   strokeWidth={line.width || 7}
                   tension={0.3}
                   lineCap="round"
@@ -249,7 +249,7 @@ const toolbarDividerStyle = {
   display: 'inline-block',
   width: 1,
   height: 24,
-  background: '#ececf3',
+  background: palette.borderSoft,
   alignSelf: 'center'
 };
 
@@ -430,7 +430,7 @@ function AnnotationLabel({ text, color, bboxX, bboxY, bboxW, bboxH, fitWidth, fi
       />
       <KonvaText
         text={text}
-        fill="#fff"
+        fill={palette.surface}
         fontStyle="600"
         fontSize={12}
         padding={5}

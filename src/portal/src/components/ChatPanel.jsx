@@ -13,6 +13,15 @@ import {
 import streamSSE from '../lib/streamSSE.js';
 import uploadDoc from '../lib/uploadDoc.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
+import { palette } from '../theme.js';
+
+// Subject-blue is the "accent" for chat — it's the math subject color and
+// the user-bubble background, used as a single named token here so the
+// ChatPanel doesn't pick blue out of thin air.
+const ACCENT_BLUE = palette.subjects.math.color;
+const USER_BUBBLE_BG = ACCENT_BLUE;
+const USER_BUBBLE_TINT = palette.subjects.math.tint;
+const ASSISTANT_BUBBLE_BG = palette.bgBubble;
 import useSpeechRecognition from '../hooks/useSpeechRecognition.js';
 import MarkdownMessage from './MarkdownMessage.jsx';
 
@@ -495,8 +504,8 @@ export default function ChatPanel({
           style={{
             flex: 1,
             borderRadius: 12,
-            borderColor: speech.listening ? '#ff4d4f' : undefined,
-            boxShadow: speech.listening ? '0 0 0 2px rgba(255, 77, 79, 0.15)' : undefined
+            borderColor: speech.listening ? palette.error : undefined,
+            boxShadow: speech.listening ? `0 0 0 2px ${palette.error}26` : undefined
           }}
         />
         {(busy || voice.speaking) && (
@@ -535,8 +544,8 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
           maxWidth: '78%',
           padding: '10px 14px',
           borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-          background: isUser ? '#5b8def' : '#f0f2f7',
-          color: isUser ? '#fff' : '#1d2233',
+          background: isUser ? USER_BUBBLE_BG : ASSISTANT_BUBBLE_BG,
+          color: isUser ? palette.surface : palette.textInkSoft,
           whiteSpace: isUser ? 'pre-wrap' : 'normal',
           wordBreak: 'break-word',
           lineHeight: 1.5,
@@ -575,7 +584,7 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
                 onClick={onReplay}
                 aria-label={isSpeaking ? 'Stop reading this message' : 'Replay this message'}
                 aria-pressed={isSpeaking}
-                style={{ color: '#5b8def', height: 22, padding: '0 6px' }}
+                style={{ color: ACCENT_BLUE, height: 22, padding: '0 6px' }}
               />
             </Tooltip>
           </div>
@@ -610,9 +619,9 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
           maxWidth: 'min(78%, 360px)',
           minWidth: 0,
           padding: 8,
-          border: isCurrent ? '2px solid #5b8def' : '2px solid transparent',
+          border: `2px solid ${isCurrent ? ACCENT_BLUE : 'transparent'}`,
           borderRadius: '16px 16px 4px 16px',
-          background: '#eef3ff',
+          background: USER_BUBBLE_TINT,
           cursor: 'pointer',
           textAlign: 'left',
           boxSizing: 'border-box'
@@ -625,7 +634,7 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            color: '#1d2233',
+            color: palette.textInkSoft,
             fontSize: 13,
             marginBottom: 6,
             padding: '0 4px'
@@ -637,8 +646,8 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
             <span
               style={{
                 fontSize: 11,
-                color: '#5b8def',
-                background: '#fff',
+                color: ACCENT_BLUE,
+                background: palette.surface,
                 padding: '1px 6px',
                 borderRadius: 10
               }}
@@ -667,7 +676,7 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
                 height: 100,
                 objectFit: 'cover',
                 borderRadius: 6,
-                background: '#fff',
+                background: palette.surface,
                 flex: '0 0 auto'
               }}
             />
@@ -742,7 +751,7 @@ function EmptyHint() {
 
 const headerStyle = {
   padding: '12px 16px',
-  borderBottom: '1px solid #ececf3',
+  borderBottom: `1px solid ${palette.borderSoft}`,
   display: 'flex',
   alignItems: 'center',
   gap: 8
@@ -750,7 +759,7 @@ const headerStyle = {
 const scrollStyle = { flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 };
 const composerStyle = {
   padding: 12,
-  borderTop: '1px solid #ececf3',
+  borderTop: `1px solid ${palette.borderSoft}`,
   display: 'flex',
   gap: 8,
   alignItems: 'flex-end'
@@ -760,6 +769,6 @@ const centeredHint = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#5d6478',
+  color: palette.textHint,
   textAlign: 'center'
 };

@@ -1,0 +1,124 @@
+/* Sticker-claymorphism interaction primitives.
+ *
+ * Visual identity:
+ *   - 3px hard borders in slate (#2d3748)
+ *   - Offset solid drop shadows (no blur) — sticker style
+ *   - Inset bottom shadow for the clay foot
+ *   - Hover/active = press-down: shrink the shadow and translate the element
+ *     by the matching delta, so it feels physical.
+ *
+ * Variables can be referenced via CSS custom properties; the JSX also sets
+ * these inline for safety since Ant's ConfigProvider doesn't auto-publish
+ * tokens as CSS vars.
+ */
+
+:root {
+  --ink: #2d3748;
+  --ink-soft: rgba(45, 55, 72, 0.1);
+}
+
+/* ---- Sticker card -------------------------------------------------------- */
+
+.sticker-card {
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  box-shadow:
+    6px 6px 0 var(--ink),
+    inset 0 -4px 0 var(--ink-soft);
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.sticker-card:hover {
+  transform: translate(2px, 2px);
+  box-shadow:
+    4px 4px 0 var(--ink),
+    inset 0 -4px 0 var(--ink-soft);
+}
+
+/* ---- Sticker button (used by Ant Buttons via className) ------------------ */
+
+.sticker-btn {
+  border: 3px solid var(--ink) !important;
+  border-radius: 16px !important;
+  box-shadow: 4px 4px 0 var(--ink) !important;
+  font-weight: 700 !important;
+  transition:
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.sticker-btn:hover,
+.sticker-btn:focus {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink) !important;
+}
+
+.sticker-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--ink) !important;
+}
+
+/* ---- Sticker chip (small pill) ------------------------------------------- */
+
+.sticker-chip {
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition:
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sticker-chip:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* ---- Press-only (no border / shadow restyling, just tactile feedback) ---- */
+
+.sticker-press {
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.sticker-press:active {
+  transform: translate(1px, 1px) scale(0.98);
+}
+
+/* ---- Slow drift for hero blobs ------------------------------------------- */
+
+@keyframes clay-float-a {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50%      { transform: translate3d(12px, -18px, 0) rotate(4deg); }
+}
+@keyframes clay-float-b {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50%      { transform: translate3d(-14px, 14px, 0) rotate(-4deg); }
+}
+.clay-blob-a { animation: clay-float-a 12s ease-in-out infinite; }
+.clay-blob-b { animation: clay-float-b 14s ease-in-out infinite; }
+
+/* ---- Reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .sticker-card,
+  .sticker-btn,
+  .sticker-chip,
+  .sticker-press,
+  .clay-blob-a,
+  .clay-blob-b {
+    transition: none;
+    animation: none;
+  }
+  .sticker-card:hover,
+  .sticker-btn:hover,
+  .sticker-btn:focus,
+  .sticker-btn:active,
+  .sticker-chip:hover,
+  .sticker-press:active {
+    transform: none;
+  }
+}
