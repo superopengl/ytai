@@ -46,9 +46,11 @@ export const loginRequest = ytai.table('login_request', {
 export const tutorSession = ytai.table('tutor_session', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => user.id),
-  // Most recent image attached to the session. Text-only turns reuse its
-  // cached vision_extraction so Brain doesn't need the bytes resent.
-  currentImageId: uuid('current_image_id'),
+  // Most recent doc the student is working on. A doc is a unit of 1..N
+  // pages — either a multi-image worksheet or a PDF rasterized into pages.
+  // Text-only turns reuse the current doc's cached OCR / vision_extraction
+  // so Brain doesn't need bytes resent.
+  currentDocId: uuid('current_doc_id'),
   // How Brain paces explanations: 'guided' (Socratic, one tiny step per
   // message), 'balanced' (a couple of sentences then a check-in), or
   // 'direct' (full reasoning in one message). Student-tunable mid-session
@@ -65,13 +67,38 @@ export const tutorSession = ytai.table('tutor_session', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
 
+// A session_doc is the "thing the student is studying right now" — a
+// multi-page worksheet (1..N images) or a rasterized PDF. Every
+// session_image belongs to exactly one doc, ordered by page_number.
+// Brain's tools are scoped to the session's current_doc_id; switching
+// docs swaps the canvas and the manifest Brain sees.
+export const sessionDoc = ytai.table('session_doc', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
+  // 'images' = N pages captured/uploaded as separate images; 'pdf' = pages
+  // rasterized from a single source PDF (sourcePdfUrl carries the original).
+  kind: text('kind').notNull().default('images'),
+  sourcePdfUrl: text('source_pdf_url'),
+  pageCount: integer('page_count').notNull().default(0),
+  // Position of this doc in the session's doc list (0 = first).
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});
+
 export const sessionImage = ytai.table(
   'session_image',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     sessionId: uuid('session_id').notNull().references(() => tutorSession.id),
-    // sha256 of the flattened canvas bytes — same hash within a session
-    // returns the existing row so vision_extraction can be reused.
+    // The doc this image is a page of. Every image belongs to exactly one
+    // doc; ordering within the doc is page_number (1..N).
+    docId: uuid('doc_id').notNull().references(() => sessionDoc.id),
+    pageNumber: integer('page_number').notNull().default(1),
+    // sha256 of the flattened canvas bytes — same hash within a doc returns
+    // the existing row so vision_extraction can be reused. Dedup is per-doc
+    // (not per-session) so the same photo can legitimately appear in two
+    // different docs without collision.
     contentHash: text('content_hash').notNull(),
     storageUrl: text('storage_url').notNull(),
     width: integer('width').notNull(),
@@ -80,7 +107,8 @@ export const sessionImage = ytai.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
   },
   (t) => ({
-    sessionHashUnique: uniqueIndex('session_image_session_hash_uq').on(t.sessionId, t.contentHash)
+    docHashUnique: uniqueIndex('session_image_doc_hash_uq').on(t.docId, t.contentHash),
+    docPageUnique: uniqueIndex('session_image_doc_page_uq').on(t.docId, t.pageNumber)
   })
 );
 
