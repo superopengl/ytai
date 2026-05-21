@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Input, Select, Tooltip, Typography, Upload } from 'antd';
 import {
   AudioOutlined,
+  CheckOutlined,
+  CopyOutlined,
   FilePdfOutlined,
   LoadingOutlined,
   MutedOutlined,
@@ -536,6 +538,21 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
   const isUser = message.role === 'user';
   if (!isUser && !message.content && !thinking) return null;
   const canReplay = !isUser && onReplay && (!message._streaming || isSpeaking);
+  const canCopy = Boolean(message.content) && !message._streaming;
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard write can fail on insecure contexts or denied permission;
+      // surface nothing — the user can retry or copy by hand.
+    }
+  }, [message.content]);
   return (
     <div
       style={{
@@ -546,52 +563,76 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
     >
       <div
         style={{
-          maxWidth: '78%',
-          padding: '10px 14px',
-          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-          background: isUser ? USER_BUBBLE_BG : ASSISTANT_BUBBLE_BG,
-          color: isUser ? palette.surface : palette.textInkSoft,
-          whiteSpace: isUser ? 'pre-wrap' : 'normal',
-          wordBreak: 'break-word',
-          lineHeight: 1.5,
-          opacity: message.interrupted ? 0.85 : 1
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: isUser ? 'flex-end' : 'flex-start',
+          maxWidth: '78%'
         }}
       >
-        {message.content && (
-          <div>
-            {isUser ? message.content : <MarkdownMessage>{message.content}</MarkdownMessage>}
-          </div>
-        )}
-        {thinking && (
-          <div
-            style={{
-              marginTop: message.content ? 6 : 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 13,
-              opacity: 0.7
-            }}
-          >
-            <LoadingOutlined /> Thinking…
-          </div>
-        )}
-        {message.interrupted && (
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>(stopped)</div>
-        )}
-        {canReplay && (
-          <div style={{ marginTop: 6, textAlign: 'right' }}>
-            <Tooltip title={isSpeaking ? 'Stop reading' : 'Read this aloud'}>
-              <Button
-                type="text"
-                size="small"
-                icon={isSpeaking ? <SpeakingIcon /> : <SoundOutlined />}
-                onClick={onReplay}
-                aria-label={isSpeaking ? 'Stop reading this message' : 'Replay this message'}
-                aria-pressed={isSpeaking}
-                style={{ color: ACCENT_BLUE, height: 22, padding: '0 6px' }}
-              />
-            </Tooltip>
+        <div
+          style={{
+            padding: '10px 14px',
+            borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+            background: isUser ? USER_BUBBLE_BG : ASSISTANT_BUBBLE_BG,
+            color: isUser ? palette.surface : palette.textInkSoft,
+            whiteSpace: isUser ? 'pre-wrap' : 'normal',
+            wordBreak: 'break-word',
+            lineHeight: 1.5,
+            opacity: message.interrupted ? 0.85 : 1
+          }}
+        >
+          {message.content && (
+            <div>
+              {isUser ? message.content : <MarkdownMessage>{message.content}</MarkdownMessage>}
+            </div>
+          )}
+          {thinking && (
+            <div
+              style={{
+                marginTop: message.content ? 6 : 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                opacity: 0.7
+              }}
+            >
+              <LoadingOutlined /> Thinking…
+            </div>
+          )}
+          {message.interrupted && (
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>(stopped)</div>
+          )}
+        </div>
+        {(canReplay || canCopy) && (
+          <div style={{ marginTop: 4, display: 'flex', gap: 0 }}>
+            {canReplay && (
+              <Tooltip title={isSpeaking ? 'Stop reading' : 'Read this aloud'}>
+                <Button
+                  type="text"
+                  size="small"
+                  shape="circle"
+                  icon={isSpeaking ? <SpeakingIcon /> : <SoundOutlined />}
+                  onClick={onReplay}
+                  aria-label={isSpeaking ? 'Stop reading this message' : 'Replay this message'}
+                  aria-pressed={isSpeaking}
+                  style={{ color: ACCENT_BLUE }}
+                />
+              </Tooltip>
+            )}
+            {canCopy && (
+              <Tooltip title={copied ? 'Copied' : 'Copy message'}>
+                <Button
+                  type="text"
+                  size="small"
+                  shape="circle"
+                  icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                  onClick={handleCopy}
+                  aria-label={copied ? 'Message copied' : 'Copy message to clipboard'}
+                  style={{ color: ACCENT_BLUE }}
+                />
+              </Tooltip>
+            )}
           </div>
         )}
       </div>
