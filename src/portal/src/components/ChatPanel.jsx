@@ -589,19 +589,33 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
   const pages = doc.pages ?? [];
   const isPdf = doc.kind === 'pdf';
   const label = isPdf ? 'PDF worksheet' : pages.length > 1 ? `${pages.length}-page worksheet` : 'Worksheet';
+  // `min(78%, 360px)` caps the bubble at ~4 thumbnails on wide chat
+  // panels — without it, a 10-page upload stretches the bubble across
+  // the whole chat panel even though the strip is scrollable. Native
+  // <button> intrinsic sizing also fights flex overflow, so we drive
+  // the click target as a div with role="button".
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect?.();
+          }
+        }}
         style={{
-          maxWidth: '78%',
+          maxWidth: 'min(78%, 360px)',
+          minWidth: 0,
           padding: 8,
           border: isCurrent ? '2px solid #5b8def' : '2px solid transparent',
           borderRadius: '16px 16px 4px 16px',
           background: '#eef3ff',
           cursor: 'pointer',
-          textAlign: 'left'
+          textAlign: 'left',
+          boxSizing: 'border-box'
         }}
         aria-label={`${label} — click to make current`}
         title={isCurrent ? 'Currently being studied' : 'Make this the worksheet we are studying'}
@@ -633,7 +647,16 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            overflowX: 'auto',
+            minWidth: 0,
+            scrollbarWidth: 'thin'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {pages.map((page) => (
             <img
               key={page.id}
@@ -650,7 +673,7 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
             />
           ))}
         </div>
-      </button>
+      </div>
     </div>
   );
 }
