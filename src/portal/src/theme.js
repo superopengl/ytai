@@ -1,134 +1,141 @@
-// Sticker-claymorphism design tokens for YouTutorAI.
+// Soft-neumorphism design tokens for YouTutorAI.
 //
-// Aesthetic guardrails — based on the uupm.cc educational-platform demo:
-//   * Soft pastel palette (peach primary, sky secondary, vibrant green CTA,
-//     mint + lavender accents) on a warm cream background.
-//   * Hard 3px slate borders on cards / buttons / chips — neo-brutalist
-//     foundation gives the soft pastels weight.
-//   * Offset solid drop shadows (no blur), e.g. `6px 6px 0 #2d3748`. The press
-//     interaction shifts the element +2/+2 and reduces the shadow to 4px 4px,
-//     producing a tactile "press-down" feel.
-//   * Inset bottom shadow `inset 0 -4px 0 rgba(0,0,0,0.1)` gives the
-//     claymorphism foot — soft 3D under the sticker outline.
-//   * Nunito for body, Fredoka for display (both loaded in index.html).
+// Aesthetic guardrails — based on the uupm.cc "Serenity" mental-wellness demo:
+//   * Calming cool-grey background (#f0f4f8) with paired light/dark shadows
+//     for the neumorphism "pressed into the surface" feel.
+//   * Sage-blue primary (#7c9eb2), mauve secondary (#b8a9c9), peach accent
+//     (#f0b7a4), with mint / lavender / peach utility tints.
+//   * No hard outlines — depth comes entirely from the shadow pair, not from
+//     borders. Borders are an invisible 1px in the surface tone for input
+//     hit-targets only.
+//   * Generous border radii: 16px buttons, 20–24px cards, 50px pills.
+//   * Quicksand for display, Nunito for body — both loaded in index.html.
 //
 // `theme` is consumed by ConfigProvider. `palette`, `stickerShadow`, and
 // `radius` are exported for direct use in JSX. CSS classes (.sticker-card,
-// .sticker-press) live in styles/clay.css and own the hover behavior.
+// .sticker-press, …) live in styles/clay.css and own the hover behavior.
+// The "sticker" prefix is historical — these are now neumorphic.
 
-const PRIMARY = '#ADD8E6';       // sky blue — rgb(173, 216, 230)
-const PRIMARY_DARK = '#8BC4D6';
-const SECONDARY = '#FDBCB4';     // peach — moved from primary to keep brand palette intact
-const SECONDARY_DARK = '#F5A69D';
-const CTA = '#22C55E';           // vibrant green — primary call-to-action
-const CTA_DARK = '#16A34A';
-const ACCENT_MINT = '#98FF98';   // saturated mint accent
-const ACCENT_PURPLE = '#E6E6FA'; // lavender
-const ACCENT_YELLOW = '#FFF4A3'; // pale sunshine
-const SUCCESS = CTA;             // same as CTA — semantic alias
-const ERROR = '#EF4444';         // tomato red (semantic only)
+const PRIMARY = '#7C9EB2';       // sage blue-grey — Serenity primary
+const PRIMARY_DARK = '#6A8DA1';
+const SECONDARY = '#B8A9C9';     // mauve / dusty lavender
+const SECONDARY_DARK = '#A595B8';
+const CTA = '#7C9EB2';           // CTA shares the calming primary — gradient handles emphasis
+const CTA_DARK = '#5F8298';
+const ACCENT_MINT = '#A8D5BA';   // soft sage mint
+const ACCENT_PURPLE = '#E6E6FA'; // pale lavender
+const ACCENT_YELLOW = '#FFE8C5'; // warm cream-peach (no harsh sunshine)
+const ACCENT_PEACH = '#F0B7A4';  // peachy coral
+const SUCCESS = '#7BB59A';       // muted sage green — semantic "got it"
+const ERROR = '#E57373';         // soft coral red
 
-const BG = '#FFF9F5';            // warm cream — page bg
-const BG_PAPER = '#FEFCF6';      // ruled-paper bg (slightly paler cream) — landing-page hero
-const BG_PANEL = '#F7F8FC';      // light gray panel — chat surface, page chrome
-const BG_BUBBLE = '#F0F2F7';     // slightly darker gray — assistant chat bubbles
+const BG = '#F0F4F8';            // cool pale grey-blue — page bg, neumorphism base
+const BG_PAPER = '#F7FAFD';      // very faint cooler bg for paper / ruled hero
+const BG_PANEL = '#E8EEF4';      // bg-alt — chat surface, recessed panels
+const BG_BUBBLE = '#E6EBF3';     // assistant chat bubbles (slightly deeper)
 const SURFACE = '#FFFFFF';
-const SURFACE_OAT = '#F4F1EA';   // oat tint — menu hover, table header, segmented track
-const SURFACE_OAT_DARK = '#EDE7DA';
-const TEXT = '#2D3748';          // dark slate — the "ink" of the design
-const TEXT_MUTED = '#64748B';
-const TEXT_INK_SOFT = '#1d2233'; // even darker ink for chat bubbles + heavy text
-const TEXT_HINT = '#5d6478';     // softer muted — caption text, small labels
-const TEXT_DISABLED = '#8c8c9a';
-const BORDER = TEXT;             // 3px sticker outlines use the ink color
-const BORDER_SOFT = '#ececf3';   // light gray hairline border (non-sticker chrome)
+const SURFACE_OAT = '#E8EEF4';   // recessed surface — menu hover, table header
+const SURFACE_OAT_DARK = '#D8E1EC';
+const TEXT = '#2D3748';          // dark slate ink
+const TEXT_MUTED = '#718096';    // slate gray
+const TEXT_INK_SOFT = '#1A202C'; // deeper ink for high-emphasis text
+const TEXT_HINT = '#A0AEC0';     // mid slate — captions, small labels
+const TEXT_DISABLED = '#CBD5E0';
+const BORDER = '#D6DEE9';        // soft cool-grey hairline (visible only when needed)
+const BORDER_SOFT = '#E2E8F0';   // even softer hairline for dividers
 
 // Semantic state colors used in stats panels, validation feedback, etc.
-const STATE_CORRECT = '#3EC28F'; // softer green for "got it right"
-const STATE_WRONG = '#FF6B6B';   // softer red for "struggled with"
+const STATE_CORRECT = '#7BB59A'; // sage green for "got it right"
+const STATE_WRONG = '#E57373';   // soft coral for "struggled with"
 
 // Sider / dark-mode strip used for the session list.
 const SIDER = {
-  bg: '#1F2330',
-  border: '#2D3344',
-  textPrimary: '#E5E8F0',
-  textMuted: '#8B93A8',
-  activeBg: '#2A3148',
-  accent: '#5B8DEF',
-  danger: '#FF6B6B'
+  bg: '#2D3748',
+  border: '#3D4A60',
+  textPrimary: '#E6EBF3',
+  textMuted: '#A0AEC0',
+  activeBg: '#3D4A60',
+  accent: PRIMARY,
+  danger: ERROR
 };
 
-// Pen palette for the annotation canvas — saturated marker colors the
-// student picks from when drawing on a worksheet. NOT brand colors; this
-// is the box of pens, intentionally rainbow. The default-AI color is the
-// fallback when Brain hasn't supplied an explicit color for an annotation.
+// Pen palette for the annotation canvas. NOT brand colors — the box of pens
+// the student picks from when drawing on a worksheet. Kept saturated so
+// marks read clearly on top of any worksheet color.
 const PENS = {
-  red: '#FF1744',
-  green: '#22C55E',     // matches CTA
-  orange: '#F97316',
-  purple: '#A855F7',
-  ink: '#1D2233',       // matches TEXT_INK_SOFT
-  yellow: '#FFD60A',
-  cyan: '#06B6D4'
+  red: '#E57373',
+  green: '#7BB59A',
+  orange: '#F0B7A4',
+  purple: '#B8A9C9',
+  ink: '#1A202C',
+  yellow: '#F5D67D',
+  cyan: '#8FC3D6'
 };
 const PEN_PRESETS = [PENS.red, PENS.green, PENS.orange, PENS.purple, PENS.ink, PENS.yellow, PENS.cyan];
-const AI_ANNOTATION_DEFAULT = '#3AA0FF';   // sky-blue, default fill for AI annotations
-const CANVAS_VOID = '#0F1320';              // dark backdrop behind the worksheet on the canvas
+const AI_ANNOTATION_DEFAULT = PRIMARY;     // sage-blue, default fill for AI annotations
+const CANVAS_VOID = '#2D3748';              // dark slate behind the worksheet on the canvas
 
 // Subject palette — math/thinking/reading/writing each have a swatch + a
-// pale tint used as the icon plinth on the subject selector. Kept apart
-// from the brand palette because they encode meaning, not brand identity.
+// pale tint. Tuned to the Serenity palette so subjects still feel calming.
 const SUBJECTS = {
-  math: { color: '#5B8DEF', tint: '#EEF3FF' },
-  thinking: { color: '#9254DE', tint: '#F4ECFF' },
-  reading: { color: '#22A06B', tint: '#E6F7EE' },
-  writing: { color: '#FA8C16', tint: '#FFF3E6' }
+  math: { color: '#7C9EB2', tint: '#E2EBF1' },
+  thinking: { color: '#B8A9C9', tint: '#EFEAF4' },
+  reading: { color: '#7BB59A', tint: '#E4F0E9' },
+  writing: { color: '#F0B7A4', tint: '#FBE9E1' }
 };
 
-// Text colors used on dark surfaces (footer, sider, scrim ribbons). White
-// with varying alpha so a single ink underneath shows through consistently.
+// Text colors used on dark surfaces (footer, sider, scrim ribbons).
 const ON_DARK = {
-  text: 'rgba(255, 255, 255, 0.85)',
-  textMuted: 'rgba(255, 255, 255, 0.55)'
+  text: 'rgba(255, 255, 255, 0.92)',
+  textMuted: 'rgba(255, 255, 255, 0.62)'
 };
 
 // Common overlays — kept as named constants so call sites don't sprinkle
 // rgba() literals.
 const OVERLAY = {
   // Dark scrim used over photos / canvas for caption ribbons.
-  scrim: 'rgba(15, 19, 32, 0.78)',
-  // Soft black tints used inside markdown bubbles, table borders, etc.
-  inkSheen: 'rgba(0, 0, 0, 0.04)',  // very subtle wash — table header background
-  inkVeil: 'rgba(0, 0, 0, 0.06)',
-  inkRule: 'rgba(0, 0, 0, 0.15)',
-  inkQuote: 'rgba(0, 0, 0, 0.18)',
-  // Ruled-paper hero gradient on HomePage.
-  paperRule: 'rgba(45, 55, 72, 0.10)',
+  scrim: 'rgba(45, 55, 72, 0.78)',
+  inkSheen: 'rgba(0, 0, 0, 0.03)',
+  inkVeil: 'rgba(0, 0, 0, 0.05)',
+  inkRule: 'rgba(0, 0, 0, 0.10)',
+  inkQuote: 'rgba(0, 0, 0, 0.15)',
+  // Ruled-paper hero accent.
+  paperRule: 'rgba(124, 158, 178, 0.18)',
   // Subtle ink shadow used inside stickerShadow.
-  inkSoft: 'rgba(45, 55, 72, 0.10)'
+  inkSoft: 'rgba(163, 177, 198, 0.40)'
 };
 
-// Offset solid shadows — the signature interaction of this style. Hover
-// shrinks the offset and the JSX adds `transform: translate(2px, 2px)` so
-// the element appears to press into the page.
-// The claymorphism "foot": a soft black inset sits under the bottom edge
-// of the sticker outline. Together with the offset solid drop shadow it
-// makes the surface look pressed forward from the page.
-const SHADOW_INSET = 'inset 0 -4px 0 rgba(0, 0, 0, 0.10)';
+// Neumorphism shadow pairs. The signature interaction of this style: a soft
+// white highlight on the top-left + a soft cool-grey shadow on the
+// bottom-right makes the element look gently raised from the page. The
+// "press" state inverts both into insets, so the element looks pushed in.
+//
+// "Sticker" naming is preserved for API compatibility — the values now
+// describe a softer, calmer language.
+const SHADOW_LIGHT = '-8px -8px 20px rgba(255, 255, 255, 0.85)';
+const SHADOW_DARK = '8px 8px 20px rgba(163, 177, 198, 0.45)';
+const SHADOW_LIGHT_SM = '-4px -4px 10px rgba(255, 255, 255, 0.80)';
+const SHADOW_DARK_SM = '4px 4px 10px rgba(163, 177, 198, 0.35)';
+const SHADOW_LIGHT_XS = '-2px -2px 6px rgba(255, 255, 255, 0.85)';
+const SHADOW_DARK_XS = '2px 2px 6px rgba(163, 177, 198, 0.40)';
+const SHADOW_INSET_LIGHT = 'inset -4px -4px 10px rgba(255, 255, 255, 0.85)';
+const SHADOW_INSET_DARK = 'inset 4px 4px 10px rgba(163, 177, 198, 0.45)';
+
 const stickerShadow = {
-  card: `6px 6px 0 ${TEXT}, ${SHADOW_INSET}`,
-  cardHover: `4px 4px 0 ${TEXT}, ${SHADOW_INSET}`,
-  button: `4px 4px 0 ${TEXT}`,
-  buttonHover: `2px 2px 0 ${TEXT}`,
-  chip: `3px 3px 0 ${TEXT}`,
-  chipHover: `1px 1px 0 ${TEXT}`
+  card: `${SHADOW_LIGHT}, ${SHADOW_DARK}`,
+  cardHover: `-10px -10px 25px rgba(255,255,255,0.95), 10px 10px 25px rgba(163,177,198,0.55)`,
+  button: `${SHADOW_LIGHT_SM}, ${SHADOW_DARK_SM}`,
+  buttonHover: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`,
+  chip: `${SHADOW_LIGHT_XS}, ${SHADOW_DARK_XS}`,
+  chipHover: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`,
+  inset: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`
 };
 
 const radius = {
   sm: 12,
   md: 16,
-  lg: 24,
-  xl: 32,
+  lg: 20,
+  xl: 28,
   pill: 999
 };
 
@@ -142,6 +149,7 @@ const palette = {
   accentMint: ACCENT_MINT,
   accentPurple: ACCENT_PURPLE,
   accentYellow: ACCENT_YELLOW,
+  accentPeach: ACCENT_PEACH,
   success: SUCCESS,
   error: ERROR,
   // Background surfaces.
@@ -163,12 +171,12 @@ const palette = {
   borderSoft: BORDER_SOFT,
   // Tints used for icon plinths and section-eyebrow chips.
   tint: {
-    primary: '#DCEFF7',
-    secondary: '#FFE4DF',
-    cta: '#DCFCE7',
-    mint: '#E8FFF0',
-    purple: '#F2EFFA',
-    yellow: '#FFF8D6'
+    primary: '#E2EBF1',
+    secondary: '#EFEAF4',
+    cta: '#E2EBF1',
+    mint: '#E4F0E9',
+    purple: '#EFEAF4',
+    yellow: '#FFF6E5'
   },
   // Semantic state — distinct from CTA/error which are action colors.
   state: {
@@ -187,34 +195,36 @@ const palette = {
   // Text colors used on dark surfaces (footer, sider, photo scrim ribbons).
   onDark: ON_DARK,
   // Named overlay tints (rgba helpers).
-  overlay: OVERLAY
+  overlay: OVERLAY,
+  // Gradient pair for headline text and the hero CTA button.
+  gradient: {
+    text: `linear-gradient(135deg, ${PRIMARY} 0%, ${SECONDARY} 100%)`,
+    primary: `linear-gradient(135deg, ${PRIMARY} 0%, #8FAFC4 100%)`,
+    surface: `linear-gradient(135deg, ${BG} 0%, ${BG_PANEL} 100%)`
+  }
 };
 
 const theme = {
   token: {
-    // We map Ant's "primary" to the CTA green because Ant Buttons with
-    // type="primary" are the main click targets — the peach is brand, not
-    // action. This keeps Ant's semantics aligned with the design.
-    colorPrimary: CTA,
-    colorSuccess: CTA,
-    // colorWarning stays warm (peach is now SECONDARY); colorInfo gets the
-    // sky-blue PRIMARY since info messages naturally read as cool/calm.
-    colorWarning: SECONDARY,
+    // Ant's "primary" is mapped to the sage-blue PRIMARY since the neumorphism
+    // language wants one calm hue across click-targets, with shadow depth
+    // doing the emphasis work rather than a contrasting accent.
+    colorPrimary: PRIMARY,
+    colorSuccess: SUCCESS,
+    colorWarning: ACCENT_PEACH,
     colorError: ERROR,
     colorInfo: PRIMARY,
 
     colorBgLayout: BG,
     colorBgContainer: SURFACE,
     colorTextBase: TEXT,
-    colorBorder: TEXT,
-    colorBorderSecondary: TEXT,
+    colorBorder: BORDER,
+    colorBorderSecondary: BORDER_SOFT,
 
-    // The signature sticker outline — 3px ink border on every bordered
-    // component (Card, Modal, Drawer, Input, Select, DatePicker, Alert,
-    // Table, Tag w/ bordered, Switch, Checkbox, Radio, Divider, …).
-    // Per-component overrides below pin the radius / shadow per shape.
-    lineWidth: 3,
-    lineWidthBold: 3,
+    // Neumorphism: depth comes from paired shadows, not from hard outlines.
+    // Borders are kept hair-thin so input fields still have a hit-target.
+    lineWidth: 1,
+    lineWidthBold: 1,
 
     borderRadius: radius.md,
     borderRadiusLG: radius.lg,
@@ -222,18 +232,16 @@ const theme = {
     borderRadiusXS: 10,
 
     fontFamily:
-      'Nunito, "Baloo 2", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      '"Nunito", "Quicksand", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     fontSize: 16,
 
     controlHeight: 48,
     controlHeightLG: 56,
     controlHeightSM: 40,
 
-    // The three Ant shadow tokens all become the sticker offset shadow so
-    // any component that reads the global shadow (Dropdown, Popover,
-    // Notification, Message, dropdown panels of Select / DatePicker /
-    // Cascader / Mentions, etc.) picks it up automatically. Per-component
-    // overrides below tighten this further for cards vs floats vs chips.
+    // Every floating Ant component (Dropdown, Popover, Notification, …)
+    // picks up the neumorphism card shadow by default. Per-component
+    // overrides below tighten this further for buttons vs cards vs chips.
     boxShadow: stickerShadow.card,
     boxShadowSecondary: stickerShadow.button,
     boxShadowTertiary: stickerShadow.card
@@ -241,45 +249,43 @@ const theme = {
   components: {
     Button: {
       borderRadius: radius.md,
-      borderRadiusLG: 20,
+      borderRadiusLG: radius.lg,
       borderRadiusSM: 12,
       controlHeight: 48,
       controlHeightLG: 56,
       controlHeightSM: 40,
-      fontWeight: 700,
-      // Buttons own a tighter shadow than cards — the offset is smaller so
-      // the press-down feels snappy. CSS class .sticker-press handles the
-      // hover translate.
+      fontWeight: 600,
+      // Buttons own a tighter shadow pair than cards. The .sticker-btn class
+      // in clay.css handles the inset press-down on :active.
       primaryShadow: stickerShadow.button,
       defaultShadow: stickerShadow.button,
       dangerShadow: stickerShadow.button
     },
     Card: {
-      borderRadiusLG: radius.lg,
-      paddingLG: 24,
+      borderRadiusLG: radius.xl,
+      paddingLG: 28,
       headerFontSize: 18,
       boxShadowTertiary: stickerShadow.card
     },
     Input: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `0 0 0 4px ${PRIMARY}66`
+      activeShadow: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}, 0 0 0 3px ${PRIMARY}33`
     },
     InputNumber: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `0 0 0 4px ${PRIMARY}66`
+      activeShadow: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}, 0 0 0 3px ${PRIMARY}33`
     },
     Select: {
       borderRadius: radius.md,
       controlHeight: 48,
-      // Sticker shadow on the open dropdown panel.
       boxShadowSecondary: stickerShadow.card
     },
     DatePicker: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `0 0 0 4px ${PRIMARY}66`,
+      activeShadow: `0 0 0 3px ${PRIMARY}33`,
       boxShadowSecondary: stickerShadow.card
     },
     Cascader: {
@@ -291,16 +297,16 @@ const theme = {
     },
     Tabs: {
       itemColor: TEXT_MUTED,
-      itemSelectedColor: TEXT,
+      itemSelectedColor: PRIMARY,
       itemHoverColor: TEXT,
-      inkBarColor: CTA,
+      inkBarColor: PRIMARY,
       titleFontSize: 16
     },
     Tag: {
       borderRadiusSM: radius.pill,
-      defaultBg: ACCENT_MINT,
+      defaultBg: BG_PANEL,
       defaultColor: TEXT,
-      lineWidth: 3
+      lineWidth: 0
     },
     Avatar: {
       borderRadius: radius.md,
@@ -322,21 +328,20 @@ const theme = {
     Menu: {
       borderRadiusLG: radius.md,
       itemBorderRadius: radius.sm,
-      activeBarBorderWidth: 0
+      activeBarBorderWidth: 0,
+      itemSelectedBg: `${PRIMARY}1A`,
+      itemSelectedColor: PRIMARY
     },
     Modal: {
-      borderRadiusLG: radius.lg,
-      // Modal owns its own content shadow.
+      borderRadiusLG: radius.xl,
       boxShadow: stickerShadow.card
     },
     Drawer: {
-      // Drawer reads `boxShadow` from the global token, but pin it here
-      // explicitly so a side-mounted drawer still has the sticker frame.
       boxShadow: stickerShadow.card,
       colorBgElevated: SURFACE
     },
     Notification: {
-      borderRadiusLG: radius.md,
+      borderRadiusLG: radius.lg,
       boxShadow: stickerShadow.card
     },
     Message: {
@@ -351,7 +356,7 @@ const theme = {
     Segmented: {
       borderRadius: radius.md,
       controlHeight: 40,
-      trackBg: SURFACE_OAT,
+      trackBg: BG_PANEL,
       itemSelectedBg: SURFACE
     },
     Switch: {
@@ -366,7 +371,7 @@ const theme = {
     Slider: {
       handleSize: 18,
       handleSizeHover: 20,
-      handleColor: TEXT
+      handleColor: PRIMARY
     },
     Steps: {
       iconSize: 32,
@@ -378,27 +383,27 @@ const theme = {
     },
     Table: {
       borderRadius: radius.md,
-      headerBg: SURFACE_OAT,
+      headerBg: BG_PANEL,
       headerSortHoverBg: SURFACE_OAT_DARK
     },
     Collapse: {
       borderRadiusLG: radius.md,
-      headerBg: SURFACE_OAT
+      headerBg: BG_PANEL
     },
     Progress: {
-      defaultColor: CTA,
-      remainingColor: SURFACE_OAT
+      defaultColor: PRIMARY,
+      remainingColor: BG_PANEL
     },
     Divider: {
-      colorSplit: TEXT,
-      lineWidth: 3
+      colorSplit: BORDER,
+      lineWidth: 1
     },
     Empty: {
       colorTextDescription: TEXT_MUTED
     },
     Typography: {
       titleMarginBottom: '0.4em',
-      fontWeightStrong: 800
+      fontWeightStrong: 700
     }
   },
   // Non-Ant tokens — read these directly in JSX.

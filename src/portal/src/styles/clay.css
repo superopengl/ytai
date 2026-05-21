@@ -1,113 +1,155 @@
-/* Sticker-claymorphism interaction primitives.
+/* Soft-neumorphism interaction primitives.
  *
  * Visual identity:
- *   - 3px hard borders in slate (#2d3748)
- *   - Offset solid drop shadows (no blur) — sticker style
- *   - Inset bottom shadow for the clay foot
- *   - Hover/active = press-down: shrink the shadow and translate the element
- *     by the matching delta, so it feels physical.
- *
- * Variables can be referenced via CSS custom properties; the JSX also sets
- * these inline for safety since Ant's ConfigProvider doesn't auto-publish
- * tokens as CSS vars.
+ *   - Paired shadows: soft white highlight (top-left) + cool-grey shadow
+ *     (bottom-right) make elements feel gently raised from the page.
+ *   - Press (:active) inverts both into insets — the element appears pushed
+ *     into the surface, no translate needed.
+ *   - No hard borders. Depth is shadow-only.
+ *   - "Sticker" class names are kept for API compatibility with the rest of
+ *     the app; the values themselves are now neumorphic.
  */
 
 :root {
-  --ink: #2d3748;
-  --ink-soft: rgba(45, 55, 72, 0.1);
+  --neu-bg: #f0f4f8;
+  --neu-shadow-light: rgba(255, 255, 255, 0.85);
+  --neu-shadow-dark: rgba(163, 177, 198, 0.45);
+  --neu-shadow-dark-strong: rgba(163, 177, 198, 0.55);
 }
 
 /* ---- Sticker card -------------------------------------------------------- */
 
 .sticker-card {
-  background: #fff;
-  border: 3px solid var(--ink);
+  background: var(--neu-bg);
+  border: 0;
   border-radius: 24px;
   box-shadow:
-    6px 6px 0 var(--ink),
-    inset 0 -4px 0 var(--ink-soft);
+    -8px -8px 20px var(--neu-shadow-light),
+    8px 8px 20px var(--neu-shadow-dark);
   transition:
-    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, box-shadow;
 }
 
 .sticker-card:hover {
-  transform: translate(2px, 2px);
+  transform: translateY(-3px);
   box-shadow:
-    4px 4px 0 var(--ink),
-    inset 0 -4px 0 var(--ink-soft);
+    -10px -10px 25px rgba(255, 255, 255, 0.95),
+    10px 10px 25px var(--neu-shadow-dark-strong);
 }
 
 /* ---- Sticker button (used by Ant Buttons via className) ------------------ */
 
 .sticker-btn {
-  border: 3px solid var(--ink) !important;
+  border: 0 !important;
   border-radius: 16px !important;
-  box-shadow: 4px 4px 0 var(--ink) !important;
-  font-weight: 700 !important;
+  box-shadow:
+    -4px -4px 10px var(--neu-shadow-light),
+    4px 4px 10px var(--neu-shadow-dark) !important;
+  font-weight: 600 !important;
   transition:
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 .sticker-btn:hover,
 .sticker-btn:focus {
-  transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0 var(--ink) !important;
+  transform: translateY(-2px);
+  box-shadow:
+    -6px -6px 15px var(--neu-shadow-light),
+    6px 6px 15px var(--neu-shadow-dark-strong) !important;
 }
 
 .sticker-btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: 1px 1px 0 var(--ink) !important;
+  transform: translateY(0);
+  box-shadow:
+    inset -4px -4px 10px var(--neu-shadow-light),
+    inset 4px 4px 10px var(--neu-shadow-dark) !important;
 }
 
 /* ---- Sticker chip (small pill) ------------------------------------------- */
 
 .sticker-chip {
-  border: 3px solid var(--ink);
+  border: 0;
   border-radius: 999px;
-  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--neu-bg);
+  box-shadow:
+    -2px -2px 6px var(--neu-shadow-light),
+    2px 2px 6px var(--neu-shadow-dark);
   transition:
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sticker-chip:hover {
-  transform: translate(1px, 1px);
-  box-shadow: 2px 2px 0 var(--ink);
+  transform: translateY(-1px);
+  box-shadow:
+    -3px -3px 8px var(--neu-shadow-light),
+    3px 3px 8px var(--neu-shadow-dark-strong);
 }
 
-/* ---- Press-only (no border / shadow restyling, just tactile feedback) ---- */
+/* ---- Inset (pressed-in) surface ----------------------------------------- */
+
+.neu-inset {
+  background: var(--neu-bg);
+  border-radius: 16px;
+  box-shadow:
+    inset -4px -4px 10px var(--neu-shadow-light),
+    inset 4px 4px 10px var(--neu-shadow-dark);
+}
+
+/* ---- Press-only (no shadow restyling, just tactile feedback) ------------ */
 
 .sticker-press {
-  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .sticker-press:active {
-  transform: translate(1px, 1px) scale(0.98);
+  transform: scale(0.98);
 }
 
-/* ---- Slow drift for hero blobs ------------------------------------------- */
+/* ---- Breathing pulse used on the hero "calm" badge ---------------------- */
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.04); }
+}
+.breathing-circle {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* ---- Slow drift for hero blobs ------------------------------------------ */
 
 @keyframes clay-float-a {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
-  50%      { transform: translate3d(12px, -18px, 0) rotate(4deg); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(10px, -16px, 0); }
 }
 @keyframes clay-float-b {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
-  50%      { transform: translate3d(-14px, 14px, 0) rotate(-4deg); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(-12px, 12px, 0); }
 }
-.clay-blob-a { animation: clay-float-a 12s ease-in-out infinite; }
-.clay-blob-b { animation: clay-float-b 14s ease-in-out infinite; }
+.clay-blob-a { animation: clay-float-a 14s ease-in-out infinite; }
+.clay-blob-b { animation: clay-float-b 16s ease-in-out infinite; }
 
-/* ---- Reduced motion ------------------------------------------------------ */
+/* ---- Gradient text helper ----------------------------------------------- */
+
+.gradient-text {
+  background: linear-gradient(135deg, #7c9eb2 0%, #b8a9c9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ---- Reduced motion ----------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
   .sticker-card,
   .sticker-btn,
   .sticker-chip,
   .sticker-press,
+  .breathing-circle,
   .clay-blob-a,
   .clay-blob-b {
     transition: none;

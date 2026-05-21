@@ -3,42 +3,45 @@ import theme, { palette as brand } from '../theme.js';
 
 const { Title, Paragraph, Text } = Typography;
 
+const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
+
 // Color sections — read straight from the brand palette so this page can
 // never drift from theme.js. Each entry names the JSX-friendly path
 // (`palette.X` or `theme.token.X`) so engineers can copy it into code.
 const colorSections = [
   {
     heading: 'Brand',
-    blurb: 'Sky-blue primary + peach secondary. The two voices of the brand.',
+    blurb: 'Sage-blue primary + mauve secondary. The two calming voices of the brand.',
     swatches: [
-      { name: 'Primary', token: 'palette.primary', hex: brand.primary },
+      { name: 'Primary · Sage', token: 'palette.primary', hex: brand.primary },
       { name: 'Primary · Dark', token: 'palette.primaryDark', hex: brand.primaryDark },
-      { name: 'Secondary', token: 'palette.secondary', hex: brand.secondary },
+      { name: 'Secondary · Mauve', token: 'palette.secondary', hex: brand.secondary },
       { name: 'Secondary · Dark', token: 'palette.secondaryDark', hex: brand.secondaryDark }
     ]
   },
   {
     heading: 'Action',
-    blurb: 'CTA green is mapped to Ant\'s colorPrimary — the click-targets of the app.',
+    blurb: 'CTA shares the calming sage primary — depth comes from the shadow pair, not contrast.',
     swatches: [
       { name: 'CTA', token: 'palette.cta', hex: brand.cta },
       { name: 'CTA · Dark', token: 'palette.ctaDark', hex: brand.ctaDark },
       { name: 'Success', token: 'theme.token.colorSuccess', hex: theme.token.colorSuccess },
-      { name: 'Error', token: 'palette.error', hex: brand.error }
+      { name: 'Error · Coral', token: 'palette.error', hex: brand.error }
     ]
   },
   {
     heading: 'Accents',
-    blurb: 'Saturated tints for chips, highlights, and the AI annotation palette.',
+    blurb: 'Soft pastels for icon plinths, chips, and the AI annotation palette.',
     swatches: [
       { name: 'Mint', token: 'palette.accentMint', hex: brand.accentMint },
       { name: 'Lavender', token: 'palette.accentPurple', hex: brand.accentPurple },
-      { name: 'Sunshine', token: 'palette.accentYellow', hex: brand.accentYellow }
+      { name: 'Peach', token: 'palette.accentPeach', hex: brand.accentPeach },
+      { name: 'Cream Peach', token: 'palette.accentYellow', hex: brand.accentYellow }
     ]
   },
   {
     heading: 'Neutrals',
-    blurb: 'Cream page, white surface, slate ink — the foundation under every pastel.',
+    blurb: 'Cool-grey page bg is the neumorphism canvas — every raised card sits on this color.',
     swatches: [
       { name: 'Background', token: 'palette.bg', hex: brand.bg },
       { name: 'Background · Paper', token: 'palette.bgPaper', hex: brand.bgPaper },
@@ -56,7 +59,7 @@ const colorSections = [
   },
   {
     heading: 'Tints',
-    blurb: 'Pale fills for icon plinths, section eyebrows, and selected-row backgrounds.',
+    blurb: 'Pale fills for icon plinths and section-eyebrow chips.',
     swatches: [
       { name: 'Tint · Primary', token: 'palette.tint.primary', hex: brand.tint.primary },
       { name: 'Tint · Secondary', token: 'palette.tint.secondary', hex: brand.tint.secondary },
@@ -68,7 +71,8 @@ const colorSections = [
   },
   {
     heading: 'Subjects',
-    blurb: 'Subject identity — math/thinking/reading/writing. Used by both the Tutor page chips and the Progress page.',
+    blurb:
+      'Subject identity — math/thinking/reading/writing. Used by the Tutor page chips and the Progress page.',
     swatches: [
       { name: 'Math', token: 'palette.subjects.math.color', hex: brand.subjects.math.color },
       { name: 'Math · Tint', token: 'palette.subjects.math.tint', hex: brand.subjects.math.tint },
@@ -82,7 +86,7 @@ const colorSections = [
   },
   {
     heading: 'Canvas & State',
-    blurb: 'Drawing pens the student picks from + the deep void behind the worksheet + correct/wrong semantics.',
+    blurb: 'Drawing pens, the slate void behind the worksheet, and correct/wrong semantics.',
     swatches: [
       { name: 'Pen · Red', token: 'palette.pens.red', hex: brand.pens.red },
       { name: 'Pen · Green', token: 'palette.pens.green', hex: brand.pens.green },
@@ -100,45 +104,48 @@ const colorSections = [
 ];
 
 // Pure-luminance text-contrast pick. Swaps to white text only when the
-// swatch is genuinely dark (the slate ink, the error red) — every pastel
-// in the palette is bright enough that the slate ink reads cleanly on it.
+// swatch is genuinely dark.
 function pickFg(hex) {
   const h = hex.replace('#', '');
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
-  // Relative luminance, sRGB shortcut (good enough for swatches).
   const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luma < 0.5 ? '#ffffff' : brand.text;
+  return luma < 0.55 ? '#ffffff' : brand.text;
 }
 
 function LogoMark({ size = 96 }) {
-  // Mark uses the brand palette directly so it doesn't drift when Ant's
-  // colorPrimary points at the CTA. Sky-blue disc, slate-ink "Y", peach
-  // dot for the spark of personality.
-  const r = size / 2;
+  // Circular neumorphism disc with a sage-to-mauve gradient and a white "Y"
+  // mark — the new brand expression.
   const stroke = Math.max(4, size * 0.085);
   return (
-    <svg width={size} height={size} viewBox="0 0 96 96" aria-label="YouTutorAI logo mark">
-      <circle cx={r} cy={r} r={r - 2} fill={brand.primary} stroke={brand.border} strokeWidth={3} />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 96 96"
+      aria-label="YouTutorAI logo mark"
+      style={{
+        filter:
+          'drop-shadow(-3px -3px 6px rgba(255,255,255,0.85)) drop-shadow(3px 3px 8px rgba(163,177,198,0.5))'
+      }}
+    >
+      <defs>
+        <linearGradient id="ytai-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={brand.primary} />
+          <stop offset="100%" stopColor={brand.secondary} />
+        </linearGradient>
+      </defs>
+      <circle cx="48" cy="48" r="46" fill="url(#ytai-grad)" />
       <path
         d="M28 30 L48 56 L68 30"
-        stroke={brand.text}
+        stroke="#fff"
         strokeWidth={stroke}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
       />
-      <line
-        x1="48"
-        y1="56"
-        x2="48"
-        y2="72"
-        stroke={brand.text}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-      />
-      <circle cx="74" cy="22" r="6" fill={brand.secondary} stroke={brand.border} strokeWidth={2} />
+      <line x1="48" y1="56" x2="48" y2="72" stroke="#fff" strokeWidth={stroke} strokeLinecap="round" />
+      <circle cx="76" cy="22" r="6" fill={brand.accentPeach} />
     </svg>
   );
 }
@@ -148,13 +155,48 @@ function LogoLockup({ size = 64, color = brand.text }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
       <LogoMark size={size} />
       <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-        <span style={{ fontSize: size * 0.42, fontWeight: 800, color }}>
-          YouTutor<span style={{ color: brand.cta }}>AI</span>
+        <span style={{ fontFamily: QUICKSAND, fontSize: size * 0.42, fontWeight: 700, color }}>
+          YouTutor
+          <span
+            style={{
+              background: brand.gradient.text,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}
+          >
+            AI
+          </span>
         </span>
-        <span style={{ fontSize: size * 0.2, color, opacity: 0.7, marginTop: 4 }}>
-          Snap. Circle. Learn.
+        <span
+          style={{
+            fontSize: size * 0.2,
+            color,
+            opacity: 0.7,
+            marginTop: 4,
+            fontFamily: QUICKSAND,
+            fontWeight: 500
+          }}
+        >
+          Homework, made gentler.
         </span>
       </div>
+    </div>
+  );
+}
+
+function NeuCard({ children, style }) {
+  return (
+    <div
+      style={{
+        background: brand.bg,
+        borderRadius: theme.radius.lg,
+        boxShadow: theme.stickerShadow.card,
+        padding: 32,
+        ...style
+      }}
+    >
+      {children}
     </div>
   );
 }
@@ -164,10 +206,9 @@ function Swatch({ name, token, hex }) {
   return (
     <div
       style={{
-        borderRadius: theme.radius.md,
+        borderRadius: theme.radius.lg,
         overflow: 'hidden',
-        background: brand.surface,
-        border: `3px solid ${brand.border}`,
+        background: brand.bg,
         boxShadow: theme.stickerShadow.card
       }}
     >
@@ -179,17 +220,19 @@ function Swatch({ name, token, hex }) {
           display: 'flex',
           alignItems: 'flex-end',
           justifyContent: 'space-between',
-          minHeight: 120,
-          borderBottom: `3px solid ${brand.border}`
+          minHeight: 120
         }}
       >
-        <span style={{ fontSize: 18, fontWeight: 700 }}>{name}</span>
-        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+        <span style={{ fontSize: 17, fontWeight: 700 }}>{name}</span>
+        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13 }}>
           {hex.toUpperCase()}
         </span>
       </div>
-      <div style={{ padding: '12px 20px' }}>
-        <Text type="secondary" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+      <div style={{ padding: '14px 20px', background: brand.bg }}>
+        <Text
+          type="secondary"
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12 }}
+        >
           {token}
         </Text>
       </div>
@@ -203,20 +246,43 @@ export default function LogoPage() {
       style={{
         minHeight: '100vh',
         background: theme.token.colorBgLayout,
-        padding: '48px 24px',
+        padding: '64px 24px',
         color: theme.token.colorTextBase
       }}
     >
       <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-        <Title level={1} style={{ marginBottom: 8 }}>Brand</Title>
-        <Paragraph type="secondary" style={{ marginBottom: 48 }}>
+        <Title
+          level={1}
+          style={{
+            marginBottom: 8,
+            fontFamily: QUICKSAND,
+            letterSpacing: -1,
+            fontSize: 'clamp(40px, 6vw, 64px)'
+          }}
+        >
+          <span
+            style={{
+              background: brand.gradient.text,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}
+          >
+            Brand
+          </span>
+        </Title>
+        <Paragraph type="secondary" style={{ marginBottom: 56, fontSize: 16, maxWidth: 640 }}>
           Logo and color tokens for YouTutorAI. All values are sourced from{' '}
-          <Text code>src/portal/src/theme.js</Text>.
+          <Text code>src/portal/src/theme.js</Text>. The design system is{' '}
+          <b>soft neumorphism</b> — depth comes from paired light/dark shadows, never hard borders.
         </Paragraph>
 
-        <Title level={2}>Logo</Title>
-        <Paragraph type="secondary">
-          A friendly “Y” mark in the brand gradient, paired with the wordmark.
+        <Title level={2} style={{ fontFamily: QUICKSAND }}>
+          Logo
+        </Title>
+        <Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
+          A circular disc in the sage-to-mauve brand gradient, with a friendly “Y” mark in white and
+          a peach personality dot.
         </Paragraph>
 
         <div
@@ -224,97 +290,143 @@ export default function LogoPage() {
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
             gap: 24,
-            marginBottom: 48
+            marginBottom: 56
           }}
         >
-          <div
+          <NeuCard
             style={{
-              background: brand.surface,
-              borderRadius: theme.radius.md,
-              border: `3px solid ${brand.border}`,
-              padding: 32,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minHeight: 160,
-              boxShadow: theme.stickerShadow.card
+              minHeight: 200
             }}
           >
             <LogoLockup size={72} />
-          </div>
+          </NeuCard>
           <div
             style={{
-              background: brand.text,
-              borderRadius: theme.radius.md,
-              border: `3px solid ${brand.border}`,
+              background: '#4A5568',
+              borderRadius: theme.radius.lg,
               padding: 32,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minHeight: 160,
+              minHeight: 200,
               boxShadow: theme.stickerShadow.card
             }}
           >
-            <LogoLockup size={72} color={brand.surface} />
+            <LogoLockup size={72} color="#fff" />
           </div>
-          <div
+          <NeuCard
             style={{
-              background: brand.secondary,
-              borderRadius: theme.radius.md,
-              border: `3px solid ${brand.border}`,
-              padding: 32,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minHeight: 160,
-              boxShadow: theme.stickerShadow.card
+              minHeight: 200
             }}
           >
-            <LogoMark size={96} />
-          </div>
+            <LogoMark size={108} />
+          </NeuCard>
         </div>
 
-        <Title level={3}>Mark sizes</Title>
-        <div
+        <Title level={3} style={{ fontFamily: QUICKSAND }}>
+          Mark sizes
+        </Title>
+        <NeuCard
           style={{
             display: 'flex',
             alignItems: 'flex-end',
-            gap: 32,
-            padding: 32,
-            background: brand.surface,
-            borderRadius: theme.radius.md,
-            border: `3px solid ${brand.border}`,
-            marginBottom: 48,
-            boxShadow: theme.stickerShadow.card
+            gap: 36,
+            marginBottom: 56,
+            flexWrap: 'wrap'
           }}
         >
           {[32, 48, 64, 96, 128].map((s) => (
             <div key={s} style={{ textAlign: 'center' }}>
               <LogoMark size={s} />
-              <div style={{ marginTop: 8 }}>
-                <Text type="secondary">{s}px</Text>
+              <div style={{ marginTop: 12 }}>
+                <Text type="secondary" style={{ fontWeight: 600 }}>
+                  {s}px
+                </Text>
               </div>
             </div>
           ))}
-        </div>
+        </NeuCard>
 
-        <Title level={2}>Color palette</Title>
-        <Paragraph type="secondary">
+        <Title level={3} style={{ fontFamily: QUICKSAND }}>
+          Typography
+        </Title>
+        <NeuCard style={{ marginBottom: 56 }}>
+          <div style={{ display: 'grid', gap: 20 }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6 }}>
+                DISPLAY · QUICKSAND 700
+              </Text>
+              <div
+                style={{
+                  fontFamily: QUICKSAND,
+                  fontSize: 44,
+                  fontWeight: 700,
+                  letterSpacing: -1,
+                  lineHeight: 1.1,
+                  marginTop: 6
+                }}
+              >
+                Homework,{' '}
+                <span
+                  style={{
+                    background: brand.gradient.text,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text'
+                  }}
+                >
+                  made gentler.
+                </span>
+              </div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6 }}>
+                BODY · NUNITO 500
+              </Text>
+              <div
+                style={{
+                  fontFamily: 'Nunito, system-ui, sans-serif',
+                  fontSize: 17,
+                  fontWeight: 500,
+                  lineHeight: 1.65,
+                  marginTop: 6,
+                  color: brand.textMuted
+                }}
+              >
+                A Socratic homework tutor for kids 8–14. Snap the worksheet, circle what’s tricky,
+                and the AI walks you through it — never dumps the answer.
+              </div>
+            </div>
+          </div>
+        </NeuCard>
+
+        <Title level={2} style={{ fontFamily: QUICKSAND }}>
+          Color palette
+        </Title>
+        <Paragraph type="secondary" style={{ marginBottom: 32, maxWidth: 640, fontSize: 15 }}>
           Always reference colors via the brand palette or Ant theme tokens — no hardcoded hex
-          values in components. Sky-blue primary, peach secondary, vibrant green CTA — soft pastel
-          surfaces on a warm cream page, all wrapped in the 3px slate sticker outline.
+          values in components. Sage-blue primary, mauve secondary, peach personality — all sitting
+          on the cool-grey neumorphism canvas.
         </Paragraph>
         {colorSections.map((section) => (
-          <div key={section.heading} style={{ marginBottom: 40 }}>
-            <Title level={3} style={{ marginBottom: 4 }}>{section.heading}</Title>
-            <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          <div key={section.heading} style={{ marginBottom: 48 }}>
+            <Title level={3} style={{ marginBottom: 4, fontFamily: QUICKSAND }}>
+              {section.heading}
+            </Title>
+            <Paragraph type="secondary" style={{ marginBottom: 20 }}>
               {section.blurb}
             </Paragraph>
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                gap: 16
+                gap: 20
               }}
             >
               {section.swatches.map((c) => (
