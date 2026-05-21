@@ -2,6 +2,7 @@ import { eq, inArray } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   imageOcr,
+  sessionDoc,
   sessionImage,
   sessionMessage,
   sessionReport,
@@ -34,7 +35,14 @@ export default function tutorDeleteSession(fastify) {
       await db().delete(imageOcr).where(inArray(imageOcr.imageId, imageIds));
       await db().delete(visionExtraction).where(inArray(visionExtraction.imageId, imageIds));
     }
+    // current_doc_id references session_doc, which references session_image;
+    // null the pointer first so FK chains unwind in safe order.
+    await db()
+      .update(tutorSession)
+      .set({ currentDocId: null })
+      .where(eq(tutorSession.id, sessionId));
     await db().delete(sessionImage).where(eq(sessionImage.sessionId, sessionId));
+    await db().delete(sessionDoc).where(eq(sessionDoc.sessionId, sessionId));
     await db().delete(sessionReport).where(eq(sessionReport.sessionId, sessionId));
     await db().delete(tutorSession).where(eq(tutorSession.id, sessionId));
 

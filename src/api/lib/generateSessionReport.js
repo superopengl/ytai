@@ -3,7 +3,14 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { imageOcr, sessionMessage, sessionReport, tutorSession, visionExtraction } from '../db/schema.js';
+import {
+  imageOcr,
+  sessionImage,
+  sessionMessage,
+  sessionReport,
+  tutorSession,
+  visionExtraction
+} from '../db/schema.js';
 import agentChat from './agentChat.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -158,13 +165,13 @@ async function loadSessionContext(sessionId) {
     .where(eq(sessionMessage.sessionId, sessionId))
     .orderBy(asc(sessionMessage.createdAt));
 
-  const imageIds = Array.from(
-    new Set(
-      messages
-        .map((m) => m.imageId)
-        .filter(Boolean)
-    )
-  );
+  // Pull image IDs from the session's docs so the report sees every page
+  // the student worked on, not just images embedded in legacy messages.
+  const sessionImages = await db()
+    .select({ id: sessionImage.id })
+    .from(sessionImage)
+    .where(eq(sessionImage.sessionId, sessionId));
+  const imageIds = Array.from(new Set(sessionImages.map((r) => r.id)));
 
   const ocrRows = imageIds.length
     ? await db()
@@ -179,7 +186,11 @@ async function loadSessionContext(sessionId) {
         .from(visionExtraction)
     : [];
 
-  return { messages, ocrRows: ocrRows.filter((r) => imageIds.includes(r.imageId)), visionRows: visionRows.filter((r) => imageIds.includes(r.imageId)) };
+  return {
+    messages,
+    ocrRows: ocrRows.filter((r) => imageIds.includes(r.imageId)),
+    visionRows: visionRows.filter((r) => imageIds.includes(r.imageId))
+  };
 }
 
 function transcriptToText(messages) {

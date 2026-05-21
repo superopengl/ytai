@@ -3,6 +3,8 @@ import fastifyJwt from '@fastify/jwt';
 import authGoogle from './routes/authGoogle.js';
 import healthcheck from './routes/healthcheck.js';
 import meGetWeaknesses from './routes/meGetWeaknesses.js';
+import tutorAppendDocPage from './routes/tutorAppendDocPage.js';
+import tutorCreateDoc from './routes/tutorCreateDoc.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
 import tutorDeleteSession from './routes/tutorDeleteSession.js';
 import tutorGetImage from './routes/tutorGetImage.js';
@@ -36,6 +38,8 @@ export default async function server() {
   healthcheck(app);
   authGoogle(app);
   meGetWeaknesses(app);
+  tutorAppendDocPage(app);
+  tutorCreateDoc(app);
   tutorCreateSession(app);
   tutorDeleteSession(app);
   tutorGetImage(app);

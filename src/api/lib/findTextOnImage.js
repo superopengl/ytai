@@ -1,28 +1,24 @@
-// Match a Brain-supplied query against the OCR'd lines of an image and
-// return the best matches with tight, normalized 0..1 bboxes.
+// Match a Brain-supplied query against the OCR'd lines of an image (or
+// a whole doc's worth of pages) and return the best matches with tight,
+// normalized 0..1 bboxes.
 //
-// Two modes:
-//   - Single-phrase (default): pass `query`. Returns matching lines + a
-//     unionBbox over them. Use for short, single-line targets.
-//   - Region: also pass `endQuery`. Returns a spanning bbox from the start
-//     anchor's line down to the end anchor's line, expanded horizontally to
-//     cover every OCR line that sits between them. Use for highlighting a
-//     whole multi-line question or worked-solution block.
+// Modes:
+//   - Single-image, single-phrase (default): pass `pages: [{imageId,
+//     pageNumber, storageUrl}]` with one entry and `query`. Returns
+//     matching lines + a unionBbox on that page.
+//   - Multi-page: pass multiple `pages`. The matcher runs over every
+//     page's OCR; each match carries the page it came from. The best-
+//     scoring page's union is returned as `unionBbox` and `page`.
+//   - Region: also pass `endQuery`. The matcher locates the start anchor
+//     and end anchor on the SAME page (the page where both have the
+//     best combined score) and returns a spanning bbox.
 //
 // Returns:
-//   { status, matches, unionBbox?, error? }
+//   { status, page?, matches, unionBbox?, error? }
 //     status: 'ready' | 'pending' | 'failed' | 'unavailable' | 'no-match'
-//     matches: [{ text, bbox, confidence, score }]   (best first, ≤ 5)
-//     unionBbox: [x1, y1, x2, y2]                    (covers the region)
-//
-// Brain reads `status`:
-//   - 'ready' + matches      → use unionBbox / first bbox for draw_annotation
-//   - 'no-match' / 'pending' / 'failed' / 'unavailable' → fall back to lookup_on_image
-//
-// Matching strategy (cheap first, escalate as needed):
-//   1. exact-substring of normalized query in normalized line  (score 1.0)
-//   2. fraction of unique query tokens present in the line     (score 0..1)
-// We never call back into the model; this is pure string work.
+//     page:   the page (1..N) the result is anchored on (when matches found)
+//     matches: [{ text, page, bbox, confidence, score }]   (best first, ≤ 5)
+//     unionBbox: [x1, y1, x2, y2]                          (covers the region)
 
 import { eq } from 'drizzle-orm';
 import db from '../db/index.js';
@@ -36,30 +32,134 @@ const MAX_MATCHES = 5;
 // without freezing the chat if the sidecar is sick.
 const OCR_WAIT_MS = 8000;
 
-export default async function findTextOnImage({ imageId, storageUrl, query, endQuery, log }) {
+// `pages` is the full ordered page list of the current doc:
+//   [{ imageId, pageNumber, storageUrl }]
+// `restrictToPage` (optional, 1-based) narrows the matcher to one page.
+export default async function findTextOnImage({ pages, restrictToPage, query, endQuery, log }) {
   const trimmed = typeof query === 'string' ? query.trim() : '';
   const trimmedEnd = typeof endQuery === 'string' ? endQuery.trim() : '';
   if (!trimmed) return { status: 'no-match', matches: [], error: 'empty query' };
-  if (!imageId) return { status: 'unavailable', matches: [], error: 'no image' };
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return { status: 'unavailable', matches: [], error: 'no image' };
+  }
+
+  const scope = Number.isInteger(restrictToPage)
+    ? pages.filter((p) => p.pageNumber === restrictToPage)
+    : pages;
+  if (scope.length === 0) {
+    return {
+      status: 'no-match',
+      matches: [],
+      error: `page ${restrictToPage} is not in this doc`
+    };
+  }
 
   log?.info(
-    { imageId, query: trimmed, endQuery: trimmedEnd || undefined },
+    {
+      pageCount: scope.length,
+      restrictToPage: restrictToPage || null,
+      query: trimmed,
+      endQuery: trimmedEnd || undefined
+    },
     'running OCR (find_text_on_image)'
   );
 
-  let row = await readOcrRow(imageId);
+  // Resolve OCR for every scoped page, kicking jobs and briefly waiting
+  // when needed. Per-page so a slow page doesn't block faster ones.
+  const ocrByPage = new Map();
+  await Promise.all(
+    scope.map(async (p) => {
+      const row = await resolveOcrRow({ imageId: p.imageId, storageUrl: p.storageUrl, log });
+      ocrByPage.set(p.pageNumber, { page: p, row });
+    })
+  );
 
-  // Image has no OCR row yet — likely the request came in before the
-  // background job started (or it didn't get kicked, e.g. server restart).
-  // Kick it now and wait briefly.
+  // Single-page fast path keeps the original status semantics — caller
+  // expects a precise pending/failed/unavailable when the page they
+  // care about isn't OCR'd yet.
+  if (scope.length === 1) {
+    const entry = ocrByPage.get(scope[0].pageNumber);
+    const status = readiness(entry.row);
+    if (status.kind !== 'ready') return statusResult(status, trimmed, entry.page.pageNumber);
+    return runOneMode({
+      lines: entry.row.lines || [],
+      page: entry.page.pageNumber,
+      query: trimmed,
+      endQuery: trimmedEnd,
+      log
+    });
+  }
+
+  // Multi-page mode: run the matcher per page, pick the best-scoring page,
+  // return that one's result. Pages that aren't ready yet are skipped.
+  let bestPageResult = null;
+  let bestScore = -1;
+  const pendingPages = [];
+  const failedPages = [];
+  for (const p of scope) {
+    const entry = ocrByPage.get(p.pageNumber);
+    const status = readiness(entry.row);
+    if (status.kind === 'pending') pendingPages.push(p.pageNumber);
+    if (status.kind === 'failed' || status.kind === 'unavailable') failedPages.push(p.pageNumber);
+    if (status.kind !== 'ready') continue;
+    const candidate = runOneMode({
+      lines: entry.row.lines || [],
+      page: p.pageNumber,
+      query: trimmed,
+      endQuery: trimmedEnd,
+      log: null
+    });
+    if (candidate.status !== 'ready' || !Array.isArray(candidate.matches) || candidate.matches.length === 0) continue;
+    const topScore = candidate.matches[0]?.score ?? 0;
+    if (topScore > bestScore) {
+      bestScore = topScore;
+      bestPageResult = candidate;
+    }
+  }
+
+  if (bestPageResult) {
+    log?.info(
+      {
+        winningPage: bestPageResult.page,
+        topScore: bestScore,
+        query: trimmed,
+        endQuery: trimmedEnd || undefined
+      },
+      'OCR multi-page find complete'
+    );
+    return bestPageResult;
+  }
+
+  // No page produced a match. If any pages were still pending, surface
+  // that so Brain knows to retry (not fall back to Eyes yet). Otherwise
+  // report no-match.
+  if (pendingPages.length > 0) {
+    return {
+      status: 'pending',
+      matches: [],
+      error: `OCR still running on page(s) ${pendingPages.join(', ')}`
+    };
+  }
+  log?.info(
+    {
+      query: trimmed,
+      endQuery: trimmedEnd || undefined,
+      pageCount: scope.length,
+      failedPages
+    },
+    'OCR multi-page find: no-match'
+  );
+  return { status: 'no-match', matches: [] };
+}
+
+async function resolveOcrRow({ imageId, storageUrl, log }) {
+  let row = await readOcrRow(imageId);
   if (!row && storageUrl) {
     log?.info({ imageId }, 'findTextOnImage: no OCR row — kicking and waiting');
     const job = ensureImageOcr({ imageId, storageUrl, log });
     await Promise.race([job, sleep(OCR_WAIT_MS)]);
     row = await readOcrRow(imageId);
   } else if (row?.status === 'pending') {
-    // A job is in flight; wait it out so the very first turn after upload
-    // still benefits from OCR instead of skipping straight to Eyes.
     log?.info({ imageId }, 'findTextOnImage: OCR pending — waiting');
     await Promise.race([
       pollUntilReady(imageId, OCR_WAIT_MS),
@@ -67,49 +167,40 @@ export default async function findTextOnImage({ imageId, storageUrl, query, endQ
     ]);
     row = await readOcrRow(imageId);
   }
+  return row;
+}
 
-  if (!row) {
-    log?.info({ imageId, query: trimmed, status: 'unavailable' }, 'OCR find complete');
-    return { status: 'unavailable', matches: [] };
-  }
-  if (row.status === 'pending') {
-    log?.info({ imageId, query: trimmed, status: 'pending' }, 'OCR find complete');
-    return { status: 'pending', matches: [] };
-  }
-  if (row.status === 'failed') {
-    log?.info(
-      { imageId, query: trimmed, status: 'failed', error: row.error || null },
-      'OCR find complete'
-    );
-    return { status: 'failed', matches: [], error: row.error || 'OCR failed' };
+function readiness(row) {
+  if (!row) return { kind: 'unavailable' };
+  if (row.status === 'pending') return { kind: 'pending' };
+  if (row.status === 'failed') return { kind: 'failed', error: row.error || 'OCR failed' };
+  if (row.status !== 'ready') return { kind: 'unavailable' };
+  return { kind: 'ready' };
+}
+
+function statusResult(status, query, page) {
+  if (status.kind === 'pending') return { status: 'pending', matches: [], page };
+  if (status.kind === 'failed') return { status: 'failed', matches: [], page, error: status.error };
+  if (status.kind === 'unavailable') return { status: 'unavailable', matches: [], page };
+  return { status: 'no-match', matches: [], page };
+}
+
+// Run the (single-phrase OR region) matcher against one page's OCR lines.
+// Pulled out so multi-page mode can call it per page and pick a winner.
+function runOneMode({ lines, page, query, endQuery, log }) {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return { status: 'no-match', matches: [], page };
   }
 
-  const lines = Array.isArray(row.lines) ? row.lines : [];
-  if (lines.length === 0) {
-    log?.info(
-      { imageId, query: trimmed, status: 'no-match', reason: 'empty-ocr' },
-      'OCR find complete'
-    );
-    return { status: 'no-match', matches: [] };
-  }
+  const startMatches = rankMatches(query, lines).map((m) => ({ ...m, page }));
 
-  const startMatches = rankMatches(trimmed, lines);
-
-  // Single-phrase mode (no end_query): behave exactly as before — return
-  // every line that matched the one query, with their union as the bbox.
-  if (!trimmedEnd) {
-    if (startMatches.length === 0) {
-      log?.info(
-        { imageId, query: trimmed, status: 'no-match', lineCount: lines.length },
-        'OCR find complete'
-      );
-      return { status: 'no-match', matches: [] };
-    }
+  if (!endQuery) {
+    if (startMatches.length === 0) return { status: 'no-match', matches: [], page };
     const unionBbox = unionOf(startMatches.map((m) => m.bbox));
     log?.info(
       {
-        imageId,
-        query: trimmed,
+        page,
+        query,
         status: 'ready',
         matchCount: startMatches.length,
         topMatch: startMatches[0].text.slice(0, 120),
@@ -119,52 +210,30 @@ export default async function findTextOnImage({ imageId, storageUrl, query, endQ
       },
       'OCR find complete'
     );
-    return { status: 'ready', matches: startMatches, unionBbox };
+    return { status: 'ready', page, matches: startMatches, unionBbox };
   }
 
-  // Region mode: locate the end anchor too, then build a bbox spanning from
-  // the start row to the end row, widened to include any OCR line that sits
-  // vertically between them. This catches middle lines that extend further
-  // left/right than the anchor rows (very common with worksheet questions
-  // where the first line is indented past the body).
-  const endMatches = rankMatches(trimmedEnd, lines);
+  const endMatches = rankMatches(endQuery, lines).map((m) => ({ ...m, page }));
   if (startMatches.length === 0 || endMatches.length === 0) {
     const missing = startMatches.length === 0 ? 'start' : 'end';
-    log?.info(
-      {
-        imageId,
-        query: trimmed,
-        endQuery: trimmedEnd,
-        status: 'no-match',
-        missing,
-        lineCount: lines.length
-      },
-      'OCR region find: anchor missing'
-    );
     return {
       status: 'no-match',
+      page,
       matches: missing === 'end' ? startMatches : [],
       error:
         missing === 'start'
-          ? `start query "${trimmed}" not found — try a different phrase from the beginning of the region.`
-          : `end query "${trimmedEnd}" not found — try a different phrase from the end of the region.`
+          ? `start query "${query}" not found — try a different phrase from the beginning of the region.`
+          : `end query "${endQuery}" not found — try a different phrase from the end of the region.`
     };
   }
 
   const startBox = startMatches[0].bbox;
   const endBox = endMatches[0].bbox;
-  // min/max handles the case where Brain swapped start/end or the end
-  // anchor happened to land slightly above the start (multi-column layouts).
   const regionY1 = Math.min(startBox[1], endBox[1]);
   const regionY2 = Math.max(startBox[3], endBox[3]);
   let regionX1 = Math.min(startBox[0], endBox[0]);
   let regionX2 = Math.max(startBox[2], endBox[2]);
 
-  // Walk every OCR line whose vertical center sits between the anchors and
-  // pull its horizontal extent into the region. Without this, a question
-  // whose middle lines extend further right than the first line would get
-  // its right edge clipped.
-  let middleLineCount = 0;
   for (const line of lines) {
     const lb = line?.bbox;
     if (!Array.isArray(lb) || lb.length < 4) continue;
@@ -172,7 +241,6 @@ export default async function findTextOnImage({ imageId, storageUrl, query, endQ
     if (lw <= 0 || lh <= 0) continue;
     const lyCenter = ly + lh / 2;
     if (lyCenter < regionY1 || lyCenter > regionY2) continue;
-    middleLineCount += 1;
     if (lx < regionX1) regionX1 = lx;
     if (lx + lw > regionX2) regionX2 = lx + lw;
   }
@@ -180,13 +248,12 @@ export default async function findTextOnImage({ imageId, storageUrl, query, endQ
   const regionBbox = [regionX1, regionY1, regionX2, regionY2];
   log?.info(
     {
-      imageId,
-      query: trimmed,
-      endQuery: trimmedEnd,
+      page,
+      query,
+      endQuery,
       status: 'ready',
       startMatch: startMatches[0].text.slice(0, 80),
       endMatch: endMatches[0].text.slice(0, 80),
-      middleLineCount,
       regionBbox
     },
     'OCR region find complete'
@@ -194,6 +261,7 @@ export default async function findTextOnImage({ imageId, storageUrl, query, endQ
 
   return {
     status: 'ready',
+    page,
     matches: [startMatches[0], endMatches[0]],
     unionBbox: regionBbox
   };
@@ -254,8 +322,6 @@ function rankMatches(query, lines) {
     } else {
       continue;
     }
-    // Convert OCR's native [x, y, w, h] to the canonical [x1, y1, x2, y2]
-    // corner shape used elsewhere in the system before returning.
     const [bx, by, bw, bh] = line.bbox;
     scored.push({
       text: line.text,
@@ -269,9 +335,6 @@ function rankMatches(query, lines) {
   return scored.slice(0, MAX_MATCHES);
 }
 
-// Union of [x1, y1, x2, y2] corner bboxes, returned in the same corner
-// shape. Bboxes here are already in the canonical format (rankMatches
-// converted on the way out of OCR storage).
 function unionOf(bboxes) {
   if (!Array.isArray(bboxes) || bboxes.length === 0) return null;
   let minX = 1;

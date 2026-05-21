@@ -1,12 +1,14 @@
-import { createHash } from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { sessionImage, sessionMessage, tutorSession } from '../db/schema.js';
+import {
+  sessionDoc,
+  sessionImage,
+  sessionMessage,
+  tutorSession
+} from '../db/schema.js';
 import brainTools from '../lib/brainTools.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
-import hashBuffer from '../lib/hashBuffer.js';
 import makeTutorTools from '../lib/makeTutorTools.js';
-import persistImage from '../lib/persistImage.js';
 import runBrainTurn from '../lib/runBrainTurn.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 
@@ -53,12 +55,6 @@ function brainConfig() {
   };
 }
 
-function decodeDataUrl(dataUrl) {
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl);
-  if (!match) return null;
-  return { mimeType: match[1], bytes: Buffer.from(match[2], 'base64') };
-}
-
 function collectUsedColors(history) {
   const seen = new Set();
   for (const row of history) {
@@ -77,79 +73,54 @@ function collectUsedColors(history) {
   return Array.from(seen);
 }
 
-async function resolveImage({ sessionId, imageDataUrl, dimensions, log }) {
-  if (!imageDataUrl) return null;
-  const decoded = decodeDataUrl(imageDataUrl);
-  if (!decoded) {
-    log.warn({ sessionId }, 'image dataUrl could not be decoded — ignoring');
-    return null;
-  }
-  const contentHash = hashBuffer(decoded.bytes);
-  const [existing] = await db()
+// Load the session's current doc with all its pages (one row per page,
+// ordered 1..N). Returns null when the session has no doc yet — a text-
+// only conversation where Brain answers without the worksheet.
+async function loadActiveDoc(sessionId, currentDocId, log) {
+  if (!currentDocId) return null;
+  const [doc] = await db()
+    .select({
+      id: sessionDoc.id,
+      kind: sessionDoc.kind,
+      pageCount: sessionDoc.pageCount
+    })
+    .from(sessionDoc)
+    .where(eq(sessionDoc.id, currentDocId));
+  if (!doc) return null;
+
+  const pages = await db()
     .select({
       id: sessionImage.id,
+      pageNumber: sessionImage.pageNumber,
       width: sessionImage.width,
       height: sessionImage.height,
       storageUrl: sessionImage.storageUrl
     })
     .from(sessionImage)
-    .where(and(eq(sessionImage.sessionId, sessionId), eq(sessionImage.contentHash, contentHash)));
-  if (existing) {
-    log.info(
-      { sessionId, contentHash: contentHash.slice(0, 12), imageId: existing.id },
-      'resolveImage: hash matched existing session_image'
-    );
-    return {
-      id: existing.id,
-      storageUrl: existing.storageUrl,
-      width: existing.width || dimensions?.width || 0,
-      height: existing.height || dimensions?.height || 0
-    };
+    .where(eq(sessionImage.docId, currentDocId))
+    .orderBy(asc(sessionImage.pageNumber));
+
+  if (pages.length === 0) return null;
+
+  // Backfill OCR for any page that predates the OCR feature. The job is
+  // idempotent so a no-op when the row already exists.
+  for (const p of pages) {
+    ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch(() => {});
   }
-  const { storageUrl } = await persistImage({
-    bytes: decoded.bytes,
-    contentHash,
-    mimeType: decoded.mimeType
-  });
-  const [inserted] = await db()
-    .insert(sessionImage)
-    .values({
-      sessionId,
-      contentHash,
-      storageUrl,
-      width: Math.max(0, Math.round(dimensions?.width || 0)),
-      height: Math.max(0, Math.round(dimensions?.height || 0))
-    })
-    .returning({ id: sessionImage.id });
-  log.info(
-    {
-      sessionId,
-      contentHash: contentHash.slice(0, 12),
-      imageId: inserted.id,
-      width: dimensions?.width || 0,
-      height: dimensions?.height || 0
-    },
-    'resolveImage: inserted new session_image'
-  );
-  // Kick OCR async. The promise is tracked inside ensureImageOcr so the
-  // find_text_on_image handler can await it later in the same turn.
-  ensureImageOcr({ imageId: inserted.id, storageUrl, log }).catch(() => {});
-  return {
-    id: inserted.id,
-    storageUrl,
-    width: dimensions?.width || 0,
-    height: dimensions?.height || 0
-  };
+
+  return { id: doc.id, kind: doc.kind, pages };
 }
 
 export default function tutorSendMessage(fastify) {
   fastify.post('/api/tutor/:sessionId/message', async (request, reply) => {
     const { sessionId } = request.params;
     const content = typeof request.body?.content === 'string' ? request.body.content.trim() : '';
-    const imageDataUrl =
-      typeof request.body?.image?.dataUrl === 'string' && request.body.image.dataUrl.startsWith('data:image/')
-        ? request.body.image.dataUrl
-        : null;
+    // Frontend hint: which page of the doc the student is currently
+    // looking at. Passed into the prompt so Brain biases page-specific
+    // lookups toward what the student is staring at. Optional.
+    const viewingPage = Number.isInteger(request.body?.viewingPage)
+      ? Math.max(1, request.body.viewingPage)
+      : null;
 
     if (!content) {
       reply.code(400);
@@ -159,7 +130,7 @@ export default function tutorSendMessage(fastify) {
     const [session] = await db()
       .select({
         id: tutorSession.id,
-        currentImageId: tutorSession.currentImageId,
+        currentDocId: tutorSession.currentDocId,
         guidanceLevel: tutorSession.guidanceLevel
       })
       .from(tutorSession)
@@ -170,64 +141,17 @@ export default function tutorSendMessage(fastify) {
       return { error: 'Session not found' };
     }
 
-    const reqImageDims = {
-      width: Number(request.body?.image?.width) || 0,
-      height: Number(request.body?.image?.height) || 0
-    };
+    const activeDoc = await loadActiveDoc(sessionId, session.currentDocId, request.log);
 
     request.log.info(
       {
         sessionId,
-        hasImageInRequest: !!imageDataUrl,
-        sessionCurrentImageId: session.currentImageId,
-        imageDims: reqImageDims
+        currentDocId: session.currentDocId,
+        pageCount: activeDoc?.pages.length ?? 0,
+        viewingPage
       },
       'turn start'
     );
-
-    let activeImage = null;
-    // True only when *this* turn introduces an image the session hasn't seen
-    // before. Drives whether we persist a standalone image-only user message
-    // so the UI can render the photo as its own bubble exactly once.
-    let imageChangedThisTurn = false;
-    if (imageDataUrl) {
-      activeImage = await resolveImage({
-        sessionId,
-        imageDataUrl,
-        dimensions: reqImageDims,
-        log: request.log
-      });
-      if (activeImage && activeImage.id !== session.currentImageId) {
-        imageChangedThisTurn = true;
-        await db()
-          .update(tutorSession)
-          .set({ currentImageId: activeImage.id, updatedAt: new Date() })
-          .where(eq(tutorSession.id, sessionId));
-      }
-    } else if (session.currentImageId) {
-      const [row] = await db()
-        .select({
-          id: sessionImage.id,
-          width: sessionImage.width,
-          height: sessionImage.height,
-          storageUrl: sessionImage.storageUrl
-        })
-        .from(sessionImage)
-        .where(eq(sessionImage.id, session.currentImageId));
-      if (row) {
-        activeImage = {
-          id: row.id,
-          storageUrl: row.storageUrl,
-          width: row.width,
-          height: row.height
-        };
-        // Backfill OCR for images that predate this feature. ensureImageOcr
-        // is idempotent — a row that already exists is a no-op.
-        ensureImageOcr({ imageId: row.id, storageUrl: row.storageUrl, log: request.log }).catch(
-          () => {}
-        );
-      }
-    }
 
     const history = await db()
       .select({
@@ -245,24 +169,6 @@ export default function tutorSendMessage(fastify) {
     const usedColors = collectUsedColors(history);
     const usedColorsForTurn = new Set(usedColors);
 
-    // When the user attaches a new image, persist it as its own user message
-    // (no text) so the transcript shows the photo as a standalone bubble
-    // exactly once. The text turn itself stores no imageId — Brain still sees
-    // the page through lookup_on_image against session.currentImageId.
-    let imageMessageRow = null;
-    if (imageChangedThisTurn && activeImage) {
-      const [row] = await db()
-        .insert(sessionMessage)
-        .values({
-          sessionId,
-          role: 'user',
-          content: '',
-          imageId: activeImage.id
-        })
-        .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
-      imageMessageRow = row;
-    }
-
     const [userRow] = await db()
       .insert(sessionMessage)
       .values({
@@ -273,17 +179,21 @@ export default function tutorSendMessage(fastify) {
       })
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
+    const promptMessages = await tutorPrompt({
+      activeDoc,
+      viewingPage,
+      usedColors,
+      guidanceLevel: session.guidanceLevel
+    });
+
     const modelMessages = [
-      ...tutorPrompt({
-        hasImage: !!activeImage,
-        usedColors,
-        guidanceLevel: session.guidanceLevel
-      }),
+      ...promptMessages,
       // Skip empty-content rows: those are image-attachment markers for the
-      // UI, not anything Brain needs in its conversational context. For
-      // prior assistant turns, strip phantom-highlight narration that wasn't
-      // backed by a real draw_annotation call — otherwise the lie compounds
-      // across turns as Brain treats its own past hallucinations as a template.
+      // UI (legacy single-image sessions), not anything Brain needs in its
+      // conversational context. For prior assistant turns, strip phantom-
+      // highlight narration that wasn't backed by a real draw_annotation
+      // call — otherwise the lie compounds across turns as Brain treats
+      // its own past hallucinations as a template.
       ...history
         .map((m) => {
           if (m.role === 'assistant') {
@@ -321,14 +231,7 @@ export default function tutorSendMessage(fastify) {
       role: 'user',
       content,
       imageId: null,
-      createdAt: userRow.createdAt,
-      imageMessage: imageMessageRow
-        ? {
-            id: imageMessageRow.id,
-            imageId: activeImage.id,
-            createdAt: imageMessageRow.createdAt
-          }
-        : null
+      createdAt: userRow.createdAt
     });
 
     const abortController = new AbortController();
@@ -338,8 +241,8 @@ export default function tutorSendMessage(fastify) {
     });
 
     const dispatchTool = makeTutorTools({
-      activeImage,
-      imageDataUrl,
+      activeDoc,
+      viewingPage,
       log: request.log,
       emit: sse,
       usedColorsForTurn,
@@ -358,7 +261,7 @@ export default function tutorSendMessage(fastify) {
       apiKey,
       model: modelId,
       messages: modelMessages,
-      tools: activeImage ? brainTools : undefined,
+      tools: activeDoc ? brainTools : undefined,
       signal: abortController.signal,
       log: request.log,
       logFields: { sessionId },

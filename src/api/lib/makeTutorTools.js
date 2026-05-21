@@ -4,8 +4,9 @@ import lookupOnImage from './lookupOnImage.js';
 import snapAnnotationBbox from './snapAnnotationBbox.js';
 
 // Build the dispatchTool function runBrainTurn calls. The factory closes over
-// per-request context (image, abort signal, SSE emitter, used-color set) so
-// runBrainTurn stays generic — it sees `(call) => { result, progress }`.
+// per-request context (active doc + pages, abort signal, SSE emitter,
+// used-color set) so runBrainTurn stays generic — it sees
+// `(call) => { result, progress }`.
 //
 // `progress: true` means the call produced actionable data Brain can use
 // (e.g. find_text_on_image returned a real bbox, lookup_on_image returned
@@ -20,33 +21,47 @@ import snapAnnotationBbox from './snapAnnotationBbox.js';
 //   draw_annotation:    snaps bbox via OCR, picks an unused palette color,
 //                       mutates call.args in place, emits SSE tool
 export default function makeTutorTools({
-  activeImage,
-  imageDataUrl,
+  activeDoc,
+  viewingPage,
   log,
   emit,
   usedColorsForTurn,
   signal
 }) {
+  const pages = activeDoc?.pages ?? [];
   return async function dispatchTool(call) {
     if (call.name === 'find_text_on_image') {
-      return dispatchFindText(call, { activeImage, log, emit });
+      return dispatchFindText(call, { pages, log, emit });
     }
     if (call.name === 'lookup_on_image') {
-      return dispatchLookup(call, { activeImage, imageDataUrl, log, emit, signal });
+      return dispatchLookup(call, { pages, viewingPage, log, emit, signal });
     }
     if (call.name === 'draw_annotation') {
-      return dispatchDrawAnnotation(call, { activeImage, log, emit, usedColorsForTurn });
+      return dispatchDrawAnnotation(call, { pages, viewingPage, log, emit, usedColorsForTurn });
     }
     log?.warn({ name: call.name }, 'Brain requested unknown tool — ignoring');
     return { result: { error: `Unknown tool: ${call.name}` }, progress: false };
   };
 }
 
-async function dispatchFindText(call, { activeImage, log, emit }) {
+function findPage(pages, pageNumber) {
+  if (!Number.isInteger(pageNumber)) return null;
+  return pages.find((p) => p.pageNumber === pageNumber) ?? null;
+}
+
+function pageRangeLabel(pages) {
+  if (pages.length === 0) return '';
+  if (pages.length === 1) return '1';
+  return `1..${pages.length}`;
+}
+
+async function dispatchFindText(call, { pages, log, emit }) {
   const query = typeof call.args?.query === 'string' ? call.args.query.trim() : '';
   const endQuery =
     typeof call.args?.end_query === 'string' ? call.args.end_query.trim() : '';
-  if (!activeImage) {
+  const restrictToPage = Number.isInteger(call.args?.page) ? call.args.page : null;
+
+  if (pages.length === 0) {
     return { result: { error: 'No image is attached to this session.' }, progress: false };
   }
   if (!query) {
@@ -55,13 +70,22 @@ async function dispatchFindText(call, { activeImage, log, emit }) {
       progress: false
     };
   }
-  const label = endQuery ? `find: "${query}" → "${endQuery}"` : `find: "${query}"`;
+
+  const scopeLabel = restrictToPage ? `p${restrictToPage}` : `p${pageRangeLabel(pages)}`;
+  const label = endQuery
+    ? `find ${scopeLabel}: "${query}" → "${endQuery}"`
+    : `find ${scopeLabel}: "${query}"`;
   emit('lookup-start', { id: call.id, question: label });
+
   let result;
   try {
     result = await findTextOnImage({
-      imageId: activeImage.id,
-      storageUrl: activeImage.storageUrl,
+      pages: pages.map((p) => ({
+        imageId: p.id,
+        pageNumber: p.pageNumber,
+        storageUrl: p.storageUrl
+      })),
+      restrictToPage,
       query,
       endQuery: endQuery || undefined,
       log
@@ -75,17 +99,33 @@ async function dispatchFindText(call, { activeImage, log, emit }) {
     };
   }
   emit('lookup', { id: call.id, question: label, result });
-  // "ready" with at least one match means Brain now has a bbox to use —
-  // that's progress. All other statuses (no-match, pending, failed,
-  // unavailable) leave Brain empty-handed.
-  const progress = result.status === 'ready' && Array.isArray(result.matches) && result.matches.length > 0;
+  const progress =
+    result.status === 'ready' && Array.isArray(result.matches) && result.matches.length > 0;
   return { result, progress };
 }
 
-async function dispatchLookup(call, { activeImage, imageDataUrl, log, emit, signal }) {
+async function dispatchLookup(call, { pages, viewingPage, log, emit, signal }) {
   const question = typeof call.args?.question === 'string' ? call.args.question.trim() : '';
-  if (!activeImage) {
+  // Brain is told `page` is required, but fall back to viewing page or
+  // page 1 if it forgot — beats a hard error that wastes a round.
+  const requestedPage = Number.isInteger(call.args?.page) ? call.args.page : null;
+  const fallbackPage =
+    Number.isInteger(viewingPage) && viewingPage >= 1 ? viewingPage : 1;
+  const pageNumber = requestedPage ?? fallbackPage;
+  const targetPage = findPage(pages, pageNumber);
+
+  if (pages.length === 0) {
     return { result: { error: 'No image is attached to this session.' }, progress: false };
+  }
+  if (!targetPage) {
+    return {
+      result: {
+        error:
+          `page ${pageNumber} is not in this doc (valid: 1..${pages.length}). ` +
+          'Reissue lookup_on_image with a valid page number.'
+      },
+      progress: false
+    };
   }
   if (!question) {
     return {
@@ -93,35 +133,27 @@ async function dispatchLookup(call, { activeImage, imageDataUrl, log, emit, sign
       progress: false
     };
   }
-  // Tell the UI Brain has paused to consult Eyes — without this, the chat
-  // would freeze with no "Thinking…" indicator for however long the vision
-  // call takes.
-  emit('lookup-start', { id: call.id, question });
+
+  const label = pages.length > 1 ? `p${targetPage.pageNumber}: ${question}` : question;
+  emit('lookup-start', { id: call.id, question: label });
   let result;
   try {
     result = await lookupOnImage({
-      image: activeImage,
+      image: { id: targetPage.id, storageUrl: targetPage.storageUrl },
       question,
-      imageDataUrlForThisTurn: imageDataUrl,
       log,
       signal
     });
   } catch (err) {
-    log?.error({ err, question }, 'lookup_on_image failed');
+    log?.error({ err, question, page: targetPage.pageNumber }, 'lookup_on_image failed');
     result = { error: `Vision call failed: ${err.message?.slice(0, 200) ?? 'unknown error'}` };
   }
-  emit('lookup', { id: call.id, question, result });
-  // A non-error answer with content is progress; the image-unavailable /
-  // vision-call-failed / empty-answer cases are not.
+  emit('lookup', { id: call.id, question: label, result });
   const progress = !result.error && typeof result.answer === 'string' && result.answer.length > 0;
   return { result, progress };
 }
 
-async function dispatchDrawAnnotation(call, { activeImage, log, emit, usedColorsForTurn }) {
-  // Reject up front when Brain omitted or mangled the bbox. Without this,
-  // the canvas silently drops the annotation and Brain has no feedback to
-  // retry — it just burns rounds. The error string nudges Brain toward
-  // the specific corner(s) it forgot.
+async function dispatchDrawAnnotation(call, { pages, viewingPage, log, emit, usedColorsForTurn }) {
   const cornerKeys = ['x1', 'y1', 'x2', 'y2'];
   const missingCorners = cornerKeys.filter(
     (k) => typeof call.args?.[k] !== 'number' || Number.isNaN(call.args[k])
@@ -156,11 +188,26 @@ async function dispatchDrawAnnotation(call, { activeImage, log, emit, usedColors
     };
   }
 
-  // Normalize the color: Brain emits a palette name, the canvas expects
-  // a hex. Persist both — name for future used-color tracking, hex for
-  // rendering. If Brain skipped the field or gave us a duplicate /
-  // unknown name, fall back to the first still-unused palette entry so
-  // the mark never collides with an earlier one.
+  // Resolve which page this annotation lives on. Brain is told `page` is
+  // required; we fall back to viewing page or page 1 to keep a missing
+  // value from blowing up a perfectly good bbox.
+  const requestedPage = Number.isInteger(call.args?.page) ? call.args.page : null;
+  const fallbackPage =
+    Number.isInteger(viewingPage) && viewingPage >= 1 ? viewingPage : 1;
+  const pageNumber = requestedPage ?? fallbackPage;
+  const targetPage = findPage(pages, pageNumber);
+  if (!targetPage) {
+    return {
+      result: {
+        error:
+          `page ${pageNumber} is not in this doc (valid: 1..${pages.length}). ` +
+          'Reissue draw_annotation with the correct page.'
+      },
+      progress: false
+    };
+  }
+
+  // Normalize color (same logic as before, just lifted out).
   const requestedName =
     typeof call.args?.color === 'string' ? call.args.color.toLowerCase() : null;
   let colorName =
@@ -174,41 +221,36 @@ async function dispatchDrawAnnotation(call, { activeImage, log, emit, usedColors
   usedColorsForTurn.add(colorName);
   call.args = {
     ...call.args,
+    page: targetPage.pageNumber,
     color: resolveAnnotationColor(colorName),
     colorName,
     label: typeof call.args?.label === 'string' ? call.args.label.slice(0, 60) : ''
   };
 
-  // Tighten the bbox using OCR before the UI sees it. Brain may have
-  // handed us a loose Eyes-style region; the snap shrinks it to hug the
-  // actual printed text. No-op when OCR isn't ready, no OCR lines
-  // overlap, or the supplied region is too large to be a single-phrase
-  // target.
-  if (activeImage) {
-    const supplied = [call.args.x1, call.args.y1, call.args.x2, call.args.y2];
-    try {
-      const snap = await snapAnnotationBbox({
-        imageId: activeImage.id,
-        bbox: supplied,
-        log
-      });
-      if (snap.snapped) {
-        call.args = {
-          ...call.args,
-          x1: snap.bbox[0],
-          y1: snap.bbox[1],
-          x2: snap.bbox[2],
-          y2: snap.bbox[3]
-        };
-      } else {
-        log?.info(
-          { reason: snap.reason },
-          'draw_annotation: snap skipped — forwarding original bbox'
-        );
-      }
-    } catch (err) {
-      log?.warn({ err: err.message }, 'draw_annotation: snap failed — forwarding original bbox');
+  // Snap to the OCR of the target page only.
+  const supplied = [call.args.x1, call.args.y1, call.args.x2, call.args.y2];
+  try {
+    const snap = await snapAnnotationBbox({
+      imageId: targetPage.id,
+      bbox: supplied,
+      log
+    });
+    if (snap.snapped) {
+      call.args = {
+        ...call.args,
+        x1: snap.bbox[0],
+        y1: snap.bbox[1],
+        x2: snap.bbox[2],
+        y2: snap.bbox[3]
+      };
+    } else {
+      log?.info(
+        { reason: snap.reason },
+        'draw_annotation: snap skipped — forwarding original bbox'
+      );
     }
+  } catch (err) {
+    log?.warn({ err: err.message }, 'draw_annotation: snap failed — forwarding original bbox');
   }
   emit('tool', call);
   return { result: { ok: true }, progress: true };

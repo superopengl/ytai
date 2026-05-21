@@ -30,7 +30,6 @@ function hashQuestion(question) {
 export default async function lookupOnImage({
   image,
   question,
-  imageDataUrlForThisTurn,
   log,
   signal
 }) {
@@ -44,7 +43,7 @@ export default async function lookupOnImage({
     return cached.extracted;
   }
 
-  const imageDataUrl = imageDataUrlForThisTurn || (await loadImageDataUrl(image.storageUrl));
+  const imageDataUrl = await loadImageDataUrl(image.storageUrl);
   if (!imageDataUrl) {
     log?.warn({ imageId: image.id }, 'cannot run vision: no data URL and storage unreadable');
     return { answer: '', bbox: null, error: 'image-unavailable' };
