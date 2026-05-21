@@ -3,6 +3,7 @@ import { Alert, Button, Space, Typography } from 'antd';
 import {
   CameraOutlined,
   CloseOutlined,
+  FilePdfOutlined,
   PlusOutlined,
   UploadOutlined
 } from '@ant-design/icons';
@@ -23,11 +24,22 @@ export default function PhotoCapture({ onStart, busy = false }) {
   const [error, setError] = useState(null);
 
   function addFiles(fileList) {
-    const incoming = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
+    const incoming = Array.from(fileList).filter((f) => {
+      const isImage = f.type?.startsWith('image/');
+      const isPdf = f.type === 'application/pdf' || f.name?.toLowerCase().endsWith('.pdf');
+      return isImage || isPdf;
+    });
     if (incoming.length === 0) return;
     setPages((prev) => [
       ...prev,
-      ...incoming.map((file) => ({ file, previewUrl: URL.createObjectURL(file) }))
+      ...incoming.map((file) => {
+        const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+        return {
+          file,
+          isPdf,
+          previewUrl: isPdf ? null : URL.createObjectURL(file)
+        };
+      })
     ]);
   }
 
@@ -52,7 +64,7 @@ export default function PhotoCapture({ onStart, busy = false }) {
     setError(null);
     try {
       await onStart?.(pages.map((p) => p.file));
-      for (const p of pages) URL.revokeObjectURL(p.previewUrl);
+      for (const p of pages) if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
       setPages([]);
     } catch (err) {
       setError(err.message || 'Upload failed');
@@ -77,7 +89,7 @@ export default function PhotoCapture({ onStart, busy = false }) {
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ maxWidth: 460, fontSize: 16, margin: 0 }}>
         I'll take a look at the page, find the questions, and we can work through anything
-        you're stuck on together. Got more than one page? Add them all.
+        you're stuck on together. Got more than one page or a PDF? Add them all.
       </Typography.Paragraph>
 
       {pages.length > 0 && (
@@ -91,7 +103,14 @@ export default function PhotoCapture({ onStart, busy = false }) {
           }}
         >
           {pages.map((p, idx) => (
-            <PageThumb key={p.previewUrl} index={idx + 1} src={p.previewUrl} onRemove={() => removePage(idx)} />
+            <PageThumb
+              key={`${idx}-${p.file.name}`}
+              index={idx + 1}
+              src={p.previewUrl}
+              isPdf={p.isPdf}
+              name={p.file.name}
+              onRemove={() => removePage(idx)}
+            />
           ))}
         </div>
       )}
@@ -142,7 +161,7 @@ export default function PhotoCapture({ onStart, busy = false }) {
       <input
         ref={uploadRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         multiple
         hidden
         onChange={handleUpload}
@@ -151,7 +170,7 @@ export default function PhotoCapture({ onStart, busy = false }) {
   );
 }
 
-function PageThumb({ index, src, onRemove }) {
+function PageThumb({ index, src, isPdf, name, onRemove }) {
   return (
     <div
       style={{
@@ -163,12 +182,34 @@ function PageThumb({ index, src, onRemove }) {
         boxShadow: '0 2px 6px rgba(0, 0, 0, 0.12)',
         background: '#fff'
       }}
+      title={name}
     >
-      <img
-        src={src}
-        alt={`page ${index}`}
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      />
+      {isPdf ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            background: '#fff1eb',
+            color: '#fa541c',
+            textAlign: 'center',
+            padding: 8
+          }}
+        >
+          <FilePdfOutlined style={{ fontSize: 36 }} />
+          <span style={{ fontSize: 11, lineHeight: 1.2, wordBreak: 'break-word' }}>{name}</span>
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt={`page ${index}`}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
       <div
         style={{
           position: 'absolute',

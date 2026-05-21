@@ -441,13 +441,20 @@ export default function ChatPanel({
       )}
 
       <div style={composerStyle}>
-        <Tooltip title="Upload a new worksheet (1+ photos)">
+        <Tooltip title="Upload a new worksheet (photos or PDF)">
           <Upload
             beforeUpload={(file, list) => {
-              handleUploadFiles(list && list.length > 0 ? list : [file]);
+              // antd fires beforeUpload once per file in a multi-select.
+              // Only act on the first call (when file === list[0]) so we
+              // don't upload the same batch N times.
+              if (Array.isArray(list) && list.length > 0 && file === list[0]) {
+                handleUploadFiles(list);
+              } else if (!Array.isArray(list) || list.length === 0) {
+                handleUploadFiles([file]);
+              }
               return false;
             }}
-            accept="image/*"
+            accept="image/*,application/pdf"
             multiple
             showUploadList={false}
             disabled={uploading}

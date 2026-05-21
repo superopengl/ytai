@@ -1,18 +1,41 @@
 import fileToDataUrl from './fileToDataUrl.js';
+import pdfToPages from './pdfToPages.js';
 
-// POST /api/tutor/:sessionId/doc with a list of File objects (in page
-// order). Returns the server's { doc } payload — the new doc with all
-// pages, ready to drop into local state.
-export default async function uploadDoc(sessionId, files) {
-  const images = [];
+// Expand a list of selected Files into the page-level shape the server
+// expects: [{ dataUrl, width, height }, ...]. Images map 1:1 to pages;
+// PDFs rasterize on-device into N pages each. Returns { pages, hadPdf }
+// so callers can flag the doc as kind='pdf' when at least one source
+// was a PDF.
+export async function filesToPages(files) {
+  const pages = [];
+  let hadPdf = false;
   for (const file of files) {
-    const decoded = await fileToDataUrl(file);
-    images.push(decoded);
+    const isPdf =
+      (file.type && file.type === 'application/pdf') ||
+      (file.name && file.name.toLowerCase().endsWith('.pdf'));
+    if (isPdf) {
+      const rasterized = await pdfToPages(file);
+      pages.push(...rasterized);
+      hadPdf = true;
+    } else {
+      pages.push(await fileToDataUrl(file));
+    }
+  }
+  return { pages, hadPdf };
+}
+
+// POST /api/tutor/:sessionId/doc with a list of File objects (images,
+// PDFs, or a mix). PDFs are rasterized on the client into individual
+// pages, so the server sees them as ordinary image-page rows.
+export default async function uploadDoc(sessionId, files) {
+  const { pages, hadPdf } = await filesToPages(files);
+  if (pages.length === 0) {
+    throw new Error('No images decoded from upload.');
   }
   const res = await fetch(`/api/tutor/${sessionId}/doc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ images })
+    body: JSON.stringify({ images: pages, kind: hadPdf ? 'pdf' : 'images' })
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -21,9 +44,16 @@ export default async function uploadDoc(sessionId, files) {
   return res.json();
 }
 
-// POST /api/tutor/:sessionId/doc/:docId/page with one File. Returns
-// { page: { id, pageNumber, width, height } }.
+// POST /api/tutor/:sessionId/doc/:docId/page with one File. Only one
+// image at a time — used by the "+ add page" affordance. Rejects PDFs
+// (they create a whole new doc, not a single appended page).
 export async function appendDocPage(sessionId, docId, file) {
+  const isPdf =
+    (file.type && file.type === 'application/pdf') ||
+    (file.name && file.name.toLowerCase().endsWith('.pdf'));
+  if (isPdf) {
+    throw new Error('PDFs upload as a new worksheet, not a page on an existing one.');
+  }
   const image = await fileToDataUrl(file);
   const res = await fetch(`/api/tutor/${sessionId}/doc/${docId}/page`, {
     method: 'POST',
