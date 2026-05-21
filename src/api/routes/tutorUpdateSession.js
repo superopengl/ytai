@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { tutorSession } from '../db/schema.js';
+import { sessionDoc, tutorSession } from '../db/schema.js';
 import { GUIDANCE_LEVELS, isGuidanceLevel } from '../lib/tutorPrompt.js';
 import isSubject, { SUBJECTS } from '../lib/tutorSubject.js';
 
@@ -10,10 +10,11 @@ export default function tutorUpdateSession(fastify) {
     const body = request.body ?? {};
     const hasGuidance = Object.prototype.hasOwnProperty.call(body, 'guidanceLevel');
     const hasSubject = Object.prototype.hasOwnProperty.call(body, 'subject');
+    const hasCurrentDoc = Object.prototype.hasOwnProperty.call(body, 'currentDocId');
 
-    if (!hasGuidance && !hasSubject) {
+    if (!hasGuidance && !hasSubject && !hasCurrentDoc) {
       reply.code(400);
-      return { error: 'guidanceLevel or subject is required' };
+      return { error: 'guidanceLevel, subject, or currentDocId is required' };
     }
     if (hasGuidance && !isGuidanceLevel(body.guidanceLevel)) {
       reply.code(400);
@@ -23,10 +24,27 @@ export default function tutorUpdateSession(fastify) {
       reply.code(400);
       return { error: `subject must be one of: ${SUBJECTS.join(', ')}` };
     }
+    if (hasCurrentDoc && body.currentDocId !== null) {
+      if (typeof body.currentDocId !== 'string' || body.currentDocId.length === 0) {
+        reply.code(400);
+        return { error: 'currentDocId must be a uuid string or null' };
+      }
+      // Make sure the doc belongs to this session so a client can't point at
+      // another user's doc.
+      const [doc] = await db()
+        .select({ id: sessionDoc.id })
+        .from(sessionDoc)
+        .where(and(eq(sessionDoc.id, body.currentDocId), eq(sessionDoc.sessionId, sessionId)));
+      if (!doc) {
+        reply.code(404);
+        return { error: 'Doc not found in this session' };
+      }
+    }
 
     const patch = { updatedAt: new Date() };
     if (hasGuidance) patch.guidanceLevel = body.guidanceLevel;
     if (hasSubject) patch.subject = body.subject;
+    if (hasCurrentDoc) patch.currentDocId = body.currentDocId;
 
     const [updated] = await db()
       .update(tutorSession)
@@ -35,7 +53,8 @@ export default function tutorUpdateSession(fastify) {
       .returning({
         id: tutorSession.id,
         guidanceLevel: tutorSession.guidanceLevel,
-        subject: tutorSession.subject
+        subject: tutorSession.subject,
+        currentDocId: tutorSession.currentDocId
       });
 
     if (!updated) {
@@ -46,7 +65,8 @@ export default function tutorUpdateSession(fastify) {
     return {
       sessionId: updated.id,
       guidanceLevel: updated.guidanceLevel,
-      subject: updated.subject
+      subject: updated.subject,
+      currentDocId: updated.currentDocId
     };
   });
 }

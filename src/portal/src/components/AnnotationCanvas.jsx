@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Stage,
   Layer,
@@ -11,13 +11,8 @@ import {
   Tag,
   Text as KonvaText
 } from 'react-konva';
-// Konva primitives we use for AI annotations:
-//   - Rect: highlight (default), rect outline
-//   - Ellipse: circle
-//   - Label + Tag + Text: floating caption pill anchored to a mark
-//   - Line: pen strokes
 import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
-import { ClearOutlined, HighlightOutlined, SwapOutlined, UndoOutlined } from '@ant-design/icons';
+import { ClearOutlined, HighlightOutlined, UndoOutlined } from '@ant-design/icons';
 
 const DEFAULT_AI_COLOR = '#3aa0ff';
 
@@ -26,64 +21,37 @@ const PEN_WIDTH_MIN = 2;
 const PEN_WIDTH_MAX = 20;
 const PEN_WIDTH_DEFAULT = 7;
 
-const AnnotationCanvas = forwardRef(function AnnotationCanvas(
-  { imageUrl, onReplace, aiAnnotations = [], onClearAiAnnotations },
-  ref
-) {
+// Single-page canvas. Strokes are passed in via `lines` and surfaced via
+// `onLinesChange` so a parent (e.g. PagedCanvas) can keep a per-page map
+// — strokes survive page switches that way.
+export default function AnnotationCanvas({
+  imageUrl,
+  lines = [],
+  onLinesChange,
+  aiAnnotations = [],
+  onClearAiAnnotations,
+  toolbarExtras = null
+}) {
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const aiLayerRef = useRef(null);
   const drawing = useRef(false);
   const [image, setImage] = useState(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [lines, setLines] = useState([]);
   const [penColor, setPenColor] = useState(PEN_PRESETS[0]);
   const [penWidth, setPenWidth] = useState(PEN_WIDTH_DEFAULT);
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      exportImage() {
-        if (!image || !stageRef.current) return null;
-        const stage = stageRef.current;
-        const fit = fitToContainer(image, containerSize);
-        if (fit.width === 0) return null;
-        const pixelRatio = image.width / fit.width;
-        // Hide the AI annotations layer during export so the assistant's own
-        // marks don't bake into the bytes — otherwise the image hash flips
-        // every time Brain draws, the client re-uploads, and Eyes ends up
-        // looking at a page covered in its own highlights on the next turn.
-        // Student strokes are still captured (they're a different layer).
-        const aiLayer = aiLayerRef.current;
-        const aiWasVisible = aiLayer?.visible() ?? true;
-        if (aiLayer) aiLayer.visible(false);
-        try {
-          return {
-            dataUrl: stage.toDataURL({ mimeType: 'image/png', pixelRatio }),
-            width: image.width,
-            height: image.height,
-            hasAnnotations: lines.length > 0
-          };
-        } finally {
-          if (aiLayer) aiLayer.visible(aiWasVisible);
-        }
-      }
-    }),
-    [image, containerSize, lines]
-  );
-
   useEffect(() => {
+    if (!imageUrl) {
+      setImage(null);
+      return undefined;
+    }
     const img = new window.Image();
     img.crossOrigin = 'anonymous';
     img.src = imageUrl;
-    img.onload = () => setImage(img);
-    // Strokes are anchored in normalized coords to whichever image was
-    // showing when they were drawn — they don't make sense over a freshly
-    // cast or replaced photo, so wipe them when the image source changes.
-    setLines([]);
-    return () => {
-      img.onload = null;
-    };
+    const onLoad = () => setImage(img);
+    img.addEventListener('load', onLoad);
+    return () => img.removeEventListener('load', onLoad);
   }, [imageUrl]);
 
   useEffect(() => {
@@ -98,18 +66,19 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
   const fit = fitToContainer(image, containerSize);
 
-  // Lines are stored in 0..1 normalized coords (same convention as AI
-  // annotations) so they stay anchored to the page when the window resizes.
   function toNormalized(pos) {
     if (fit.width === 0 || fit.height === 0) return null;
     return [pos.x / fit.width, pos.y / fit.height];
   }
 
+  function setLines(updater) {
+    if (typeof onLinesChange !== 'function') return;
+    const next = typeof updater === 'function' ? updater(lines) : updater;
+    onLinesChange(next);
+  }
+
   function startLine(e) {
     if (!image) return;
-    // If the press landed on an interactive AI annotation (the draggable
-    // label pill lives on aiLayerRef), let Konva handle the drag and don't
-    // start a competing pen stroke at the same point.
     if (e.target?.getLayer?.() === aiLayerRef.current) return;
     const pt = toNormalized(e.target.getStage().getPointerPosition());
     if (!pt) return;
@@ -123,6 +92,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
     if (!pt) return;
     setLines((prev) => {
       const last = prev[prev.length - 1];
+      if (!last) return prev;
       const next = { ...last, points: [...last.points, ...pt] };
       return [...prev.slice(0, -1), next];
     });
@@ -134,7 +104,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Space style={{ marginTop:4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
+      <Space style={{ marginTop: 4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
         <Tooltip title="Undo last stroke">
           <Button
             icon={<UndoOutlined />}
@@ -164,11 +134,6 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
             </Button>
           </Tooltip>
         )}
-        <Tooltip title="Replace this image">
-          <Button icon={<SwapOutlined />} onClick={onReplace}>
-            Replace image
-          </Button>
-        </Tooltip>
 
         <span style={toolbarDividerStyle} />
 
@@ -215,6 +180,8 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
             <span style={{ minWidth: 28, fontSize: 12, color: '#5d6478' }}>{penWidth}px</span>
           </div>
         </Tooltip>
+
+        {toolbarExtras}
       </Space>
       <div
         ref={containerRef}
@@ -276,9 +243,7 @@ const AnnotationCanvas = forwardRef(function AnnotationCanvas(
       </div>
     </div>
   );
-});
-
-export default AnnotationCanvas;
+}
 
 const toolbarDividerStyle = {
   display: 'inline-block',
@@ -305,32 +270,18 @@ function fitToContainer(image, container) {
   return { width: image.width * ratio, height: image.height * ratio };
 }
 
-// Time it takes a highlight to sweep from its left edge to its right edge.
-// Tuned so a typical question-width highlight feels like a tutor drawing
-// the marker across rather than something instantly snapping into place.
 const HIGHLIGHT_SWEEP_MS = 900;
-// Easing on the sweep — ease-out reads as "slowing into place" rather than
-// the linear "machine-paced" look. Pure cubic ease-out keyframe.
 function easeOut(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// Caption pill sits just outside the bbox so it doesn't sit on top of the
-// thing it's labeling. We need an approximate height up front to decide
-// whether there's room above the bbox; Konva will measure the actual
-// label width / height at render time.
 const LABEL_PILL_HEIGHT = 22;
 const LABEL_PILL_GAP = 6;
 
 function AiAnnotation({ annotation, fitWidth, fitHeight }) {
   const args = annotation?.args;
-  // Animation progress 0..1. Set unconditionally so hook order is stable;
-  // shapes that don't animate just leave it at 1.
   const [progress, setProgress] = useState(0);
 
-  // Restart the draw-in animation whenever this annotation's id changes
-  // (the parent generates a fresh id per draw_annotation call). rAF gives
-  // a smooth 60fps sweep without pulling in a tween library.
   useEffect(() => {
     const id = annotation?.id;
     if (!id) return undefined;
@@ -346,9 +297,6 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
     return () => cancelAnimationFrame(raf);
   }, [annotation?.id]);
 
-  // Bbox is delivered as normalized 0..1 corners [x1, y1, x2, y2] — the
-  // same format Eyes / find_text_on_image return. We compute pixel-space
-  // x/y/w/h here for Konva, which works in absolute pixels.
   const coords = readCornerBbox(args);
   if (!coords) return null;
   const x = coords.x1 * fitWidth;
@@ -379,8 +327,6 @@ function AiAnnotation({ annotation, fitWidth, fitHeight }) {
 }
 
 function renderShape({ shape, x, y, w, h, color, progress }) {
-  // Shapes are non-interactive: pen strokes need to pass through them, and
-  // only the label (rendered separately) is meant to be grabbed.
   if (shape === 'rect') {
     return (
       <Rect
@@ -415,9 +361,6 @@ function renderShape({ shape, x, y, w, h, color, progress }) {
     );
   }
 
-  // Default: highlight. A soft semi-transparent sweep that draws itself
-  // left-to-right like a tutor's marker. The visible width grows from 0 to
-  // the full bbox width via the rAF tick above.
   const fullWidth = Math.max(w, 4);
   const fullHeight = Math.max(h, 4);
   const sweptWidth = Math.max(fullWidth * progress, 0);
@@ -436,14 +379,8 @@ function renderShape({ shape, x, y, w, h, color, progress }) {
 }
 
 function AnnotationLabel({ text, color, bboxX, bboxY, bboxW, bboxH, fitWidth, fitHeight, opacity }) {
-  // Once the user drags the pill, remember where they put it in
-  // image-normalized (0..1) coords so the label keeps its spot when the
-  // canvas resizes rather than snapping back to the bbox.
   const [dragged, setDragged] = useState(null);
 
-  // Default anchor: below the bbox; flip above when below would clip off
-  // the bottom of the canvas. Konva auto-sizes the Label around its
-  // children, so we only set the top-left anchor.
   const below = bboxY + bboxH + LABEL_PILL_GAP + LABEL_PILL_HEIGHT <= fitHeight;
   const defaultY = below ? bboxY + bboxH + LABEL_PILL_GAP : bboxY - LABEL_PILL_GAP - LABEL_PILL_HEIGHT;
   const defaultX = Math.max(0, bboxX);
@@ -509,10 +446,6 @@ function clamp01(n) {
   return n;
 }
 
-// Read a corner-format bbox from a draw_annotation args object. Returns
-// null if the corners are missing or describe a zero-area / inverted
-// region. The cmp swap is a safety net in case Brain or a tool returns
-// the corners out of order — we always render with x1 <= x2 and y1 <= y2.
 function readCornerBbox(args) {
   if (!args) return null;
   const x1raw = args.x1;

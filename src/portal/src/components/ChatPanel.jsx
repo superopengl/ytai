@@ -1,52 +1,59 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Input, Select, Tooltip, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Input, Select, Tooltip, Typography, Upload } from 'antd';
 import {
   AudioOutlined,
+  FilePdfOutlined,
   LoadingOutlined,
   MutedOutlined,
+  PictureOutlined,
   SendOutlined,
   SoundOutlined,
   StopOutlined
 } from '@ant-design/icons';
-import hashDataUrl from '../lib/hashDataUrl.js';
 import streamSSE from '../lib/streamSSE.js';
+import uploadDoc from '../lib/uploadDoc.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
 import useSpeechRecognition from '../hooks/useSpeechRecognition.js';
 import MarkdownMessage from './MarkdownMessage.jsx';
 
-export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotations, onCastImage }) {
+// Chat side of the tutor page. Renders message bubbles interleaved with
+// doc-upload bubbles (the visual marker that a worksheet was added at
+// this point in the conversation). Doc state and current doc/page lives
+// in the parent (TutorPage) so the canvas and chat stay in sync.
+//
+// Props:
+//   sessionId, currentDocId, currentPage  — session + active doc/page
+//   docs                                  — full doc list (with pages)
+//   onDocsLoaded({ docs, currentDocId, aiAnnotationsByPage })
+//                                         — fired after history fetch
+//   onAiAnnotation(annotation)            — fired per streaming draw_annotation
+//   onDocCreated(doc)                     — fired when a new doc was uploaded
+//   onSelectDoc(docId, pageNumber)        — fired when student clicks a
+//                                           past doc bubble
+export default function ChatPanel({
+  sessionId,
+  currentDocId,
+  currentPage,
+  docs,
+  onDocsLoaded,
+  onAiAnnotation,
+  onDocCreated,
+  onSelectDoc
+}) {
   const [messages, setMessages] = useState([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  // True between "request sent / tool-call started" and "next token arrives" —
-  // i.e. moments where Brain is working but nothing is visibly streaming.
   const [awaitingTokens, setAwaitingTokens] = useState(false);
   const [error, setError] = useState(null);
-  // 'guided' | 'balanced' | 'direct'. Read from the session on history load
-  // and PATCHed back to the server when the student flips the Select
-  // control. The persona pace section Brain sees on the next turn comes
-  // from this value — turns already in history are NOT rewritten.
   const [guidanceLevel, setGuidanceLevel] = useState('direct');
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const voice = useTutorVoice(sessionId);
   const speech = useSpeechRecognition();
-  // What was already in the composer when the mic was switched on. Live
-  // transcript is appended to this so the student can dictate on top of
-  // text they'd already started typing without losing it.
   const dictationBaseRef = useRef('');
-  // Bumped on every send(). The async SSE loop only allowed to mutate
-  // shared state (busy, abortRef, etc.) while it's the active generation —
-  // lets us interrupt an in-flight turn and start a new one without the
-  // old turn's `finally` racing setBusy(false) over the new turn's
-  // setBusy(true).
   const sendGenRef = useRef(0);
-  // Hash of the last image dataUrl successfully sent to the server. Lets us
-  // skip resending bytes when neither the photo nor the user's annotations
-  // have changed since the previous turn — the server keeps the cached
-  // vision_extraction keyed off the matching content_hash.
-  const lastSentImageHashRef = useRef(null);
 
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -54,7 +61,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     setMessages([]);
     setHistoryLoaded(false);
     setError(null);
-    lastSentImageHashRef.current = null;
 
     fetch(`/api/tutor/${sessionId}/messages`)
       .then((res) => {
@@ -64,31 +70,35 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       .then((body) => {
         if (cancelled) return;
         const loaded = body.messages ?? [];
-        setMessages(loaded);
+        // Filter out legacy image-only user messages (role=user, empty
+        // content, with imageId). The new model represents those via doc
+        // bubbles; keeping the legacy rows around would render the same
+        // image twice.
+        const filtered = loaded.filter(
+          (m) => !(m.role === 'user' && !m.content && m.imageId)
+        );
+        setMessages(filtered);
         setHistoryLoaded(true);
-        if (body.session?.guidanceLevel) {
-          setGuidanceLevel(body.session.guidanceLevel);
-        }
-        // Restore the last image the student worked on in this session so the
-        // canvas isn't blank when they resume. onCastImage clears AI marks as
-        // a side-effect, so call it BEFORE onAiAnnotations(restored) — the
-        // final aiAnnotations state will be the restored set.
-        if (onCastImage && body.session?.currentImageId) {
-          onCastImage(`/api/tutor/${sessionId}/image/${body.session.currentImageId}`);
-        }
-        if (onAiAnnotations) {
-          const restored = [];
-          for (const m of loaded) {
-            if (Array.isArray(m.toolCalls)) {
-              for (const tc of m.toolCalls) {
-                if (tc?.name === 'draw_annotation') {
-                  restored.push({ id: `${m.id}:${tc.id ?? restored.length}`, args: tc.args });
-                }
-              }
-            }
+        if (body.session?.guidanceLevel) setGuidanceLevel(body.session.guidanceLevel);
+
+        // Rebuild per-page AI annotations from past tool calls. Each call
+        // carries imageId so we can route it directly.
+        const aiByPage = new Map();
+        for (const m of loaded) {
+          if (!Array.isArray(m.toolCalls)) continue;
+          for (const tc of m.toolCalls) {
+            if (tc?.name !== 'draw_annotation') continue;
+            const imageId = tc.args?.imageId;
+            if (!imageId) continue;
+            if (!aiByPage.has(imageId)) aiByPage.set(imageId, []);
+            aiByPage.get(imageId).push({ id: `${m.id}:${tc.id ?? aiByPage.get(imageId).length}`, args: tc.args });
           }
-          onAiAnnotations(restored);
         }
+        onDocsLoaded?.({
+          docs: body.docs ?? [],
+          currentDocId: body.session?.currentDocId ?? null,
+          aiAnnotationsByPage: aiByPage
+        });
       })
       .catch((err) => {
         if (!cancelled) {
@@ -100,12 +110,13 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, busy]);
+  }, [messages, busy, docs]);
 
   useEffect(() => {
     return () => {
@@ -113,16 +124,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     };
   }, []);
 
-  // Clear the "already sent" hash whenever the user replaces or removes the
-  // image. Without this, the dirty-check could keep matching the previous
-  // photo's hash and never re-send the new one.
-  useEffect(() => {
-    lastSentImageHashRef.current = null;
-  }, [imageUrl]);
-
-  // Mirror the live dictation transcript into the textarea while listening.
-  // Once the mic stops we leave the input alone so the student can edit
-  // before sending.
   useEffect(() => {
     if (!speech.listening) return;
     const base = dictationBaseRef.current;
@@ -130,13 +131,24 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     setInput(next);
   }, [speech.transcript, speech.listening]);
 
+  // Combine messages + docs into a single chronologically-ordered timeline.
+  // Doc bubbles slot in at the position they were uploaded.
+  const timeline = useMemo(() => {
+    const items = [];
+    for (const m of messages) items.push({ kind: 'message', createdAt: m.createdAt, data: m });
+    for (const d of docs ?? []) items.push({ kind: 'doc', createdAt: d.createdAt, data: d });
+    items.sort((a, b) => {
+      const ta = new Date(a.createdAt || 0).getTime();
+      const tb = new Date(b.createdAt || 0).getTime();
+      return ta - tb;
+    });
+    return items;
+  }, [messages, docs]);
+
   const changeGuidanceLevel = useCallback(
     async (next) => {
       if (!sessionId || next === guidanceLevel) return;
       const previous = guidanceLevel;
-      // Optimistic update: flip the UI immediately so the student sees the
-      // segmented control respond, then reconcile with the server. On
-      // failure, revert and surface the error in the existing Alert strip.
       setGuidanceLevel(next);
       try {
         const res = await fetch(`/api/tutor/${sessionId}`, {
@@ -166,15 +178,27 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     speech.start();
   }, [input, speech]);
 
+  const handleUploadFiles = useCallback(
+    async (files) => {
+      if (!sessionId || !files || files.length === 0) return;
+      setUploading(true);
+      setError(null);
+      try {
+        const { doc } = await uploadDoc(sessionId, files);
+        onDocCreated?.(doc);
+      } catch (err) {
+        setError(err.message || 'Upload failed.');
+      } finally {
+        setUploading(false);
+      }
+    },
+    [sessionId, onDocCreated]
+  );
+
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || !sessionId) return;
 
-    // Hitting Send mid-turn (Brain still streaming, or voice still playing)
-    // interrupts the previous turn instead of being a no-op. Abort the
-    // in-flight request, mark its half-written bubble as finished, and
-    // bump the generation so the old loop's `finally` can't clobber the
-    // new turn's busy/awaitingTokens state.
     const myGen = ++sendGenRef.current;
     if (abortRef.current) {
       abortRef.current.abort();
@@ -183,10 +207,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       );
     }
     voice.stop();
-
-    // If the student hit Send mid-dictation, end the recognition session
-    // before clearing the input so the trailing transcript doesn't get
-    // written back on top of the empty box.
     if (speech.listening) speech.stop();
     speech.reset();
     dictationBaseRef.current = '';
@@ -196,67 +216,16 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     setBusy(true);
     setAwaitingTokens(true);
 
-    const image = getImage?.();
-    // Guard against the race where the user replaced the image but the new
-    // photo hasn't finished loading into the canvas yet: in that case
-    // exportImage() returns null while imageUrl is non-empty. Falling
-    // through would send a text-only request and the server would reuse the
-    // previous image's vision_extraction — which looks like "the AI is
-    // ignoring my new photo."
-    if (imageUrl && !image?.dataUrl) {
-      setBusy(false);
-      setInput(text);
-      setError('Photo is still loading — give it a moment, then send again.');
-      return;
-    }
-
-    let imageToSend = null;
-    let imageHashThisTurn = null;
-    if (image?.dataUrl) {
-      imageHashThisTurn = await hashDataUrl(image.dataUrl);
-      if (imageHashThisTurn && imageHashThisTurn !== lastSentImageHashRef.current) {
-        imageToSend = {
-          dataUrl: image.dataUrl,
-          width: image.width,
-          height: image.height,
-          hasAnnotations: image.hasAnnotations
-        };
-      }
-    }
-
-    // Render the image as its own bubble *only* when the photo is actually
-    // changing this turn. Subsequent text turns under the same image just
-    // show text — the page itself is already in the transcript above.
     const placeholderId = `pending-${Date.now()}`;
     const userLocalId = `local-${placeholderId}`;
-    const imageLocalId = imageToSend ? `local-img-${placeholderId}` : null;
     setMessages((prev) => [
       ...prev,
-      ...(imageLocalId
-        ? [
-            {
-              id: imageLocalId,
-              role: 'user',
-              content: '',
-              _local: true,
-              imageDataUrl: image.dataUrl
-            }
-          ]
-        : []),
-      {
-        id: userLocalId,
-        role: 'user',
-        content: text,
-        _local: true
-      },
-      { id: placeholderId, role: 'assistant', content: '', _streaming: true }
+      { id: userLocalId, role: 'user', content: text, _local: true, createdAt: new Date().toISOString() },
+      { id: placeholderId, role: 'assistant', content: '', _streaming: true, createdAt: new Date().toISOString() }
     ]);
 
     const controller = new AbortController();
     abortRef.current = controller;
-    // Bind voice to the streaming bubble so the speaking icon shows on the
-    // right message during auto-speak. Rebound to the real message id on
-    // 'done' below — until then, the bubble is keyed by placeholderId.
     voice.setActiveTarget(placeholderId);
 
     try {
@@ -265,44 +234,25 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: text,
-          image: imageToSend || undefined
+          viewingPage: Number.isInteger(currentPage) ? currentPage : undefined
         }),
         signal: controller.signal
       });
 
       for await (const { event, data } of stream) {
-        // If a newer send has superseded this one, stop processing — the
-        // active turn owns the UI state from here.
         if (sendGenRef.current !== myGen) break;
         if (event === 'user') {
           setMessages((prev) =>
-            prev.flatMap((m) => {
-              if (imageLocalId && m.id === imageLocalId) {
-                if (!data.imageMessage) return [];
-                return [
-                  {
-                    id: data.imageMessage.id,
-                    role: 'user',
-                    content: '',
-                    imageId: data.imageMessage.imageId,
-                    imageDataUrl: m.imageDataUrl,
-                    createdAt: data.imageMessage.createdAt
-                  }
-                ];
-              }
-              if (m.id === userLocalId) {
-                return [
-                  {
+            prev.map((m) =>
+              m.id === userLocalId
+                ? {
                     id: data.id,
                     role: 'user',
                     content: data.content,
-                    imageId: data.imageId ?? null,
                     createdAt: data.createdAt
                   }
-                ];
-              }
-              return [m];
-            })
+                : m
+            )
           );
         } else if (event === 'token') {
           setAwaitingTokens(false);
@@ -314,12 +264,8 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           voice.appendDelta(data.delta);
         } else if (event === 'done') {
           setAwaitingTokens(false);
-          if (imageHashThisTurn) lastSentImageHashRef.current = imageHashThisTurn;
           if (data.interrupted) voice.stop();
           else {
-            // Re-bind voice ownership from placeholderId to the persistent
-            // message id so the icon stays on the bubble as the queue
-            // drains past the SSE 'done' boundary.
             voice.setActiveTarget(data.messageId);
             voice.finalize();
           }
@@ -337,15 +283,14 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
             )
           );
         } else if (event === 'lookup-start' || event === 'lookup') {
-          // Brain has paused to consult Eyes (or just got a result back and
-          // is about to pick its next move). Surface "Thinking…" until the
-          // next token arrives.
           setAwaitingTokens(true);
         } else if (event === 'tool') {
           setAwaitingTokens(true);
-          if (data?.name === 'draw_annotation' && onAiAnnotations) {
-            const id = `${placeholderId}:${data.id ?? Math.random().toString(36).slice(2)}`;
-            onAiAnnotations((prev) => [...prev, { id, args: data.args }]);
+          if (data?.name === 'draw_annotation' && data.args?.imageId) {
+            onAiAnnotation?.({
+              id: `${placeholderId}:${data.id ?? Math.random().toString(36).slice(2)}`,
+              args: data.args
+            });
           }
         } else if (event === 'error') {
           setAwaitingTokens(false);
@@ -365,7 +310,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
         setAwaitingTokens(false);
       }
     }
-  }, [input, sessionId, imageUrl, getImage, onAiAnnotations, voice, speech]);
+  }, [input, sessionId, currentPage, voice, speech, onAiAnnotation]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -380,9 +325,6 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
     }
   };
 
-  // Show "Thinking…" inline inside the streaming assistant bubble whenever
-  // Brain is working but no tokens are arriving — covers both the initial
-  // wait and mid-stream pauses while Eyes is being consulted.
   const thinkingActive = busy && awaitingTokens;
 
   if (!sessionId) {
@@ -439,27 +381,35 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
           <div style={centeredHint}>
             <LoadingOutlined style={{ marginRight: 8 }} /> Loading chat…
           </div>
-        ) : messages.length === 0 ? (
+        ) : timeline.length === 0 ? (
           <EmptyHint />
         ) : (
-          messages.map((message, idx) => {
+          timeline.map((item, idx) => {
+            if (item.kind === 'doc') {
+              return (
+                <DocBubble
+                  key={`doc:${item.data.id}`}
+                  doc={item.data}
+                  sessionId={sessionId}
+                  isCurrent={item.data.id === currentDocId}
+                  onSelect={() => onSelectDoc?.(item.data.id, 1)}
+                />
+              );
+            }
+            const message = item.data;
             const isThisSpeaking = voice.supported && voice.speakingId === message.id;
             const isStreamingTail =
-              idx === messages.length - 1 && message.role === 'assistant' && message._streaming;
+              idx === timeline.length - 1 && message.role === 'assistant' && message._streaming;
             return (
               <Bubble
                 key={message.id}
                 message={message}
-                sessionId={sessionId}
                 isSpeaking={isThisSpeaking}
                 thinking={isStreamingTail && thinkingActive}
-                onCastImage={onCastImage}
                 onReplay={
                   voice.supported
                     ? () =>
-                        isThisSpeaking
-                          ? voice.stop()
-                          : voice.speak(message.content, message.id)
+                        isThisSpeaking ? voice.stop() : voice.speak(message.content, message.id)
                     : null
                 }
               />
@@ -491,6 +441,24 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
       )}
 
       <div style={composerStyle}>
+        <Tooltip title="Upload a new worksheet (1+ photos)">
+          <Upload
+            beforeUpload={(file, list) => {
+              handleUploadFiles(list && list.length > 0 ? list : [file]);
+              return false;
+            }}
+            accept="image/*"
+            multiple
+            showUploadList={false}
+            disabled={uploading}
+          >
+            <Button
+              icon={uploading ? <LoadingOutlined /> : <PictureOutlined />}
+              disabled={uploading}
+              aria-label="Upload a new worksheet"
+            />
+          </Upload>
+        </Tooltip>
         {speech.supported && (
           <Tooltip title={speech.listening ? 'Stop dictation' : 'Dictate your question'}>
             <Button
@@ -513,7 +481,7 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
               ? 'Listening… speak now, then click the mic to stop.'
               : busy
                 ? 'Tutor is responding — type or dictate to jump in…'
-                : 'Ask about a question, or circle something on the photo first…'
+                : 'Ask about a question, or upload a worksheet…'
           }
           readOnly={speech.listening}
           maxLength={2000}
@@ -543,25 +511,10 @@ export default function ChatPanel({ sessionId, imageUrl, getImage, onAiAnnotatio
   );
 }
 
-function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImage }) {
+function Bubble({ message, onReplay, isSpeaking, thinking }) {
   const isUser = message.role === 'user';
-  // Keep the bubble around while Brain is thinking, even with no content yet —
-  // the inline "Thinking…" line below stands in for the message text.
   if (!isUser && !message.content && !thinking) return null;
-  // Show the speaker control whenever the bubble is done streaming (so the
-  // user can replay it) OR when auto-speak is currently reading this
-  // streaming bubble aloud (so the user sees the "I'm reading this" icon
-  // and can click to stop). Hiding it entirely during _streaming would
-  // make the auto-speak feel silent visually.
   const canReplay = !isUser && onReplay && (!message._streaming || isSpeaking);
-  // Image-only user messages carry `imageId` (and, for freshly-sent ones,
-  // an in-memory `imageDataUrl`); text user turns and assistant turns don't.
-  // Prefer the local dataUrl when available; fall back to the server
-  // endpoint for messages loaded from history.
-  const imageSrc = isUser
-    ? message.imageDataUrl ||
-      (message.imageId && sessionId ? `/api/tutor/${sessionId}/image/${message.imageId}` : null)
-    : null;
   return (
     <div
       style={{
@@ -573,46 +526,24 @@ function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImag
       <div
         style={{
           maxWidth: '78%',
-          padding: imageSrc ? '8px 8px 10px' : '10px 14px',
+          padding: '10px 14px',
           borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
           background: isUser ? '#5b8def' : '#f0f2f7',
           color: isUser ? '#fff' : '#1d2233',
-          // User bubbles are author-typed text; preserve their newlines.
-          // Assistant bubbles are rendered as markdown so their HTML carries
-          // its own whitespace semantics — pre-wrap would add stray gaps
-          // between block elements.
           whiteSpace: isUser ? 'pre-wrap' : 'normal',
           wordBreak: 'break-word',
           lineHeight: 1.5,
           opacity: message.interrupted ? 0.85 : 1
         }}
       >
-        {imageSrc && (
-          <img
-            src={imageSrc}
-            alt="worksheet"
-            title={onCastImage ? 'Click to load this photo onto the canvas' : undefined}
-            onClick={onCastImage ? () => onCastImage(imageSrc) : undefined}
-            style={{
-              display: 'block',
-              maxWidth: '100%',
-              maxHeight: 240,
-              borderRadius: 10,
-              marginBottom: message.content ? 8 : 0,
-              background: '#fff',
-              cursor: onCastImage ? 'pointer' : 'default'
-            }}
-          />
-        )}
         {message.content && (
-          <div style={{ padding: imageSrc ? '0 6px' : 0 }}>
+          <div>
             {isUser ? message.content : <MarkdownMessage>{message.content}</MarkdownMessage>}
           </div>
         )}
         {thinking && (
           <div
             style={{
-              padding: imageSrc ? '0 6px' : 0,
               marginTop: message.content ? 6 : 0,
               display: 'inline-flex',
               alignItems: 'center',
@@ -625,12 +556,10 @@ function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImag
           </div>
         )}
         {message.interrupted && (
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4, padding: imageSrc ? '0 6px' : 0 }}>
-            (stopped)
-          </div>
+          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>(stopped)</div>
         )}
         {canReplay && (
-          <div style={{ marginTop: 6, padding: imageSrc ? '0 6px' : 0, textAlign: 'right' }}>
+          <div style={{ marginTop: 6, textAlign: 'right' }}>
             <Tooltip title={isSpeaking ? 'Stop reading' : 'Read this aloud'}>
               <Button
                 type="text"
@@ -649,10 +578,76 @@ function Bubble({ message, sessionId, onReplay, isSpeaking, thinking, onCastImag
   );
 }
 
-// Inline speaker-with-animated-dots indicator. Sized to match
-// SoundOutlined (1em square) so the surrounding Button doesn't jump when
-// the icon swaps in/out. The three dots fade in sequentially so it reads
-// as "speaking right now" rather than "loading".
+function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
+  const pages = doc.pages ?? [];
+  const isPdf = doc.kind === 'pdf';
+  const label = isPdf ? 'PDF worksheet' : pages.length > 1 ? `${pages.length}-page worksheet` : 'Worksheet';
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <button
+        type="button"
+        onClick={onSelect}
+        style={{
+          maxWidth: '78%',
+          padding: 8,
+          border: isCurrent ? '2px solid #5b8def' : '2px solid transparent',
+          borderRadius: '16px 16px 4px 16px',
+          background: '#eef3ff',
+          cursor: 'pointer',
+          textAlign: 'left'
+        }}
+        aria-label={`${label} — click to make current`}
+        title={isCurrent ? 'Currently being studied' : 'Make this the worksheet we are studying'}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: '#1d2233',
+            fontSize: 13,
+            marginBottom: 6,
+            padding: '0 4px'
+          }}
+        >
+          {isPdf ? <FilePdfOutlined /> : <PictureOutlined />}
+          <span style={{ fontWeight: 600 }}>{label}</span>
+          {isCurrent && (
+            <span
+              style={{
+                fontSize: 11,
+                color: '#5b8def',
+                background: '#fff',
+                padding: '1px 6px',
+                borderRadius: 10
+              }}
+            >
+              now studying
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {pages.map((page) => (
+            <img
+              key={page.id}
+              src={`/api/tutor/${sessionId}/image/${page.id}`}
+              alt={`page ${page.pageNumber}`}
+              style={{
+                width: 80,
+                height: 100,
+                objectFit: 'cover',
+                borderRadius: 6,
+                background: '#fff',
+                flex: '0 0 auto'
+              }}
+            />
+          ))}
+        </div>
+      </button>
+    </div>
+  );
+}
+
 function SpeakingIcon() {
   return (
     <span

@@ -222,6 +222,10 @@ async function dispatchDrawAnnotation(call, { pages, viewingPage, log, emit, use
   call.args = {
     ...call.args,
     page: targetPage.pageNumber,
+    // Stable image id of the page this annotation lives on. Persisted so
+    // the frontend can route the mark to the right canvas without having
+    // to know which doc was current when the turn ran.
+    imageId: targetPage.id,
     color: resolveAnnotationColor(colorName),
     colorName,
     label: typeof call.args?.label === 'string' ? call.args.label.slice(0, 60) : ''
