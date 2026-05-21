@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Menu, message, Splitter, Tabs, Tag, Typography } from 'antd';
+import { Avatar, Button, Drawer, Menu, message, Modal, Splitter, Tabs, Tag, Typography } from 'antd';
 import { MenuOutlined, UserOutlined } from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import PagedCanvas from '../components/PagedCanvas.jsx';
@@ -27,6 +27,7 @@ export default function TutorPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const currentUser = authSession().user;
+  const [modal, modalContextHolder] = Modal.useModal();
 
   // Reset doc/canvas state when switching sessions; ChatPanel re-hydrates
   // via onDocsLoaded after its history fetch completes.
@@ -190,6 +191,7 @@ export default function TutorPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: palette.bgPanel }}>
+      {modalContextHolder}
       <header
         style={{
           padding: '12px 24px',
@@ -247,7 +249,11 @@ export default function TutorPage() {
         footer={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Avatar
-              src={currentUser?.picture || undefined}
+              src={
+                currentUser?.picture
+                  ? <img src={currentUser.picture} alt="" referrerPolicy="no-referrer" />
+                  : undefined
+              }
               icon={<UserOutlined />}
               style={{ backgroundColor: palette.subjects.math.color }}
             />
@@ -260,6 +266,21 @@ export default function TutorPage() {
           selectable={false}
           style={{ border: 'none', flex: 1 }}
           onClick={({ key }) => {
+            if (key === 'logout') {
+              modal.confirm({
+                title: 'Log out?',
+                content: 'You will be signed out of YouTutorAI.',
+                okText: 'Log out',
+                okButtonProps: { danger: true },
+                cancelText: 'Cancel',
+                onOk: () => {
+                  setDrawerOpen(false);
+                  authSession().clear();
+                  navigate('/');
+                }
+              });
+              return;
+            }
             setDrawerOpen(false);
             navigate(key);
           }}
@@ -267,10 +288,11 @@ export default function TutorPage() {
             { key: '/', label: 'Home' },
             { key: '/tutor', label: 'Tutor' },
             { key: '/progress', label: 'My Progress' },
-            { key: '/admin', label: 'Admin' },
             { type: 'divider' },
-            { key: '/privacy_policy', label: 'Privacy Policy' },
-            { key: '/terms_of_use', label: 'Terms of Use' }
+            {
+              key: 'logout',
+              label: <span style={{ color: palette.error }}>Log out</span>
+            }
           ]}
         />
       </Drawer>
