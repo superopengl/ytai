@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Tooltip, Typography, Upload, message as antMessage } from 'antd';
-import { CameraOutlined, PlusOutlined } from '@ant-design/icons';
+import { Typography } from 'antd';
 import AnnotationCanvas from './AnnotationCanvas.jsx';
 import { palette } from '../theme.js';
 
@@ -11,8 +10,8 @@ const ACCENT_BLUE = palette.subjects.math.color;
 const ATTENTION_DOT = palette.subjects.writing.color;
 
 // Wraps AnnotationCanvas with multi-page support: a horizontal page strip
-// at the top, per-page stroke state, and per-page routing for AI
-// annotations. The active page is what the canvas below shows.
+// at the bottom, per-page stroke state, and per-page routing for AI
+// annotations. The active page is what the canvas above shows.
 //
 // Props:
 //   doc:                  { id, pages: [{ id, pageNumber, width, height }] }
@@ -21,20 +20,17 @@ const ATTENTION_DOT = palette.subjects.writing.color;
 //   onCurrentPageChange:  (page) => void
 //   aiAnnotationsByPage:  Map<imageId, Array<{id, args}>>
 //   onClearPageAi:        (imageId) => void
-//   onAppendPage:         (File) => Promise (parent uploads, returns when done)
 export default function PagedCanvas({
   doc,
   sessionId,
   currentPage,
   onCurrentPageChange,
   aiAnnotationsByPage,
-  onClearPageAi,
-  onAppendPage
+  onClearPageAi
 }) {
   // Per-page strokes live here so switching pages doesn't lose work. The
   // map is keyed by sessionImage.id which is stable across the session.
   const [linesByImage, setLinesByImage] = useState(new Map());
-  const [appending, setAppending] = useState(false);
 
   // When the doc changes (user switched to a different doc), clear the
   // stroke map — those strokes belong to the previous doc.
@@ -68,23 +64,6 @@ export default function PagedCanvas({
     if (activeImageId && onClearPageAi) onClearPageAi(activeImageId);
   }, [activeImageId, onClearPageAi]);
 
-  const handleAppend = useCallback(
-    async (file) => {
-      if (!file || !onAppendPage) return false;
-      setAppending(true);
-      try {
-        const newPageNumber = await onAppendPage(file);
-        if (Number.isInteger(newPageNumber)) onCurrentPageChange?.(newPageNumber);
-      } catch (err) {
-        antMessage.error(err.message || 'Could not add page');
-      } finally {
-        setAppending(false);
-      }
-      return false; // prevent antd Upload's default xhr
-    },
-    [onAppendPage, onCurrentPageChange]
-  );
-
   if (!activePage) {
     return (
       <div style={{ ...emptyHint, padding: 32 }}>
@@ -97,17 +76,6 @@ export default function PagedCanvas({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {pages.length > 1 && (
-        <PageStrip
-          pages={pages}
-          activePageNumber={activePage.pageNumber}
-          sessionId={sessionId}
-          aiAnnotationsByPage={aiAnnotationsByPage}
-          onSelect={(n) => onCurrentPageChange?.(n)}
-          onAppendPage={onAppendPage ? handleAppend : null}
-          appending={appending}
-        />
-      )}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <AnnotationCanvas
           imageUrl={imageUrl}
@@ -115,36 +83,33 @@ export default function PagedCanvas({
           onLinesChange={setActiveLines}
           aiAnnotations={activeAi}
           onClearAiAnnotations={activeAi.length > 0 ? clearActiveAi : null}
-          toolbarExtras={
-            pages.length === 1 && onAppendPage ? (
-              <SinglePageAppendButton onAppend={handleAppend} appending={appending} />
-            ) : null
-          }
         />
       </div>
+      {pages.length > 1 && (
+        <PageStrip
+          pages={pages}
+          activePageNumber={activePage.pageNumber}
+          sessionId={sessionId}
+          aiAnnotationsByPage={aiAnnotationsByPage}
+          onSelect={(n) => onCurrentPageChange?.(n)}
+        />
+      )}
     </div>
   );
 }
 
-function PageStrip({
-  pages,
-  activePageNumber,
-  sessionId,
-  aiAnnotationsByPage,
-  onSelect,
-  onAppendPage,
-  appending
-}) {
+function PageStrip({ pages, activePageNumber, sessionId, aiAnnotationsByPage, onSelect }) {
   return (
     <div
       style={{
         display: 'flex',
         gap: 8,
-        padding: '4px 4px 8px',
+        padding: '8px 4px 4px',
         overflowX: 'auto',
-        borderBottom: `1px solid ${palette.borderSoft}`,
-        marginBottom: 6,
-        alignItems: 'center'
+        borderTop: `1px solid ${palette.borderSoft}`,
+        marginTop: 6,
+        alignItems: 'center',
+        flexShrink: 0
       }}
     >
       {pages.map((page) => {
@@ -207,45 +172,7 @@ function PageStrip({
           </button>
         );
       })}
-      {onAppendPage && (
-        <Tooltip title="Add another page to this worksheet">
-          <Upload
-            beforeUpload={onAppendPage}
-            accept="image/*"
-            maxCount={1}
-            showUploadList={false}
-            disabled={appending}
-          >
-            <Button
-              type="dashed"
-              icon={<PlusOutlined />}
-              style={{ width: 72, height: 88, display: 'flex', flexDirection: 'column' }}
-              loading={appending}
-            >
-              <span style={{ fontSize: 11 }}>Add page</span>
-            </Button>
-          </Upload>
-        </Tooltip>
-      )}
     </div>
-  );
-}
-
-function SinglePageAppendButton({ onAppend, appending }) {
-  return (
-    <Tooltip title="Add another page (this worksheet has more than one page)">
-      <Upload
-        beforeUpload={onAppend}
-        accept="image/*"
-        maxCount={1}
-        showUploadList={false}
-        disabled={appending}
-      >
-        <Button icon={<CameraOutlined />} loading={appending}>
-          Add page
-        </Button>
-      </Upload>
-    </Tooltip>
   );
 }
 

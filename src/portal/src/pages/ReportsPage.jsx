@@ -245,6 +245,15 @@ export default function ReportsPage() {
     }
   }, [customPrompt, customSubject, loadReports]);
 
+  const handleGenerateSimilar = useCallback(
+    (report) => {
+      setCustomSubject(report.subject);
+      setCustomPrompt(report.customPrompt || '');
+      setSelectedId(null);
+    },
+    []
+  );
+
   const handleDelete = useCallback(
     async (id) => {
       try {
@@ -305,7 +314,11 @@ export default function ReportsPage() {
           </Splitter.Panel>
           <Splitter.Panel>
             {selectedReport ? (
-              <ReportPanel report={selectedReport} onDelete={handleDelete} />
+              <ReportPanel
+                report={selectedReport}
+                onDelete={handleDelete}
+                onGenerateSimilar={handleGenerateSimilar}
+              />
             ) : (
               <GeneratePanel
                 generating={generating}
@@ -582,7 +595,7 @@ function GeneratePanel({
   );
 }
 
-function ReportPanel({ report, onDelete }) {
+function ReportPanel({ report, onDelete, onGenerateSimilar }) {
   const subjectMeta = SUBJECTS.find((s) => s.key === report.subject);
   const subjectLabel = subjectMeta?.label || report.subject;
   const typeLabel = reportDisplayTitle(report);
@@ -626,14 +639,26 @@ function ReportPanel({ report, onDelete }) {
           </div>
         </div>
         {!isPending && (
-          <Button
-            type="text"
-            shape="circle"
-            icon={<DeleteOutlined />}
-            onClick={handleDeleteClick}
-            aria-label="Delete report"
-            danger
-          />
+          <Space size={4}>
+            {report.customPrompt ? (
+              <Button
+                type="link"
+                size="small"
+                // icon={<PlusOutlined />}
+                onClick={() => onGenerateSimilar?.(report)}
+              >
+                Generate Similar
+              </Button>
+            ) : null}
+            <Button
+              type="text"
+              shape="circle"
+              icon={<DeleteOutlined />}
+              onClick={handleDeleteClick}
+              aria-label="Delete report"
+              danger
+            />
+          </Space>
         )}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>

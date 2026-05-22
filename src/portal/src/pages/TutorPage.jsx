@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Menu, message, Modal, Select, Splitter, Tabs, Typography } from 'antd';
+import { Avatar, Button, Drawer, Menu, message, Modal, Select, Splitter, Typography } from 'antd';
 import { MenuOutlined, UserOutlined } from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
-import SessionReportPanel from '../components/SessionReportPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 import Logo from '../components/Logo.jsx';
 import authSession from '../lib/authSession.js';
-import uploadDoc, { appendDocPage } from '../lib/uploadDoc.js';
+import uploadDoc from '../lib/uploadDoc.js';
 import SUBJECTS from '../lib/subjects.js';
 import { palette } from '../theme.js';
 
@@ -23,7 +22,6 @@ export default function TutorPage() {
   // Map<imageId, Array<{id, args}>>
   const [aiAnnotationsByPage, setAiAnnotationsByPage] = useState(() => new Map());
   const [creatingSession, setCreatingSession] = useState(false);
-  const [rightTab, setRightTab] = useState('chat');
   const [subject, setSubject] = useState('math');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -152,22 +150,6 @@ export default function TutorPage() {
       } catch (err) {
         message.error(err.message || 'Could not switch worksheet');
       }
-    },
-    [sessionId, currentDocId]
-  );
-
-  const handleAppendPage = useCallback(
-    async (file) => {
-      if (!sessionId || !currentDocId) return null;
-      const { page } = await appendDocPage(sessionId, currentDocId, file);
-      setDocs((prev) =>
-        prev.map((d) =>
-          d.id === currentDocId
-            ? { ...d, pageCount: (d.pageCount ?? d.pages.length) + 1, pages: [...d.pages, page] }
-            : d
-        )
-      );
-      return page.pageNumber;
     },
     [sessionId, currentDocId]
   );
@@ -359,7 +341,6 @@ export default function TutorPage() {
                       onCurrentPageChange={setCurrentPage}
                       aiAnnotationsByPage={aiAnnotationsByPage}
                       onClearPageAi={handleClearPageAi}
-                      onAppendPage={handleAppendPage}
                     />
                   ) : (
                     <PhotoCapture onStart={handlePhotoCaptureStart} busy={uploading} />
@@ -367,37 +348,15 @@ export default function TutorPage() {
                 </div>
               </Splitter.Panel>
               <Splitter.Panel>
-                <Tabs
-                  className="ytai-fill-tabs"
-                  activeKey={rightTab}
-                  onChange={setRightTab}
-                  destroyInactiveTabPane={false}
-                  tabBarStyle={{ padding: '0 16px', marginBottom: 0 }}
-                  items={[
-                    {
-                      key: 'chat',
-                      label: 'Tutor Chat',
-                      children: (
-                        <ChatPanel
-                          sessionId={sessionId}
-                          currentDocId={currentDocId}
-                          currentPage={currentPage}
-                          docs={docs}
-                          onDocsLoaded={handleDocsLoaded}
-                          onDocCreated={handleDocCreated}
-                          onAiAnnotation={handleAiAnnotation}
-                          onSelectDoc={handleSelectDoc}
-                        />
-                      )
-                    },
-                    {
-                      key: 'report',
-                      label: 'Analysis Report',
-                      children: (
-                        <SessionReportPanel sessionId={sessionId} active={rightTab === 'report'} />
-                      )
-                    }
-                  ]}
+                <ChatPanel
+                  sessionId={sessionId}
+                  currentDocId={currentDocId}
+                  currentPage={currentPage}
+                  docs={docs}
+                  onDocsLoaded={handleDocsLoaded}
+                  onDocCreated={handleDocCreated}
+                  onAiAnnotation={handleAiAnnotation}
+                  onSelectDoc={handleSelectDoc}
                 />
               </Splitter.Panel>
             </Splitter>

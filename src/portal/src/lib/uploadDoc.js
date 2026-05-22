@@ -44,25 +44,3 @@ export default async function uploadDoc(sessionId, files) {
   return res.json();
 }
 
-// POST /api/tutor/:sessionId/doc/:docId/page with one File. Only one
-// image at a time — used by the "+ add page" affordance. Rejects PDFs
-// (they create a whole new doc, not a single appended page).
-export async function appendDocPage(sessionId, docId, file) {
-  const isPdf =
-    (file.type && file.type === 'application/pdf') ||
-    (file.name && file.name.toLowerCase().endsWith('.pdf'));
-  if (isPdf) {
-    throw new Error('PDFs upload as a new worksheet, not a page on an existing one.');
-  }
-  const image = await fileToDataUrl(file);
-  const res = await fetch(`/api/tutor/${sessionId}/doc/${docId}/page`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image })
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Append page failed (${res.status})`);
-  }
-  return res.json();
-}
