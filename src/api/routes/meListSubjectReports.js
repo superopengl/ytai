@@ -21,12 +21,10 @@ export default function meListSubjectReports(fastify) {
       .select({
         id: subjectReport.id,
         subject: subjectReport.subject,
-        reportType: subjectReport.reportType,
         status: subjectReport.status,
         narrative: subjectReport.narrative,
         content: subjectReport.content,
         customPrompt: subjectReport.customPrompt,
-        promptHash: subjectReport.promptHash,
         generatedAt: subjectReport.generatedAt,
         includedSessions: subjectReport.includedSessions,
         error: subjectReport.error,

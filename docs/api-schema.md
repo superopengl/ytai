@@ -162,32 +162,35 @@ Staleness: persisted reports carry a `cursor_message_id`. If new `session_messag
 ## Me (cross-session views)
 
 ### `GET /api/me/subject-reports`
-List every `ready` subject-level report for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated.
+List every subject-level report (any status) for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated. Pending and failed rows are included so the UI can render in-progress and error states without a separate endpoint.
 
 **Returns**:
 ```json
 {
   "reports": [
     {
-      "id": "uuid", "subject": "math", "reportType": "wrong_questions",
-      "status": "ready", "narrative": "", "content": { ... },
-      "customPrompt": null, "promptHash": null,
+      "id": "uuid", "subject": "math",
+      "status": "ready" | "pending" | "failed",
+      "narrative": "string", "content": { "title": "string", "narrative": "string", "sections": [...] },
+      "customPrompt": "string",
       "generatedAt": "...", "includedSessions": [{ "sessionId": "...", "cursorMessageId": "..." }],
+      "error": null,
       "createdAt": "...", "updatedAt": "..."
     }
   ]
 }
 ```
 
+While `status` is `pending`, `content` may briefly be `null` (during the very first second) or `{ title: "..." }` (after the parallel pre-title call lands) — the UI uses `content.title` as the display name and falls back to a placeholder until it appears.
+
 ### `POST /api/me/subject-report`
-Generate a new subject-level report. **Every call inserts a new immutable row** — past reports stay around as a browsable history; there is no in-place refresh. Server refreshes any stale `session_report` for this `(user, subject)` first so the new rollup sees fresh structured data.
+Generate a new subject-level report. **Every call inserts a new immutable row** — past reports stay around as a browsable history; there is no in-place refresh. Returns immediately with a `pending` row; the actual rollup runs in a background task. The client picks the row up via `GET /api/me/subject-reports` and polls until it transitions to `ready` or `failed`.
 
 **Body**:
 ```json
 {
   "subject": "math" | "thinking" | "reading" | "writing",
-  "reportType": "wrong_questions" | "strengths_weaknesses" | "curriculum_map" | "custom",
-  "customPrompt": "string (required when reportType='custom'; max 2000 chars)"
+  "prompt": "string (required, max 2000 chars)"
 }
 ```
 
@@ -195,29 +198,23 @@ Generate a new subject-level report. **Every call inserts a new immutable row** 
 ```json
 {
   "id": "uuid",
-  "status": "ready" | "empty",
+  "status": "pending" | "empty",
   "subject": "math",
-  "reportType": "strengths_weaknesses",
-  "content": { ... },
-  "narrative": "string (LLM-generated types)",
-  "generatedAt": "...",
-  "includedSessions": [...],
-  "modelVersion": "deepseek/deepseek-chat",
-  "fresh": true
+  "customPrompt": "the normalised prompt",
+  "createdAt": "..."
 }
 ```
 
-`content` shape varies by type:
-- `wrong_questions`: `{ items: [{ sessionId, sessionStartedAt, question, studentAnswer, correctAnswer, correct, mistakeType, mistakeNotes, outcomeCode, outcomeText, focusArea }], totals: { sessions, wrongQuestions } }`
-- `strengths_weaknesses`: `{ narrative, strengths: [{ skill, evidence }], weaknesses: [{ skill, evidence, suggestion }] }`
-- `curriculum_map`: `{ narrative, areas: [{ focusArea, outcomeCodes, mastery, evidence }] }`
-- `custom`: `{ narrative, sections?: [{ title, bullets[] }] }`
+`status: "empty"` is returned when the user has no sessions for the requested subject yet (no row is inserted and no LLM call is made).
 
-`status: "empty"` is returned when the user has no sessions for the requested subject yet (no LLM call is made).
+The eventual `content` shape on a `ready` row is `{ title, narrative, sections?: [{ title, bullets[] }] }` — `title` is a short LLM-generated report name, `narrative` is the full body in markdown, and `sections` is an optional list of structured bullet cards the UI renders alongside the narrative.
 
 **Errors**:
-- `400` — invalid `subject`, invalid `reportType`, missing/too-long `customPrompt`
+- `400` — invalid `subject`, missing/too-long `prompt`
 - `502` — LLM call failed
+
+### `DELETE /api/me/subject-report/:id`
+Delete a single report belonging to the current user. Returns `{ ok: true }` on success, `404` if the row does not exist (or is owned by another user).
 
 ## WebSocket *(deferred)*
 

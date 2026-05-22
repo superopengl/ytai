@@ -79,17 +79,19 @@ session_report (1 per session)
         │   ask LLM to merge prior questions[] with new transcript.
         │
         ▼
-subject_report (N per (user, subject, report_type), immutable once generated)
-   report_type ∈ { wrong_questions, strengths_weaknesses,
-                   curriculum_map, custom }
-   Each generation request inserts a fresh row carrying its own created_at.
-   Past reports stay around as a browsable history.
-   included_sessions[] is an audit trail of which session reports were folded in.
-   wrong_questions skips the LLM (deterministic aggregation).
-   custom stores the verbatim prompt and a prompt_hash for grouping.
+subject_report (N per (user, subject), immutable once generated)
+   Every report is the same shape — subject + user prompt → LLM-generated
+   { title, narrative, sections? }. The frontend offers prompt templates
+   ("Wrong Answer Journal", "Strengths & Weaknesses", "Curriculum Map")
+   that prefill the textarea; the backend never sees these as types.
+   Each generation request inserts a fresh row carrying its own
+   created_at. Past reports stay around as a browsable history.
+   included_sessions[] is an audit trail of which session reports were
+   folded in. A title-only LLM call runs in parallel with the session
+   refresh so the polling UI shows the real report name within seconds.
 ```
 
-Because `session_message` is append-only and immutable, the cursor is a simple `last_message_id` FK — no content-hash invalidation, no edit detection. Subject-report rollups feed the LLM the *structured* session data (`questions[]` + summaries), never raw transcripts — this keeps cost bounded and is also the safety boundary for user-supplied custom prompts.
+Because `session_message` is append-only and immutable, the cursor is a simple `last_message_id` FK — no content-hash invalidation, no edit detection. Subject-report rollups feed the LLM the *structured* session data (`questions[]` + summaries), never raw transcripts — this keeps cost bounded and is also the safety boundary for user-supplied prompts.
 
 The Reports portal page (`/reports`) shows a `subjects × builtin types` grid plus a custom-prompt input.
 

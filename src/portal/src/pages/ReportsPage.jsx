@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   ConfigProvider,
-  Empty,
   Input,
   Modal,
   Select,
@@ -34,7 +33,10 @@ import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
 const POLL_INTERVAL_MS = 2500;
 
-const BUILTIN_TYPES = [
+// Prompt templates — UI-only sugar. The Select on the Generate panel
+// uses these to prefill the textarea; the backend never sees the key,
+// only the resulting prompt string.
+const PROMPT_TEMPLATES = [
   {
     key: 'wrong_questions',
     label: 'Wrong Answer Journal',
@@ -58,22 +60,14 @@ const BUILTIN_TYPES = [
   }
 ];
 
-const REPORT_TYPE_LABEL = {
-  wrong_questions: 'Wrong Answer Journal',
-  strengths_weaknesses: 'Strengths & Weaknesses',
-  curriculum_map: 'Curriculum Map',
-  custom: 'Custom Report'
-};
-
-// Custom reports carry a model-generated title in their content payload —
-// fall back to the generic "Custom Report" label while a row is still
-// pending (no content yet) or if the title is missing/blank.
+// Reports carry a model-generated title in their content payload — the
+// pre-title call lands it within seconds of a row being created. Falls
+// back to a placeholder for the brief window before the title write,
+// for rows where it never landed, or for legacy rows.
 function reportDisplayTitle(report) {
-  if (report.reportType === 'custom') {
-    const t = typeof report.content?.title === 'string' ? report.content.title.trim() : '';
-    if (t) return t;
-  }
-  return REPORT_TYPE_LABEL[report.reportType] || report.reportType;
+  const t = typeof report.content?.title === 'string' ? report.content.title.trim() : '';
+  if (t) return t;
+  return 'Generating Report ...';
 }
 
 function formatDate(iso) {
@@ -204,43 +198,6 @@ export default function ReportsPage() {
     [reports, selectedId]
   );
 
-  const handleGenerate = useCallback(
-    async ({ subject, reportType, prompt = null }) => {
-      const key = `${subject}::${reportType}::${prompt || ''}`;
-      setGenerating(key);
-      try {
-        const res = await fetch('/api/me/subject-report', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subject,
-            reportType,
-            customPrompt: prompt
-          })
-        });
-        const body = await res.json();
-        if (!res.ok) {
-          throw new Error(body?.error || `Generation failed (${res.status})`);
-        }
-        if (body.status === 'empty') {
-          message.info('No sessions for this subject yet — finish a session in the tutor first.');
-          return;
-        }
-        // The row is now 'pending' in the database. Pull the new card
-        // into the list and jump straight to its in-progress viewer so
-        // the user can watch the generation finish.
-        message.info('Generating report…');
-        await loadReports();
-        if (body.id) setSelectedId(body.id);
-      } catch (err) {
-        message.error(err.message);
-      } finally {
-        setGenerating(null);
-      }
-    },
-    [loadReports]
-  );
-
   // While any row is still 'pending' on the server, poll the list so the
   // card flips to 'ready' (or 'failed') without the user clicking refresh.
   const hasPendingReport = useMemo(
@@ -253,15 +210,40 @@ export default function ReportsPage() {
     return () => clearInterval(id);
   }, [hasPendingReport, loadReports]);
 
-  const handleSubmitCustom = useCallback(async () => {
+  const handleSubmit = useCallback(async () => {
     const trimmed = customPrompt.trim();
     if (!trimmed) {
       message.warning('Write a prompt first.');
       return;
     }
-    await handleGenerate({ subject: customSubject, reportType: 'custom', prompt: trimmed });
-    setCustomPrompt('');
-  }, [customPrompt, customSubject, handleGenerate]);
+    setGenerating(`${customSubject}::${trimmed}`);
+    try {
+      const res = await fetch('/api/me/subject-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: customSubject, prompt: trimmed })
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body?.error || `Generation failed (${res.status})`);
+      }
+      if (body.status === 'empty') {
+        message.info('No sessions for this subject yet — finish a session in the tutor first.');
+        return;
+      }
+      // The row is now 'pending' in the database. Pull the new card into
+      // the list and jump straight to its in-progress viewer so the user
+      // can watch the generation finish.
+      message.info('Generating report…');
+      setCustomPrompt('');
+      await loadReports();
+      if (body.id) setSelectedId(body.id);
+    } catch (err) {
+      message.error(err.message);
+    } finally {
+      setGenerating(null);
+    }
+  }, [customPrompt, customSubject, loadReports]);
 
   const handleDelete = useCallback(
     async (id) => {
@@ -331,7 +313,7 @@ export default function ReportsPage() {
                 setCustomSubject={setCustomSubject}
                 customPrompt={customPrompt}
                 setCustomPrompt={setCustomPrompt}
-                onSubmitCustom={handleSubmitCustom}
+                onSubmit={handleSubmit}
               />
             )}
           </Splitter.Panel>
@@ -447,7 +429,7 @@ function ReportTabLabel({ report }) {
           {reportDisplayTitle(report)}
         </Typography.Text>
       </div>
-      {report.reportType === 'custom' && report.customPrompt ? (
+      {report.customPrompt ? (
         <Typography.Paragraph
           type="secondary"
           style={{ marginBottom: 0, fontSize: 12 }}
@@ -485,10 +467,9 @@ function GeneratePanel({
   setCustomSubject,
   customPrompt,
   setCustomPrompt,
-  onSubmitCustom
+  onSubmit
 }) {
-  const subjectMeta = SUBJECTS.find((s) => s.key === customSubject) || SUBJECTS[0];
-  const isCustomGenerating = generating?.startsWith(`${customSubject}::custom::`);
+  const isGenerating = generating?.startsWith(`${customSubject}::`);
   return (
     <div
       style={{
@@ -556,7 +537,7 @@ function GeneratePanel({
             style={{ width: '100%' }}
             optionLabelProp="label"
             onChange={(_, option) => setCustomPrompt(option?.prompt ?? '')}
-            options={BUILTIN_TYPES.map((t) => ({
+            options={PROMPT_TEMPLATES.map((t) => ({
               value: t.key,
               label: t.label,
               prompt: t.prompt,
@@ -586,9 +567,9 @@ function GeneratePanel({
           <div style={{ marginTop: 8, textAlign: 'right' }}>
             <Button
               type="primary"
-              loading={isCustomGenerating}
+              loading={isGenerating}
               disabled={!customPrompt.trim()}
-              onClick={onSubmitCustom}
+              onClick={onSubmit}
             >
               Generate
             </Button>
@@ -681,7 +662,7 @@ function PendingReportBody({ report }) {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         This usually takes a few seconds. The page refreshes automatically when it's ready.
       </Typography.Paragraph>
-      {report.reportType === 'custom' && report.customPrompt ? (
+      {report.customPrompt ? (
         <PromptCard prompt={report.customPrompt} style={{ marginTop: 24, textAlign: 'left' }} />
       ) : null}
     </div>
@@ -697,7 +678,7 @@ function FailedReportBody({ report }) {
         message="Report generation failed"
         description={report.error || 'The model didn’t return a usable report. Try again.'}
       />
-      {report.reportType === 'custom' && report.customPrompt ? (
+      {report.customPrompt ? (
         <PromptCard prompt={report.customPrompt} style={{ marginTop: 16 }} />
       ) : null}
     </div>
@@ -705,130 +686,6 @@ function FailedReportBody({ report }) {
 }
 
 function ReportBody({ report }) {
-  if (report.reportType === 'wrong_questions') {
-    return <WrongQuestionsBody content={report.content} />;
-  }
-  if (report.reportType === 'strengths_weaknesses') {
-    return <StrengthsWeaknessesBody content={report.content} narrative={report.narrative} />;
-  }
-  if (report.reportType === 'curriculum_map') {
-    return <CurriculumMapBody content={report.content} narrative={report.narrative} />;
-  }
-  return <CustomBody report={report} />;
-}
-
-function WrongQuestionsBody({ content }) {
-  const items = content?.items || [];
-  if (items.length === 0) return <Empty description="No wrong answers recorded yet" />;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {items.map((q, idx) => (
-        <Card key={idx} size="small" styles={{ body: { padding: 12 } }}>
-          <Typography.Paragraph style={{ marginBottom: 6 }}>{q.question}</Typography.Paragraph>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
-            <span>
-              <Typography.Text type="secondary">Your answer: </Typography.Text>
-              <Typography.Text>{q.studentAnswer || '—'}</Typography.Text>
-            </span>
-            {q.correctAnswer ? (
-              <span>
-                <Typography.Text type="secondary">Correct: </Typography.Text>
-                <Typography.Text strong>{q.correctAnswer}</Typography.Text>
-              </span>
-            ) : null}
-            {q.mistakeType ? <Tag>{q.mistakeType}</Tag> : null}
-          </div>
-          {q.mistakeNotes ? (
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
-              {q.mistakeNotes}
-            </Typography.Paragraph>
-          ) : null}
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function StrengthsWeaknessesBody({ content, narrative }) {
-  return (
-    <div>
-      {narrative ? (
-        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>{narrative}</Typography.Paragraph>
-      ) : null}
-      {Array.isArray(content?.strengths) && content.strengths.length > 0 ? (
-        <>
-          <Typography.Title level={5} style={{ marginTop: 16 }}>Strengths</Typography.Title>
-          {content.strengths.map((s, i) => (
-            <Card key={i} size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 12 } }}>
-              <Typography.Text strong>{s.skill}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 13 }}>
-                {s.evidence}
-              </Typography.Paragraph>
-            </Card>
-          ))}
-        </>
-      ) : null}
-      {Array.isArray(content?.weaknesses) && content.weaknesses.length > 0 ? (
-        <>
-          <Typography.Title level={5} style={{ marginTop: 16 }}>Weaknesses</Typography.Title>
-          {content.weaknesses.map((w, i) => (
-            <Card key={i} size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 12 } }}>
-              <Typography.Text strong>{w.skill}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 4, fontSize: 13 }}>
-                {w.evidence}
-              </Typography.Paragraph>
-              {w.suggestion ? (
-                <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13 }}>
-                  <Typography.Text type="secondary">Try next: </Typography.Text>
-                  {w.suggestion}
-                </Typography.Paragraph>
-              ) : null}
-            </Card>
-          ))}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function CurriculumMapBody({ content, narrative }) {
-  const areas = content?.areas || [];
-  return (
-    <div>
-      {narrative ? (
-        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>{narrative}</Typography.Paragraph>
-      ) : null}
-      {areas.map((a, i) => (
-        <Card key={i} size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 12 } }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Typography.Text strong>{a.focusArea}</Typography.Text>
-            <Tag color={
-              a.mastery === 'mastered' ? palette.state.correct :
-              a.mastery === 'struggling' ? palette.state.wrong :
-              undefined
-            }>
-              {a.mastery}
-            </Tag>
-          </div>
-          {Array.isArray(a.outcomeCodes) && a.outcomeCodes.length > 0 ? (
-            <div style={{ marginBottom: 4 }}>
-              {a.outcomeCodes.map((c) => (
-                <Tag key={c} style={{ fontFamily: 'monospace', fontSize: 11 }}>{c}</Tag>
-              ))}
-            </div>
-          ) : null}
-          {a.evidence ? (
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 13 }}>
-              {a.evidence}
-            </Typography.Paragraph>
-          ) : null}
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function CustomBody({ report }) {
   const content = report.content || {};
   return (
     <div>

@@ -217,11 +217,11 @@ export const sessionReport = ytai.table('session_report', {
 });
 
 // Subject-level report rolled up from this user's session_reports for one
-// subject. Multiple report_type rows per (user, subject):
-//   - 'wrong_questions'      — deterministic aggregation of wrong/struggled qs
-//   - 'strengths_weaknesses' — LLM-generated narrative + structured fields
-//   - 'curriculum_map'       — LLM mapping to syllabus areas
-//   - 'custom'               — user-supplied prompt, keyed by prompt_hash
+// Every subject_report is a single shape: a free-form analysis driven by
+// a user prompt. The frontend offers prompt templates ("Wrong Answer
+// Journal", "Strengths & Weaknesses", "Curriculum Map") that prefill the
+// prompt textarea, but the backend never distinguishes them — they're
+// just prompts.
 //
 // `includedSessions` snapshots the (sessionId, cursorMessageId) pairs the
 // report was built from. Staleness: any included session report has
@@ -233,9 +233,6 @@ export const subjectReport = ytai.table(
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => user.id),
     subject: text('subject').notNull(),
-    reportType: text('report_type').notNull(),
-    // sha256 of the normalized user prompt for custom reports; NULL otherwise.
-    promptHash: text('prompt_hash'),
     customPrompt: text('custom_prompt'),
     status: text('status').notNull().default('pending'),
     content: jsonb('content'),

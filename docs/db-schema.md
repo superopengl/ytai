@@ -141,29 +141,23 @@ Post-session classification report for the parent/teacher view. One row per sess
 | `updated_at` | timestamptz | |
 
 ### `subject_report`
-Rollup of all of a user's `session_report` rows for one `(subject, report_type)`. **Immutable once generated** — every generation request inserts a new row, so the Reports page shows a full history of past reports the user can scroll through and re-open. The only mutation on a row is its `pending → ready/failed` state transition during the original generation.
+Rollup of all of a user's `session_report` rows for one `(user, subject)`, driven by a user prompt. **Immutable once generated** — every generation request inserts a new row, so the Reports page shows a full history of past reports the user can scroll through and re-open. The only mutation on a row is its `pending → ready/failed` state transition during the original generation (with one extra write in between for the pre-generated title — see below).
 
-Report types:
-- `wrong_questions` — deterministic aggregation of wrong/struggled questions; no LLM call.
-- `strengths_weaknesses` — LLM-generated narrative + structured strengths/weaknesses.
-- `curriculum_map` — LLM mapping onto curriculum focus areas with mastery state.
-- `custom` — user-supplied prompt; `prompt_hash` is stored alongside the verbatim text for grouping but is no longer a uniqueness key.
+Every report is the same shape: subject + prompt → markdown narrative + optional bullet sections + an LLM-generated title. The frontend offers a few prompt templates ("Wrong Answer Journal", "Strengths & Weaknesses", "Curriculum Map") that prefill the textarea, but the backend never sees these as distinct types.
 
-On generation the orchestrator first refreshes any stale `session_report` for this `(user, subject)` so the new rollup sees fresh structured data, then inserts a fresh `subject_report` row. The LLM is fed the *structured* session data, never raw transcripts — that keeps cost bounded and is the only thing custom prompts see.
+On generation the orchestrator kicks off a small title-only LLM call in parallel with refreshing any stale `session_report` rows; the title lands in `content = { title }` within a couple of seconds so the polling UI can stop showing a placeholder long before the main generation finishes. The main LLM call then produces the full report and overwrites `content` with `{ title, narrative, sections? }`. The LLM is fed the *structured* session data, never raw transcripts — that keeps cost bounded and is the only thing user prompts see.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK |
 | `user_id` | uuid | FK → `user.id` |
 | `subject` | text | `math` \| `thinking` \| `reading` \| `writing` |
-| `report_type` | text | `wrong_questions` \| `strengths_weaknesses` \| `curriculum_map` \| `custom` |
-| `prompt_hash` | text | sha256 of the normalized user prompt for `custom`; NULL for builtins. Stored for grouping, not for uniqueness. |
-| `custom_prompt` | text | verbatim prompt for `custom`; NULL for builtins |
+| `custom_prompt` | text | verbatim user prompt (column name predates the prompt-only design) |
 | `status` | text | `pending` \| `ready` \| `failed` |
-| `content` | jsonb | shape varies by `report_type` (see route docs) |
-| `narrative` | text | optional adult-facing prose for LLM-generated types |
+| `content` | jsonb | `{ title, narrative, sections? }` once ready; `{ title }` briefly while pending |
+| `narrative` | text | denormalised copy of `content.narrative` for quick text searches |
 | `included_sessions` | jsonb | snapshot `[{ sessionId, cursorMessageId }]` of which session reports were folded in. Audit trail of what the row was built from. |
-| `model_version` | text | LLM that produced the row (NULL for `wrong_questions`) |
+| `model_version` | text | LLM that produced the row |
 | `prompt_tokens` | int | |
 | `completion_tokens` | int | |
 | `error` | text | |
@@ -182,5 +176,5 @@ user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
      │                 ├──< session_message ──┐
      │                 │                      └─ optional FK → session_image
      │                 └── session_report (1:1) ── cursor_message_id → session_message
-     └──< subject_report  (1:N, immutable rows — full history per (subject, report_type))
+     └──< subject_report  (1:N, immutable rows — full history per (user, subject))
 ```
