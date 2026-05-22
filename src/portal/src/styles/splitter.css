@@ -14,3 +14,20 @@
 .ytai-sider-splitter > .ant-splitter-panel:first-child {
   padding: 0;
 }
+
+/* Reports page splits a white list against a white generate/view panel; the
+   default grey divider reads as a stripe. Force the bar + dragger to the
+   surface color so the whole gutter is one clean white seam. */
+.ytai-white-splitter > .ant-splitter-bar {
+  background: #fff;
+}
+.ytai-white-splitter > .ant-splitter-bar > .ant-splitter-bar-dragger {
+  background: #fff;
+}
+.ytai-white-splitter > .ant-splitter-bar > .ant-splitter-bar-dragger::before,
+.ytai-white-splitter > .ant-splitter-bar > .ant-splitter-bar-dragger::after {
+  background: #fff;
+}
+.ytai-white-splitter > .ant-splitter-panel:last-child {
+  padding-left: 0;
+}

@@ -33,3 +33,58 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Vertical "tab bar only" mode — used on the Reports page where the
+   tab strip lives in the left Splitter panel and the active panel's
+   real content is rendered separately in the right Splitter panel.
+   We hide AntD's own content holder, let the nav fill the panel, and
+   relax the per-tab geometry so each tab can render a multi-line label
+   (subject tag + report type + status/timestamp). */
+.ytai-vert-nav-tabs {
+  height: 100%;
+}
+.ytai-vert-nav-tabs > .ant-tabs-content-holder {
+  display: none;
+}
+.ytai-vert-nav-tabs > .ant-tabs-nav {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.ytai-vert-nav-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+  /* Right padding is 0 so the active (light) tab extends flush to the
+     splitter handle — visually "merging" the selected nav item with the
+     right-hand content panel. */
+  padding: 8px 0 8px 8px;
+}
+.ytai-vert-nav-tabs .ant-tabs-tab {
+  width: 100%;
+  margin: 0 0 6px 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 8px 0 0 8px;
+  border-right: 0 !important;
+  text-align: left;
+  white-space: normal;
+}
+.ytai-vert-nav-tabs .ant-tabs-tab-btn {
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+/* The active tab "lights up" against the dark sidebar — flip it to a
+   light surface with dark text so it reads like the selected nav item
+   (and the content area on the right it lives next to). The descendant
+   color overrides apply to the Typography elements rendered inside
+   ReportTabLabel, which otherwise inherit the dark theme's light text. */
+.ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  background: #FFFFFF !important;
+}
+.ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active,
+.ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn,
+.ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-typography {
+  color: #2D3748 !important;
+}
+.ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-typography.ant-typography-secondary {
+  color: #718096 !important;
+}

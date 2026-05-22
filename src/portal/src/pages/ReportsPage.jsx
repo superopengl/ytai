@@ -1,41 +1,80 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Button,
   Card,
+  ConfigProvider,
   Empty,
   Input,
   Modal,
+  Select,
   Space,
   Spin,
+  Splitter,
+  Tabs,
   Tag,
+  Tooltip,
   Typography,
-  message
+  message,
+  theme as antdTheme
 } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ArrowLeftOutlined,
+  CheckOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  ExclamationCircleOutlined,
+  LoadingOutlined,
+  PlusOutlined
+} from '@ant-design/icons';
 import SUBJECTS from '../lib/subjects.js';
 import { palette } from '../theme.js';
+import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
-// Builtin report types rendered in the grid. Each subject has all three
-// columns; `custom` reports are listed separately at the bottom.
+const POLL_INTERVAL_MS = 2500;
+
 const BUILTIN_TYPES = [
   {
     key: 'wrong_questions',
-    label: 'Wrong Question Collection',
-    blurb: 'Every question the student got wrong or struggled with, with the correct answer and mistake type.'
+    label: 'Wrong Answer Journal',
+    blurb: 'Every question the student got wrong or struggled with, with the correct answer and mistake type.',
+    prompt:
+      'List every question the student got wrong or struggled with across their recent sessions. For each one, include the question, the student\'s answer, the correct answer, and what kind of mistake it was.'
   },
   {
     key: 'strengths_weaknesses',
     label: 'Strengths & Weaknesses',
-    blurb: 'Where the student is solid and where they need practice, with concrete evidence from sessions.'
+    blurb: 'Where the student is solid and where they need practice, with concrete evidence from sessions.',
+    prompt:
+      'Tell me where the student is solid and where they need more practice. Back each strength and weakness with concrete examples from their sessions.'
   },
   {
     key: 'curriculum_map',
     label: 'Curriculum Map',
-    blurb: 'Coverage by focus area and mastery state, against the NSW K-10 syllabus.'
+    blurb: 'Coverage by focus area and mastery state, against the NSW K-10 syllabus.',
+    prompt:
+      'Map the student\'s recent tutoring work against the NSW K-10 syllabus. For each focus area they have touched, give a mastery state (e.g. emerging / developing / proficient) and the evidence behind it.'
   }
 ];
+
+const REPORT_TYPE_LABEL = {
+  wrong_questions: 'Wrong Answer Journal',
+  strengths_weaknesses: 'Strengths & Weaknesses',
+  curriculum_map: 'Curriculum Map',
+  custom: 'Custom Report'
+};
+
+// Custom reports carry a model-generated title in their content payload —
+// fall back to the generic "Custom Report" label while a row is still
+// pending (no content yet) or if the title is missing/blank.
+function reportDisplayTitle(report) {
+  if (report.reportType === 'custom') {
+    const t = typeof report.content?.title === 'string' ? report.content.title.trim() : '';
+    if (t) return t;
+  }
+  return REPORT_TYPE_LABEL[report.reportType] || report.reportType;
+}
 
 function formatDate(iso) {
   if (!iso) return '';
@@ -46,12 +85,97 @@ function formatDate(iso) {
   }
 }
 
+function PromptCard({ prompt, style }) {
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard write can fail on insecure contexts; silently no-op.
+    }
+  };
+  return (
+    <Card
+      size="small"
+      style={{ background: palette.bgPanel, position: 'relative', ...style }}
+      styles={{ body: { padding: 12 } }}
+    >
+      <Tooltip title={copied ? 'Copied' : 'Copy prompt'}>
+        <Button
+          type="text"
+          size="small"
+          icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+          onClick={handleCopy}
+          aria-label={copied ? 'Prompt copied' : 'Copy prompt to clipboard'}
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 10,
+            width: 22,
+            height: 22,
+            minWidth: 22,
+            padding: 0,
+            fontSize: 12,
+            color: palette.textMuted
+          }}
+        />
+      </Tooltip>
+      <Typography.Text type="secondary" style={{ fontSize: 11 }}>Your prompt</Typography.Text>
+      <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13, paddingRight: 24 }}>
+        {prompt}
+      </Typography.Paragraph>
+    </Card>
+  );
+}
+
+function StepHeader({ n, title, children }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: palette.cta,
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 700,
+            fontSize: 13,
+            flexShrink: 0
+          }}
+        >
+          {n}
+        </span>
+        <Typography.Text strong style={{ fontSize: 15 }}>
+          {title}
+        </Typography.Text>
+      </div>
+      {children ? (
+        <Typography.Paragraph
+          type="secondary"
+          style={{ fontSize: 13, marginLeft: 36, marginTop: 4, marginBottom: 0 }}
+        >
+          {children}
+        </Typography.Paragraph>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reports, setReports] = useState([]);
-  const [openReport, setOpenReport] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
   const [generating, setGenerating] = useState(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [customSubject, setCustomSubject] = useState('math');
@@ -75,22 +199,13 @@ export default function ReportsPage() {
     loadReports();
   }, [loadReports]);
 
-  const reportIndex = useMemo(() => {
-    const map = new Map();
-    for (const r of reports) {
-      if (r.reportType === 'custom') continue;
-      map.set(`${r.subject}::${r.reportType}`, r);
-    }
-    return map;
-  }, [reports]);
-
-  const customReports = useMemo(
-    () => reports.filter((r) => r.reportType === 'custom'),
-    [reports]
+  const selectedReport = useMemo(
+    () => reports.find((r) => r.id === selectedId) || null,
+    [reports, selectedId]
   );
 
   const handleGenerate = useCallback(
-    async ({ subject, reportType, prompt = null, force = false }) => {
+    async ({ subject, reportType, prompt = null }) => {
       const key = `${subject}::${reportType}::${prompt || ''}`;
       setGenerating(key);
       try {
@@ -100,8 +215,7 @@ export default function ReportsPage() {
           body: JSON.stringify({
             subject,
             reportType,
-            customPrompt: prompt,
-            force
+            customPrompt: prompt
           })
         });
         const body = await res.json();
@@ -110,11 +224,14 @@ export default function ReportsPage() {
         }
         if (body.status === 'empty') {
           message.info('No sessions for this subject yet — finish a session in the tutor first.');
-        } else {
-          message.success(body.fresh ? 'Report ready' : 'Loaded existing report');
+          return;
         }
+        // The row is now 'pending' in the database. Pull the new card
+        // into the list and jump straight to its in-progress viewer so
+        // the user can watch the generation finish.
+        message.info('Generating report…');
         await loadReports();
-        if (body.status === 'ready') setOpenReport(body);
+        if (body.id) setSelectedId(body.id);
       } catch (err) {
         message.error(err.message);
       } finally {
@@ -123,6 +240,18 @@ export default function ReportsPage() {
     },
     [loadReports]
   );
+
+  // While any row is still 'pending' on the server, poll the list so the
+  // card flips to 'ready' (or 'failed') without the user clicking refresh.
+  const hasPendingReport = useMemo(
+    () => reports.some((r) => r.status === 'pending'),
+    [reports]
+  );
+  useEffect(() => {
+    if (!hasPendingReport) return undefined;
+    const id = setInterval(loadReports, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [hasPendingReport, loadReports]);
 
   const handleSubmitCustom = useCallback(async () => {
     const trimmed = customPrompt.trim();
@@ -134,8 +263,26 @@ export default function ReportsPage() {
     setCustomPrompt('');
   }, [customPrompt, customSubject, handleGenerate]);
 
+  const handleDelete = useCallback(
+    async (id) => {
+      try {
+        const res = await fetch(`/api/me/subject-report/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `Delete failed (${res.status})`);
+        }
+        message.success('Report deleted');
+        setSelectedId(null);
+        await loadReports();
+      } catch (err) {
+        message.error(err.message);
+      }
+    },
+    [loadReports]
+  );
+
   return (
-    <div style={{ minHeight: '100vh', background: palette.bgPanel }}>
+    <div style={{ height: '100vh', background: palette.bgPanel, display: 'flex', flexDirection: 'column' }}>
       <header
         style={{
           padding: '12px 24px',
@@ -143,7 +290,8 @@ export default function ReportsPage() {
           borderBottom: `1px solid ${palette.borderSoft}`,
           display: 'flex',
           alignItems: 'center',
-          gap: 12
+          gap: 12,
+          flexShrink: 0
         }}
       >
         <Button
@@ -154,258 +302,405 @@ export default function ReportsPage() {
           aria-label="Back to tutor"
         />
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Reports
+          Analysis Reports
         </Typography.Title>
-        <Button
-          type="text"
-          icon={<ReloadOutlined />}
-          onClick={loadReports}
-          style={{ marginLeft: 'auto' }}
-        >
-          Refresh
-        </Button>
       </header>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 16px 64px' }}>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 48 }}>
-            <Spin />
-          </div>
-        ) : error ? (
-          <Alert type="error" showIcon message={error} />
-        ) : (
-          <>
-            {SUBJECTS.map((s) => (
-              <SubjectSection
-                key={s.key}
-                subject={s}
-                reportIndex={reportIndex}
-                generating={generating}
-                onGenerate={handleGenerate}
-                onOpen={setOpenReport}
-              />
-            ))}
-
-            <CustomSection
-              customReports={customReports}
-              customPrompt={customPrompt}
-              customSubject={customSubject}
-              setCustomPrompt={setCustomPrompt}
-              setCustomSubject={setCustomSubject}
-              onSubmit={handleSubmitCustom}
-              onOpen={setOpenReport}
-              generating={generating}
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <Splitter
+          className="ytai-white-splitter"
+          style={{ height: '100%', background: palette.surface }}
+        >
+          <Splitter.Panel defaultSize={340} min={240} max="60%">
+            <ReportsList
+              loading={loading}
+              error={error}
+              reports={reports}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onNew={() => setSelectedId(null)}
             />
-          </>
-        )}
+          </Splitter.Panel>
+          <Splitter.Panel>
+            {selectedReport ? (
+              <ReportPanel report={selectedReport} onDelete={handleDelete} />
+            ) : (
+              <GeneratePanel
+                generating={generating}
+                customSubject={customSubject}
+                setCustomSubject={setCustomSubject}
+                customPrompt={customPrompt}
+                setCustomPrompt={setCustomPrompt}
+                onSubmitCustom={handleSubmitCustom}
+              />
+            )}
+          </Splitter.Panel>
+        </Splitter>
       </div>
-
-      <ReportViewer report={openReport} onClose={() => setOpenReport(null)} />
     </div>
   );
 }
 
-function SubjectSection({ subject, reportIndex, generating, onGenerate, onOpen }) {
+function ReportsList({ loading, error, reports, selectedId, onSelect, onNew }) {
+  // The "+ New report" entry is always the first tab; saved reports follow.
+  // We keep the tab strip in this Splitter panel and let the right panel
+  // render the actual content driven by the active key — see the
+  // `ytai-vert-nav-tabs` CSS class which hides AntD's content holder.
+  const items = useMemo(() => {
+    const tabs = [
+      {
+        key: 'new',
+        label: (
+          <Space size={8} align="center">
+            <PlusOutlined style={{ color: palette.state.correct }} />
+            <Typography.Text strong style={{ color: palette.state.correct }}>New Report</Typography.Text>
+          </Space>
+        )
+      }
+    ];
+    for (const r of reports) {
+      tabs.push({ key: r.id, label: <ReportTabLabel report={r} /> });
+    }
+    return tabs;
+  }, [reports]);
+
+  const activeKey = selectedId ?? 'new';
+
+  // Dark theme scoped to the left nav panel only — same pattern as
+  // TutorSessionsSider so the two dark surfaces in the app feel of a
+  // piece. AntD's darkAlgorithm recolors Tabs internals automatically;
+  // the explicit `palette.sider.bg` sets the surface behind the tab strip.
   return (
-    <section style={{ marginBottom: 28 }}>
-      <Typography.Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <subject.icon style={{ color: subject.color }} />
-        {subject.label}
-      </Typography.Title>
+    <ConfigProvider
+      theme={{
+        algorithm: antdTheme.darkAlgorithm,
+        token: {
+          // Seed tokens — darkAlgorithm derives the full text/bg scale
+          // from these. Without an explicit light `colorTextBase` the
+          // parent theme's dark slate would bleed through and the tab
+          // labels would render the same color as the dark surface.
+          colorTextBase: '#FFFFFF',
+          colorBgBase: palette.sider.bg,
+          colorPrimary: palette.sider.accent,
+          // Derived overrides for the surfaces we set ourselves.
+          colorBgContainer: palette.sider.bg,
+          colorBgElevated: palette.sider.activeBg,
+          colorBorderSecondary: palette.sider.border,
+          colorText: palette.sider.textPrimary,
+          colorTextSecondary: palette.sider.textMuted,
+          colorTextTertiary: palette.sider.textMuted
+        },
+        components: {
+          Tabs: {
+            itemColor: palette.sider.textMuted,
+            itemHoverColor: palette.sider.textPrimary,
+            itemSelectedColor: palette.sider.textPrimary,
+            inkBarColor: palette.sider.accent,
+            cardBg: 'transparent'
+          }
+        }
+      }}
+    >
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: palette.sider.bg,
+          color: palette.sider.textPrimary
+        }}
+      >
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+          </div>
+        ) : error ? (
+          <div style={{ padding: 12 }}>
+            <Alert type="error" showIcon message={error} />
+          </div>
+        ) : (
+          <Tabs
+            className="ytai-vert-nav-tabs"
+            tabPosition="left"
+            type="card"
+            activeKey={activeKey}
+            onChange={(key) => (key === 'new' ? onNew() : onSelect(key))}
+            items={items}
+          />
+        )}
+      </div>
+    </ConfigProvider>
+  );
+}
+
+function ReportTabLabel({ report }) {
+  const subjectMeta = SUBJECTS.find((s) => s.key === report.subject);
+  const isPending = report.status === 'pending';
+  const isFailed = report.status === 'failed';
+  return (
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <Tag color={subjectMeta?.color} style={{ margin: 0 }}>
+          {subjectMeta?.label || report.subject}
+        </Tag>
+        <Typography.Text strong style={{ fontSize: 13 }}>
+          {reportDisplayTitle(report)}
+        </Typography.Text>
+      </div>
+      {report.reportType === 'custom' && report.customPrompt ? (
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginBottom: 0, fontSize: 12 }}
+          ellipsis={{ rows: 2 }}
+        >
+          {report.customPrompt}
+        </Typography.Paragraph>
+      ) : null}
+      {isPending ? (
+        <Space size={6} align="center">
+          <LoadingOutlined style={{ color: subjectMeta?.color || palette.primary }} />
+          <Typography.Text style={{ fontSize: 11, color: subjectMeta?.color || palette.primary }}>
+            Generating…
+          </Typography.Text>
+        </Space>
+      ) : isFailed ? (
+        <Space size={6} align="center">
+          <ExclamationCircleOutlined style={{ color: palette.state.wrong }} />
+          <Typography.Text style={{ fontSize: 11, color: palette.state.wrong }}>
+            Failed — open to retry
+          </Typography.Text>
+        </Space>
+      ) : (
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {formatDate(report.createdAt || report.generatedAt)}
+        </Typography.Text>
+      )}
+    </div>
+  );
+}
+
+function GeneratePanel({
+  generating,
+  customSubject,
+  setCustomSubject,
+  customPrompt,
+  setCustomPrompt,
+  onSubmitCustom
+}) {
+  const subjectMeta = SUBJECTS.find((s) => s.key === customSubject) || SUBJECTS[0];
+  const isCustomGenerating = generating?.startsWith(`${customSubject}::custom::`);
+  return (
+    <div
+      style={{
+        height: '100%',
+        overflowY: 'auto',
+        background: palette.surface
+      }}
+    >
+      <div
+        style={{
+          minHeight: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 24px 64px',
+          boxSizing: 'border-box'
+        }}
+      >
+      <div style={{ maxWidth: 640, width: '100%' }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }}>
+        Generate a new report
+      </Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Reports turn the student's tutoring sessions into a clear picture — what they got wrong, what they've got down, and what to work on next. Each report is saved as a snapshot you can come back to.
+      </Typography.Paragraph>
+
+      <section style={{ marginBottom: 20 }}>
+        <StepHeader n={1} title="Choose a subject">
+          Which subject's tutoring work should the AI analyze?
+        </StepHeader>
+        <div style={{ marginLeft: 36 }}>
+          <Select
+            value={customSubject}
+            onChange={setCustomSubject}
+            style={{ minWidth: 220 }}
+            options={SUBJECTS.map((s) => {
+              const Icon = s.icon;
+              return {
+                value: s.key,
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <Icon style={{ color: s.color }} />
+                    {s.label}
+                  </span>
+                )
+              };
+            })}
+          />
+        </div>
+      </section>
+
+      <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
+
+      <section style={{ marginBottom: 28 }}>
+        <StepHeader n={2} title="Tell the AI what to analyze">
+          Start from a template, then tweak the prompt before generating.
+        </StepHeader>
+        <div style={{ marginLeft: 36 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
+            Report template
+          </Typography.Text>
+          <Select
+            value={undefined}
+            placeholder="Pick a template to prefill the prompt…"
+            style={{ width: '100%' }}
+            optionLabelProp="label"
+            onChange={(_, option) => setCustomPrompt(option?.prompt ?? '')}
+            options={BUILTIN_TYPES.map((t) => ({
+              value: t.key,
+              label: t.label,
+              prompt: t.prompt,
+              blurb: t.blurb
+            }))}
+            optionRender={(option) => (
+              <div style={{ padding: '2px 0' }}>
+                <Typography.Text strong>{option.data.label}</Typography.Text>
+                <div style={{ fontSize: 12, color: palette.textMuted, marginTop: 2 }}>
+                  {option.data.blurb}
+                </div>
+              </div>
+            )}
+          />
+        </div>
+        <div style={{ marginLeft: 36, marginTop: 16 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
+            Your prompt
+          </Typography.Text>
+          <Input.TextArea
+            rows={4}
+            maxLength={2000}
+            placeholder='Pick a template above to start, or write your own — e.g. "Which concepts has my child confused the most in the last week?"'
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+          />
+          <div style={{ marginTop: 8, textAlign: 'right' }}>
+            <Button
+              type="primary"
+              loading={isCustomGenerating}
+              disabled={!customPrompt.trim()}
+              onClick={onSubmitCustom}
+            >
+              Generate
+            </Button>
+          </div>
+        </div>
+      </section>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportPanel({ report, onDelete }) {
+  const subjectMeta = SUBJECTS.find((s) => s.key === report.subject);
+  const subjectLabel = subjectMeta?.label || report.subject;
+  const typeLabel = reportDisplayTitle(report);
+  const isPending = report.status === 'pending';
+  const isFailed = report.status === 'failed';
+  const [modal, modalContextHolder] = Modal.useModal();
+  const handleDeleteClick = () => {
+    modal.confirm({
+      title: 'Delete this report?',
+      content: `"${typeLabel}" for ${subjectLabel} will be permanently removed. You can regenerate it later, but the current snapshot is gone.`,
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: () => onDelete(report.id)
+    });
+  };
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: palette.surface }}>
+      {modalContextHolder}
+      <div
+        style={{
+          padding: '16px 24px',
+          borderBottom: `1px solid ${palette.borderSoft}`,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'flex-start',
           gap: 12
         }}
       >
-        {BUILTIN_TYPES.map((t) => {
-          const r = reportIndex.get(`${subject.key}::${t.key}`);
-          const key = `${subject.key}::${t.key}::`;
-          const isGenerating = generating === key;
-          return (
-            <Card
-              key={t.key}
-              size="small"
-              hoverable={!!r}
-              onClick={() => r && onOpen(r)}
-              styles={{ body: { padding: 16 } }}
-              style={{ background: subject.tint }}
-            >
-              <Typography.Text strong>{t.label}</Typography.Text>
-              <Typography.Paragraph
-                type="secondary"
-                style={{ fontSize: 12, marginTop: 4, marginBottom: 12 }}
-              >
-                {t.blurb}
-              </Typography.Paragraph>
-              {r ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    Generated {formatDate(r.generatedAt)}
-                  </Typography.Text>
-                  <Space>
-                    <Button
-                      size="small"
-                      loading={isGenerating}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onGenerate({ subject: subject.key, reportType: t.key, force: true });
-                      }}
-                    >
-                      Refresh
-                    </Button>
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpen(r);
-                      }}
-                    >
-                      View
-                    </Button>
-                  </Space>
-                </div>
-              ) : (
-                <Button
-                  size="small"
-                  type="primary"
-                  block
-                  loading={isGenerating}
-                  onClick={() => onGenerate({ subject: subject.key, reportType: t.key })}
-                >
-                  Generate
-                </Button>
-              )}
-            </Card>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function CustomSection({
-  customReports,
-  customPrompt,
-  customSubject,
-  setCustomPrompt,
-  setCustomSubject,
-  onSubmit,
-  onOpen,
-  generating
-}) {
-  const isGenerating = generating?.startsWith(`${customSubject}::custom::`);
-  return (
-    <section style={{ marginTop: 36 }}>
-      <Typography.Title level={5}>Custom Report</Typography.Title>
-      <Card>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Ask anything about the student's work — for example, "Which math
-          concepts has my child confused the most in the last week?"
-        </Typography.Paragraph>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            Subject:
-          </Typography.Text>
-          {SUBJECTS.map((s) => (
-            <Tag.CheckableTag
-              key={s.key}
-              checked={customSubject === s.key}
-              onChange={() => setCustomSubject(s.key)}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 14,
-                background: customSubject === s.key ? s.color : s.tint,
-                color: customSubject === s.key ? palette.surface : s.color,
-                border: `1px solid ${customSubject === s.key ? s.color : 'transparent'}`
-              }}
-            >
-              {s.label}
-            </Tag.CheckableTag>
-          ))}
-        </div>
-        <Input.TextArea
-          rows={3}
-          maxLength={1000}
-          showCount
-          placeholder="What do you want to know about the student's work?"
-          value={customPrompt}
-          onChange={(e) => setCustomPrompt(e.target.value)}
-        />
-        <div style={{ marginTop: 12, textAlign: 'right' }}>
-          <Button type="primary" loading={isGenerating} onClick={onSubmit}>
-            Generate custom report
-          </Button>
-        </div>
-      </Card>
-
-      {customReports.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            Past custom reports
-          </Typography.Text>
-          <div
-            style={{
-              marginTop: 8,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: 12
-            }}
-          >
-            {customReports.map((r) => {
-              const subjectMeta = SUBJECTS.find((s) => s.key === r.subject);
-              return (
-                <Card
-                  key={r.id}
-                  size="small"
-                  hoverable
-                  onClick={() => onOpen(r)}
-                  styles={{ body: { padding: 16 } }}
-                >
-                  <Tag color={subjectMeta?.color}>{subjectMeta?.label || r.subject}</Tag>
-                  <Typography.Paragraph
-                    style={{ marginTop: 8, marginBottom: 8, fontSize: 13 }}
-                    ellipsis={{ rows: 3 }}
-                  >
-                    {r.customPrompt}
-                  </Typography.Paragraph>
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    {formatDate(r.generatedAt)}
-                  </Typography.Text>
-                </Card>
-              );
-            })}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Space size={8} align="center" style={{ marginBottom: 4 }}>
+            <Tag color={subjectMeta?.color} style={{ margin: 0 }}>{subjectLabel}</Tag>
+            <Typography.Title level={4} style={{ margin: 0 }}>{typeLabel}</Typography.Title>
+          </Space>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {isPending
+                ? `Started ${formatDate(report.createdAt)}`
+                : `Generated ${formatDate(report.generatedAt || report.createdAt)}`}
+            </Typography.Text>
           </div>
         </div>
-      ) : null}
-    </section>
+        {!isPending && (
+          <Button
+            type="text"
+            shape="circle"
+            icon={<DeleteOutlined />}
+            onClick={handleDeleteClick}
+            aria-label="Delete report"
+            danger
+          />
+        )}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        {isPending ? (
+          <PendingReportBody report={report} />
+        ) : isFailed ? (
+          <FailedReportBody report={report} />
+        ) : (
+          <ReportBody report={report} />
+        )}
+      </div>
+    </div>
   );
 }
 
-function ReportViewer({ report, onClose }) {
-  const title = useMemo(() => {
-    if (!report) return '';
-    const subjectMeta = SUBJECTS.find((s) => s.key === report.subject);
-    const subjectLabel = subjectMeta?.label || report.subject;
-    if (report.reportType === 'wrong_questions') return `${subjectLabel} — Wrong Questions`;
-    if (report.reportType === 'strengths_weaknesses') return `${subjectLabel} — Strengths & Weaknesses`;
-    if (report.reportType === 'curriculum_map') return `${subjectLabel} — Curriculum Map`;
-    return `${subjectLabel} — Custom Report`;
-  }, [report]);
-
+function PendingReportBody({ report }) {
   return (
-    <Modal
-      open={!!report}
-      onCancel={onClose}
-      footer={null}
-      width={720}
-      title={title}
-      destroyOnClose
-    >
-      {report ? <ReportBody report={report} /> : null}
-    </Modal>
+    <div style={{ textAlign: 'center', padding: '48px 16px' }}>
+      <Spin
+        size="large"
+        indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />}
+      />
+      <Typography.Title level={5} style={{ marginTop: 16, marginBottom: 4 }}>
+        Generating report…
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        This usually takes a few seconds. The page refreshes automatically when it's ready.
+      </Typography.Paragraph>
+      {report.reportType === 'custom' && report.customPrompt ? (
+        <PromptCard prompt={report.customPrompt} style={{ marginTop: 24, textAlign: 'left' }} />
+      ) : null}
+    </div>
+  );
+}
+
+function FailedReportBody({ report }) {
+  return (
+    <div>
+      <Alert
+        type="error"
+        showIcon
+        message="Report generation failed"
+        description={report.error || 'The model didn’t return a usable report. Try again.'}
+      />
+      {report.reportType === 'custom' && report.customPrompt ? (
+        <PromptCard prompt={report.customPrompt} style={{ marginTop: 16 }} />
+      ) : null}
+    </div>
   );
 }
 
@@ -426,7 +721,7 @@ function WrongQuestionsBody({ content }) {
   const items = content?.items || [];
   if (items.length === 0) return <Empty description="No wrong answers recorded yet" />;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {items.map((q, idx) => (
         <Card key={idx} size="small" styles={{ body: { padding: 12 } }}>
           <Typography.Paragraph style={{ marginBottom: 6 }}>{q.question}</Typography.Paragraph>
@@ -456,7 +751,7 @@ function WrongQuestionsBody({ content }) {
 
 function StrengthsWeaknessesBody({ content, narrative }) {
   return (
-    <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+    <div>
       {narrative ? (
         <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>{narrative}</Typography.Paragraph>
       ) : null}
@@ -499,7 +794,7 @@ function StrengthsWeaknessesBody({ content, narrative }) {
 function CurriculumMapBody({ content, narrative }) {
   const areas = content?.areas || [];
   return (
-    <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+    <div>
       {narrative ? (
         <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>{narrative}</Typography.Paragraph>
       ) : null}
@@ -536,23 +831,38 @@ function CurriculumMapBody({ content, narrative }) {
 function CustomBody({ report }) {
   const content = report.content || {};
   return (
-    <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+    <div>
       {report.customPrompt ? (
-        <Card size="small" style={{ background: palette.bgPanel, marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
-          <Typography.Text type="secondary" style={{ fontSize: 11 }}>Your prompt</Typography.Text>
-          <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13 }}>{report.customPrompt}</Typography.Paragraph>
-        </Card>
+        <PromptCard prompt={report.customPrompt} style={{ marginBottom: 16 }} />
       ) : null}
       {content.narrative ? (
-        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>{content.narrative}</Typography.Paragraph>
+        <div
+          style={{
+            color: palette.textInkSoft,
+            fontSize: 15,
+            lineHeight: 1.65,
+            marginBottom: content.sections?.length ? 16 : 0
+          }}
+        >
+          <MarkdownMessage>{content.narrative}</MarkdownMessage>
+        </div>
       ) : null}
       {Array.isArray(content.sections) && content.sections.length > 0
         ? content.sections.map((s, i) => (
-            <Card key={i} size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 12 } }}>
-              <Typography.Text strong>{s.title}</Typography.Text>
-              <ul style={{ marginTop: 4, marginBottom: 0, paddingLeft: 18 }}>
+            <Card
+              key={i}
+              size="small"
+              style={{ marginBottom: 10, borderColor: palette.borderSoft }}
+              styles={{ body: { padding: 16 } }}
+            >
+              <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>
+                {s.title}
+              </Typography.Title>
+              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6 }}>
                 {(s.bullets || []).map((b, j) => (
-                  <li key={j}>{b}</li>
+                  <li key={j} style={{ marginBottom: 4 }}>
+                    <MarkdownMessage>{b}</MarkdownMessage>
+                  </li>
                 ))}
               </ul>
             </Card>
