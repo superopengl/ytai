@@ -132,7 +132,8 @@ export default function tutorSendMessage(fastify) {
       .select({
         id: tutorSession.id,
         currentDocId: tutorSession.currentDocId,
-        guidanceLevel: tutorSession.guidanceLevel
+        guidanceLevel: tutorSession.guidanceLevel,
+        subject: tutorSession.subject
       })
       .from(tutorSession)
       .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
@@ -184,7 +185,8 @@ export default function tutorSendMessage(fastify) {
       activeDoc,
       viewingPage,
       usedColors,
-      guidanceLevel: session.guidanceLevel
+      guidanceLevel: session.guidanceLevel,
+      subject: session.subject
     });
 
     const modelMessages = [

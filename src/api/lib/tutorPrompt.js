@@ -5,6 +5,7 @@ import { eq, inArray } from 'drizzle-orm';
 import db from '../db/index.js';
 import { imageOcr } from '../db/schema.js';
 import { ANNOTATION_COLOR_NAMES } from './annotationPalette.js';
+import isSubject, { DEFAULT_SUBJECT, SUBJECTS } from './tutorSubject.js';
 
 const PROMPTS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,6 +29,13 @@ const PACE_BY_LEVEL = {
   balanced: loadPrompt('tutorPace.balanced.md'),
   direct: loadPrompt('tutorPace.direct.md')
 };
+// Per-subject system prompts. One file per subject under prompts/subjects/.
+// Injected after the generic persona so subject-specific guidance (math
+// notation, reading evidence anchoring, writing planning, etc.) layers on
+// top of the shared teaching rules without duplicating them.
+const SUBJECT_PROMPTS = Object.fromEntries(
+  SUBJECTS.map((s) => [s, loadPrompt(`subjects/${s}.md`)])
+);
 // NSW K-10 Syllabus (2022) catalog — same file the post-session reporter
 // uses. Injected into every turn's system prompt so Brain can name the
 // outcome code, focus area, and stage/year when it wraps up a question.
@@ -80,12 +88,15 @@ export default async function tutorPrompt({
   activeDoc,
   viewingPage,
   usedColors = [],
-  guidanceLevel
+  guidanceLevel,
+  subject
 } = {}) {
   const level = isGuidanceLevel(guidanceLevel) ? guidanceLevel : DEFAULT_GUIDANCE_LEVEL;
+  const subjectKey = isSubject(subject) ? subject : DEFAULT_SUBJECT;
   const hasDoc = !!activeDoc && Array.isArray(activeDoc.pages) && activeDoc.pages.length > 0;
   const messages = [
     { role: 'system', content: PERSONA },
+    { role: 'system', content: SUBJECT_PROMPTS[subjectKey] },
     { role: 'system', content: PACE_BY_LEVEL[level] },
     {
       role: 'system',
