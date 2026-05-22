@@ -141,13 +141,15 @@ Post-session classification report for the parent/teacher view. One row per sess
 | `updated_at` | timestamptz | |
 
 ### `subject_report`
-Rollup of all of a user's `session_report` rows for one `(subject, report_type)`. Multiple types per `(user, subject)`:
+Rollup of all of a user's `session_report` rows for one `(subject, report_type)`. **Immutable once generated** — every generation request inserts a new row, so the Reports page shows a full history of past reports the user can scroll through and re-open. The only mutation on a row is its `pending → ready/failed` state transition during the original generation.
+
+Report types:
 - `wrong_questions` — deterministic aggregation of wrong/struggled questions; no LLM call.
 - `strengths_weaknesses` — LLM-generated narrative + structured strengths/weaknesses.
 - `curriculum_map` — LLM mapping onto curriculum focus areas with mastery state.
-- `custom` — user-supplied prompt, keyed by `prompt_hash` so identical prompts share a cached row.
+- `custom` — user-supplied prompt; `prompt_hash` is stored alongside the verbatim text for grouping but is no longer a uniqueness key.
 
-On generation the orchestrator first refreshes any stale `session_report` for this `(user, subject)` so the rollup sees fresh structured data. The LLM is fed the *structured* session data, never raw transcripts — that keeps cost bounded and is the only thing custom prompts see.
+On generation the orchestrator first refreshes any stale `session_report` for this `(user, subject)` so the new rollup sees fresh structured data, then inserts a fresh `subject_report` row. The LLM is fed the *structured* session data, never raw transcripts — that keeps cost bounded and is the only thing custom prompts see.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -155,21 +157,21 @@ On generation the orchestrator first refreshes any stale `session_report` for th
 | `user_id` | uuid | FK → `user.id` |
 | `subject` | text | `math` \| `thinking` \| `reading` \| `writing` |
 | `report_type` | text | `wrong_questions` \| `strengths_weaknesses` \| `curriculum_map` \| `custom` |
-| `prompt_hash` | text | sha256 of the normalized user prompt for `custom`; NULL for builtins |
+| `prompt_hash` | text | sha256 of the normalized user prompt for `custom`; NULL for builtins. Stored for grouping, not for uniqueness. |
 | `custom_prompt` | text | verbatim prompt for `custom`; NULL for builtins |
 | `status` | text | `pending` \| `ready` \| `failed` |
 | `content` | jsonb | shape varies by `report_type` (see route docs) |
 | `narrative` | text | optional adult-facing prose for LLM-generated types |
-| `included_sessions` | jsonb | snapshot `[{ sessionId, cursorMessageId }]` of which session reports were folded in. Drives the staleness check: any session whose `cursor_message_id` has moved, or any new session not in the snapshot, invalidates the row. |
+| `included_sessions` | jsonb | snapshot `[{ sessionId, cursorMessageId }]` of which session reports were folded in. Audit trail of what the row was built from. |
 | `model_version` | text | LLM that produced the row (NULL for `wrong_questions`) |
 | `prompt_tokens` | int | |
 | `completion_tokens` | int | |
 | `error` | text | |
-| `generated_at` | timestamptz | when the most recent `ready` was written |
-| `created_at` | timestamptz | |
+| `generated_at` | timestamptz | when `status` flipped to `ready` |
+| `created_at` | timestamptz | when the row was first inserted (`pending`) |
 | `updated_at` | timestamptz | |
 
-Unique index on `(user_id, subject, report_type, COALESCE(prompt_hash, ''))` — one row per builtin type and one row per distinct custom prompt.
+Indexed by `(user_id, created_at DESC)` to keep the Reports page list scan tight as history grows.
 
 ## Relationships
 
@@ -180,5 +182,5 @@ user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
      │                 ├──< session_message ──┐
      │                 │                      └─ optional FK → session_image
      │                 └── session_report (1:1) ── cursor_message_id → session_message
-     └──< subject_report  (1:N, one per (subject, report_type, prompt_hash))
+     └──< subject_report  (1:N, immutable rows — full history per (subject, report_type))
 ```

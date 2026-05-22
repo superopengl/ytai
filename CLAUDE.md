@@ -19,7 +19,7 @@ Multi-page app with these views:
 2. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
    - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
-3. **Reports** (`/reports`) — Grid of `subjects × builtin report types` plus a custom-prompt input. Renders cached `subject_report` rows and triggers generation on demand.
+3. **Reports** (`/reports`) — AntDesign Splitter layout: left panel lists every generated report (tagged with subject + report type + timestamp) as a scrollable history; right panel shows the selected report viewer, or — when nothing is selected — a "Generate a new report" pane with subject × builtin-type cards and a custom-prompt input. Every generation inserts a new immutable `subject_report` row.
 4. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
 
 Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sheet).
@@ -50,12 +50,12 @@ Pipeline flow diagram: [docs/pipeline.md](docs/pipeline.md)
 Two-tier rollup, both layers lazy + cached:
 
 1. **`session_report`** (one per session, structured `questions[]` + summary) — lazy-generated on first GET. Carries `cursor_message_id` pointing at the last folded `session_message`. Because messages are append-only and immutable, staleness is the trivial check `cursor != latest`. On refresh, only messages strictly after the cursor are loaded and the prior `questions[]` is passed to the LLM as starting context — merge, not re-summarize.
-2. **`subject_report`** (N per `(user, subject)`, keyed by `report_type`) — on-demand rollup of all of a user's session reports for one subject. Builtin types:
+2. **`subject_report`** (N per `(user, subject, report_type)`, immutable once generated) — on-demand rollup of all of a user's session reports for one subject. Every generation request inserts a fresh row carrying its own `created_at`, so the Reports page renders a complete history of past reports the user can re-open at any time. Builtin types:
    - `wrong_questions` — deterministic aggregation, **no LLM call**
    - `strengths_weaknesses` — LLM narrative + structured strengths/weaknesses
    - `curriculum_map` — LLM mapping to focus areas with mastery state
-   - `custom` — user-supplied prompt, keyed by `prompt_hash`; cached so identical prompts share results
-   Generation refreshes any stale session reports first, then runs the rollup. LLM-based types see only the *structured* session data, never raw transcripts.
+   - `custom` — user-supplied prompt; `prompt_hash` is stored for grouping, not for cache de-duplication
+   Generation refreshes any stale session reports first, then inserts the new subject report row. LLM-based types see only the *structured* session data, never raw transcripts.
 
 Subjects are the fixed 4-enum (math / thinking / reading / writing), bound 1:1 to a session and immutable.
 
@@ -81,7 +81,7 @@ Summary:
 - `POST /api/tutor/:sessionId/speak` — synthesize one sentence of MP3 audio (frontend buffers and chunks Brain's stream by sentence). Cached in `tts_audio` per `sha256(text + voice + model)` so kid-tutor catchphrases ("nice work!") are free on repeat. Returns 503 if `YTAI_TTS_BASE_URL` is unset.
 - `GET /api/tutor/:sessionId/report` — lazy-generated session report; **incrementally refreshes** when the session continues (cursor-based, append-only safe). `?force=1` rebuilds from scratch.
 - `GET /api/me/subject-reports` — list all `ready` subject-level reports for the current user.
-- `POST /api/me/subject-report` — generate / refresh a subject-level report. Body: `{ subject, reportType, customPrompt?, force? }`. `reportType ∈ { wrong_questions, strengths_weaknesses, curriculum_map, custom }`. Custom prompts are capped at 1000 chars and only ever see structured session data, never raw transcripts.
+- `POST /api/me/subject-report` — generate a new subject-level report. Every call inserts a new immutable row (no in-place refresh). Body: `{ subject, reportType, customPrompt? }`. `reportType ∈ { wrong_questions, strengths_weaknesses, curriculum_map, custom }`. Custom prompts are capped at 2000 chars and only ever see structured session data, never raw transcripts.
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 

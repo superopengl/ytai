@@ -162,7 +162,7 @@ Staleness: persisted reports carry a `cursor_message_id`. If new `session_messag
 ## Me (cross-session views)
 
 ### `GET /api/me/subject-reports`
-List every `ready` subject-level report for the current user, newest `generated_at` first. Drives the Reports page.
+List every `ready` subject-level report for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated.
 
 **Returns**:
 ```json
@@ -173,28 +173,28 @@ List every `ready` subject-level report for the current user, newest `generated_
       "status": "ready", "narrative": "", "content": { ... },
       "customPrompt": null, "promptHash": null,
       "generatedAt": "...", "includedSessions": [{ "sessionId": "...", "cursorMessageId": "..." }],
-      "updatedAt": "..."
+      "createdAt": "...", "updatedAt": "..."
     }
   ]
 }
 ```
 
 ### `POST /api/me/subject-report`
-Generate or refresh a subject-level report. Returns the cached row if its `included_sessions` snapshot is still up to date; otherwise refreshes any stale session reports first, then runs the rollup. Builtin types use a fixed prompt; `custom` accepts a user prompt and caches by `prompt_hash`.
+Generate a new subject-level report. **Every call inserts a new immutable row** — past reports stay around as a browsable history; there is no in-place refresh. Server refreshes any stale `session_report` for this `(user, subject)` first so the new rollup sees fresh structured data.
 
 **Body**:
 ```json
 {
   "subject": "math" | "thinking" | "reading" | "writing",
   "reportType": "wrong_questions" | "strengths_weaknesses" | "curriculum_map" | "custom",
-  "customPrompt": "string (required when reportType='custom'; max 1000 chars)",
-  "force": false
+  "customPrompt": "string (required when reportType='custom'; max 2000 chars)"
 }
 ```
 
 **Returns**:
 ```json
 {
+  "id": "uuid",
   "status": "ready" | "empty",
   "subject": "math",
   "reportType": "strengths_weaknesses",

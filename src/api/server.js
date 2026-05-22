@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import authGoogle from './routes/authGoogle.js';
 import healthcheck from './routes/healthcheck.js';
+import meDeleteSubjectReport from './routes/meDeleteSubjectReport.js';
 import meGenerateSubjectReport from './routes/meGenerateSubjectReport.js';
 import meListSubjectReports from './routes/meListSubjectReports.js';
 import tutorAppendDocPage from './routes/tutorAppendDocPage.js';
@@ -38,6 +39,7 @@ export default async function server() {
 
   healthcheck(app);
   authGoogle(app);
+  meDeleteSubjectReport(app);
   meGenerateSubjectReport(app);
   meListSubjectReports(app);
   tutorAppendDocPage(app);

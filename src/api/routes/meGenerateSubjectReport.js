@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { user } from '../db/schema.js';
-import generateSubjectReport, {
+import enqueueSubjectReport, {
   BUILTIN_REPORT_TYPES,
   VALID_SUBJECTS,
   normalizePrompt
@@ -9,18 +9,13 @@ import generateSubjectReport, {
 
 const DEV_USER_NAME = 'dev';
 
-// Best-effort per-user, per-(subject, type, promptHash) in-flight lock so
-// that double-clicks don't double-bill OpenRouter.
-const inFlight = new Map();
-
-const MAX_CUSTOM_PROMPT_LEN = 1000;
+const MAX_CUSTOM_PROMPT_LEN = 2000;
 
 export default function meGenerateSubjectReport(fastify) {
   fastify.post('/api/me/subject-report', async (request, reply) => {
     const body = request.body || {};
     const subject = String(body.subject || '').toLowerCase();
     const reportType = String(body.reportType || '');
-    const force = body.force === true || body.force === '1' || body.force === 'true';
     const customPrompt = body.customPrompt ?? null;
 
     if (!VALID_SUBJECTS.has(subject)) {
@@ -56,27 +51,22 @@ export default function meGenerateSubjectReport(fastify) {
       return { error: 'User not found' };
     }
 
-    const lockKey = `${bootstrapUser.id}:${subject}:${reportType}:${customPrompt ? normalizePrompt(customPrompt) : ''}`;
-    let pending = inFlight.get(lockKey);
-    if (!pending) {
-      pending = generateSubjectReport({
+    try {
+      // Returns as soon as the pending row is inserted; the actual
+      // rollup work happens in a background task. The client picks the
+      // pending row up via GET /api/me/subject-reports and polls until
+      // it transitions to 'ready' or 'failed'.
+      return await enqueueSubjectReport({
         userId: bootstrapUser.id,
         subject,
         reportType,
         customPrompt: isCustom ? customPrompt : null,
-        force,
         log: request.log
-      }).finally(() => inFlight.delete(lockKey));
-      inFlight.set(lockKey, pending);
-    }
-
-    try {
-      const result = await pending;
-      return result;
+      });
     } catch (err) {
-      request.log.error({ err, subject, reportType }, 'meGenerateSubjectReport: failed');
+      request.log.error({ err, subject, reportType }, 'meGenerateSubjectReport: enqueue failed');
       reply.code(502);
-      return { error: err.message?.slice(0, 500) || 'Failed to generate report' };
+      return { error: err.message?.slice(0, 500) || 'Failed to enqueue report' };
     }
   });
 }

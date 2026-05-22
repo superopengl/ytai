@@ -79,13 +79,14 @@ session_report (1 per session)
         │   ask LLM to merge prior questions[] with new transcript.
         │
         ▼
-subject_report (N per (user, subject))
+subject_report (N per (user, subject, report_type), immutable once generated)
    report_type ∈ { wrong_questions, strengths_weaknesses,
                    curriculum_map, custom }
-   included_sessions[] snapshots which session reports were folded in.
-   Staleness = any included cursor moved, or new session appeared.
+   Each generation request inserts a fresh row carrying its own created_at.
+   Past reports stay around as a browsable history.
+   included_sessions[] is an audit trail of which session reports were folded in.
    wrong_questions skips the LLM (deterministic aggregation).
-   custom is keyed by sha256(normalized prompt).
+   custom stores the verbatim prompt and a prompt_hash for grouping.
 ```
 
 Because `session_message` is append-only and immutable, the cursor is a simple `last_message_id` FK — no content-hash invalidation, no edit detection. Subject-report rollups feed the LLM the *structured* session data (`questions[]` + summaries), never raw transcripts — this keeps cost bounded and is also the safety boundary for user-supplied custom prompts.
