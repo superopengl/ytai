@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionDoc, sessionImage, tutorSession } from '../db/schema.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
@@ -19,6 +19,7 @@ import persistImage from '../lib/persistImage.js';
 export default function tutorCreateDoc(fastify) {
   fastify.post('/api/tutor/:sessionId/doc', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
     const images = Array.isArray(request.body?.images) ? request.body.images : [];
     const kind = typeof request.body?.kind === 'string' ? request.body.kind : 'images';
 
@@ -30,7 +31,7 @@ export default function tutorCreateDoc(fastify) {
     const [session] = await db()
       .select({ id: tutorSession.id })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
     if (!session) {
       reply.code(404);
       return { error: 'Session not found' };

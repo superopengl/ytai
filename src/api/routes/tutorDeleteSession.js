@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   imageOcr,
@@ -13,11 +13,12 @@ import {
 export default function tutorDeleteSession(fastify) {
   fastify.delete('/api/tutor/:sessionId', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
 
     const [session] = await db()
       .select({ id: tutorSession.id })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
 
     if (!session) {
       reply.code(404);

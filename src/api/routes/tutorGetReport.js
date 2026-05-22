@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionMessage, sessionReport, tutorSession } from '../db/schema.js';
 import generateSessionReport from '../lib/generateSessionReport.js';
@@ -11,12 +11,13 @@ const inFlight = new Map();
 export default function tutorGetReport(fastify) {
   fastify.get('/api/tutor/:sessionId/report', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
     const force = request.query?.force === '1' || request.query?.force === 'true';
 
     const [session] = await db()
       .select({ id: tutorSession.id })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
     if (!session) {
       reply.code(404);
       return { error: 'Session not found' };

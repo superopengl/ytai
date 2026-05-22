@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, ConfigProvider, Empty, message, Popconfirm, Spin, theme, Typography, Space } from 'antd';
 import { DeleteOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
 
 const SIDER_BG = palette.sider.bg;
@@ -12,6 +13,7 @@ const ACCENT = palette.sider.accent;
 
 export default function TutorSessionsSider({
   currentSessionId,
+  subject,
   onSelect,
   onNewSession,
   onSessionDeleted,
@@ -23,7 +25,7 @@ export default function TutorSessionsSider({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/tutor/sessions');
+      const res = await apiFetch('/api/tutor/sessions');
       if (!res.ok) throw new Error(`Sessions fetch failed (${res.status})`);
       const body = await res.json();
       setSessions(Array.isArray(body.sessions) ? body.sessions : []);
@@ -42,7 +44,7 @@ export default function TutorSessionsSider({
     async (sessionId) => {
       setDeletingId(sessionId);
       try {
-        const res = await fetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`Delete failed (${res.status})`);
         setSessions((prev) => (prev ? prev.filter((s) => s.id !== sessionId) : prev));
         onSessionDeleted?.(sessionId);
@@ -85,14 +87,12 @@ export default function TutorSessionsSider({
             </div>
           ) : error ? (
             <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
-          ) : sessions.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={<span style={{ color: TEXT_MUTED }}>No sessions yet</span>}
-              style={{ marginTop: 24 }}
-            />
-          ) : (
-            sessions.map((s) => (
+          ) : (() => {
+            const visible = subject ? sessions.filter((s) => s.subject === subject) : sessions;
+            if (visible.length === 0) {
+              return null;
+            }
+            return visible.map((s) => (
               <SessionRow
                 key={s.id}
                 session={s}
@@ -101,8 +101,8 @@ export default function TutorSessionsSider({
                 onSelect={onSelect}
                 onDelete={handleDelete}
               />
-            ))
-          )}
+            ));
+          })()}
         </div>
       </div>
     </ConfigProvider>

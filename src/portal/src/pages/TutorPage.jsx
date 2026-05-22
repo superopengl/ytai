@@ -7,6 +7,7 @@ import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 import Logo from '../components/Logo.jsx';
+import apiFetch from '../lib/apiFetch.js';
 import authSession from '../lib/authSession.js';
 import uploadDoc from '../lib/uploadDoc.js';
 import SUBJECTS from '../lib/subjects.js';
@@ -56,7 +57,11 @@ export default function TutorPage() {
     if (creatingSession) return;
     setCreatingSession(true);
     try {
-      const res = await fetch('/api/tutor/session', { method: 'POST' });
+      const res = await apiFetch('/api/tutor/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject })
+      });
       if (!res.ok) throw new Error(`Could not start session (${res.status})`);
       const body = await res.json();
       navigate(`/tutor/${body.sessionId}`);
@@ -65,7 +70,18 @@ export default function TutorPage() {
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, navigate]);
+  }, [creatingSession, navigate, subject]);
+
+  const onSubjectChange = useCallback(
+    (next) => {
+      if (next === subject) return;
+      setSubject(next);
+      // Drop the current session from the URL so the effect below picks
+      // (or creates) the top session for the newly-selected subject.
+      navigate('/tutor', { replace: true });
+    },
+    [navigate, subject]
+  );
 
   useEffect(() => {
     if (routeSessionId) {
@@ -75,16 +91,21 @@ export default function TutorPage() {
     let cancelled = false;
     (async () => {
       try {
-        const listRes = await fetch('/api/tutor/sessions');
+        const listRes = await apiFetch('/api/tutor/sessions');
         if (!listRes.ok) throw new Error(`Sessions fetch failed (${listRes.status})`);
         const list = await listRes.json();
         if (cancelled) return;
-        const top = Array.isArray(list.sessions) ? list.sessions[0] : null;
+        const all = Array.isArray(list.sessions) ? list.sessions : [];
+        const top = all.find((s) => s.subject === subject);
         if (top?.id) {
           navigate(`/tutor/${top.id}`, { replace: true });
           return;
         }
-        const createRes = await fetch('/api/tutor/session', { method: 'POST' });
+        const createRes = await apiFetch('/api/tutor/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject })
+        });
         if (!createRes.ok) throw new Error(`Could not start session (${createRes.status})`);
         const body = await createRes.json();
         if (cancelled) return;
@@ -97,13 +118,17 @@ export default function TutorPage() {
     return () => {
       cancelled = true;
     };
-  }, [routeSessionId, navigate]);
+  }, [routeSessionId, navigate, subject]);
 
-  const handleDocsLoaded = useCallback(({ docs: loadedDocs, currentDocId: loadedCurrent, aiAnnotationsByPage: loadedAi }) => {
+  const handleDocsLoaded = useCallback(({ docs: loadedDocs, currentDocId: loadedCurrent, subject: loadedSubject, aiAnnotationsByPage: loadedAi }) => {
     setDocs(loadedDocs);
     setCurrentDocId(loadedCurrent);
     setCurrentPage(1);
     setAiAnnotationsByPage(loadedAi ?? new Map());
+    // Keep the subject dropdown synced with whatever this session actually
+    // is — opening a /tutor/:id URL for a non-math session should swap the
+    // selector to match instead of misrepresenting the session.
+    if (loadedSubject) setSubject(loadedSubject);
   }, []);
 
   const handleDocCreated = useCallback((doc) => {
@@ -141,7 +166,7 @@ export default function TutorPage() {
       setCurrentDocId(docId);
       setCurrentPage(pageNumber);
       try {
-        const res = await fetch(`/api/tutor/${sessionId}`, {
+        const res = await apiFetch(`/api/tutor/${sessionId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ currentDocId: docId })
@@ -177,7 +202,7 @@ export default function TutorPage() {
       {modalContextHolder}
       <header
         style={{
-          padding: '12px 24px',
+          padding: '12px 24px 12px 12px',
           background: palette.surface,
           borderBottom: `1px solid ${palette.borderSoft}`,
           display: 'flex',
@@ -186,8 +211,7 @@ export default function TutorPage() {
         }}
       >
         <Button
-          type="text"
-          shape="circle"
+          type="default"
           icon={<MenuOutlined />}
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
@@ -197,7 +221,7 @@ export default function TutorPage() {
         <div style={{ marginLeft: 'auto' }}>
           <Select
             value={subject}
-            onChange={setSubject}
+            onChange={onSubjectChange}
             style={{ minWidth: 180 }}
             options={SUBJECTS.map((s) => {
               const Icon = s.icon;
@@ -288,81 +312,66 @@ export default function TutorPage() {
           ]}
         />
       </Drawer>
-      {subject !== 'math' ? (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: palette.surface,
-            color: palette.textDisabled
-          }}
+      <Splitter
+        className="ytai-sider-splitter"
+        style={{ flex: 1, minHeight: 0, background: palette.surface }}
+      >
+        <Splitter.Panel
+          defaultSize={260}
+          min={180}
+          max="40%"
+          collapsible={{ start: true, end: true, showCollapsibleIcon: true }}
         >
-          Coming soon
-        </div>
-      ) : (
-        <Splitter
-          className="ytai-sider-splitter"
-          style={{ flex: 1, minHeight: 0, background: palette.surface }}
-        >
-          <Splitter.Panel
-            defaultSize={260}
-            min={180}
-            max="40%"
-            collapsible={{ start: true, end: true, showCollapsibleIcon: true }}
-          >
-            <TutorSessionsSider
-              currentSessionId={sessionId}
-              onSelect={onSelectSession}
-              onNewSession={onNewSession}
-              onSessionDeleted={onSessionDeleted}
-              creatingSession={creatingSession}
-            />
-          </Splitter.Panel>
-          <Splitter.Panel>
-            <Splitter style={{ height: '100%', minHeight: 0 }}>
-              <Splitter.Panel defaultSize="58%" min="30%" max="80%">
-                <div
-                  style={{
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: 4,
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  {currentDoc ? (
-                    <PagedCanvas
-                      doc={currentDoc}
-                      sessionId={sessionId}
-                      currentPage={currentPage}
-                      onCurrentPageChange={setCurrentPage}
-                      aiAnnotationsByPage={aiAnnotationsByPage}
-                      onClearPageAi={handleClearPageAi}
-                    />
-                  ) : (
-                    <PhotoCapture onStart={handlePhotoCaptureStart} busy={uploading} />
-                  )}
-                </div>
-              </Splitter.Panel>
-              <Splitter.Panel>
-                <ChatPanel
-                  sessionId={sessionId}
-                  currentDocId={currentDocId}
-                  currentPage={currentPage}
-                  docs={docs}
-                  onDocsLoaded={handleDocsLoaded}
-                  onDocCreated={handleDocCreated}
-                  onAiAnnotation={handleAiAnnotation}
-                  onSelectDoc={handleSelectDoc}
-                />
-              </Splitter.Panel>
-            </Splitter>
-          </Splitter.Panel>
-        </Splitter>
-      )}
+          <TutorSessionsSider
+            currentSessionId={sessionId}
+            subject={subject}
+            onSelect={onSelectSession}
+            onNewSession={onNewSession}
+            onSessionDeleted={onSessionDeleted}
+            creatingSession={creatingSession}
+          />
+        </Splitter.Panel>
+        <Splitter.Panel>
+          <Splitter style={{ height: '100%', minHeight: 0 }}>
+            <Splitter.Panel defaultSize="58%" min="30%" max="80%">
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 4,
+                  boxSizing: 'border-box'
+                }}
+              >
+                {currentDoc ? (
+                  <PagedCanvas
+                    doc={currentDoc}
+                    sessionId={sessionId}
+                    currentPage={currentPage}
+                    onCurrentPageChange={setCurrentPage}
+                    aiAnnotationsByPage={aiAnnotationsByPage}
+                    onClearPageAi={handleClearPageAi}
+                  />
+                ) : (
+                  <PhotoCapture onStart={handlePhotoCaptureStart} busy={uploading} />
+                )}
+              </div>
+            </Splitter.Panel>
+            <Splitter.Panel>
+              <ChatPanel
+                sessionId={sessionId}
+                currentDocId={currentDocId}
+                currentPage={currentPage}
+                docs={docs}
+                onDocsLoaded={handleDocsLoaded}
+                onDocCreated={handleDocCreated}
+                onAiAnnotation={handleAiAnnotation}
+                onSelectDoc={handleSelectDoc}
+              />
+            </Splitter.Panel>
+          </Splitter>
+        </Splitter.Panel>
+      </Splitter>
     </div>
   );
 }

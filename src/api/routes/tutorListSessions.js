@@ -1,17 +1,10 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import db from '../db/index.js';
-import { sessionMessage, tutorSession, user } from '../db/schema.js';
-
-const DEV_USER_NAME = 'dev';
+import { sessionMessage, tutorSession } from '../db/schema.js';
 
 export default function tutorListSessions(fastify) {
-  fastify.get('/api/tutor/sessions', async () => {
-    const [bootstrapUser] = await db()
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.name, DEV_USER_NAME));
-
-    if (!bootstrapUser) return { sessions: [] };
+  fastify.get('/api/tutor/sessions', async (request) => {
+    const userId = request.userId;
 
     // mapWith routes the aggregate result through the same Date converter
     // the column uses, so the client gets an ISO timestamp instead of the
@@ -30,7 +23,7 @@ export default function tutorListSessions(fastify) {
       })
       .from(tutorSession)
       .leftJoin(sessionMessage, eq(sessionMessage.sessionId, tutorSession.id))
-      .where(eq(tutorSession.userId, bootstrapUser.id))
+      .where(eq(tutorSession.userId, userId))
       .groupBy(tutorSession.id)
       .orderBy(desc(lastActivityExpr));
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import apiFetch from '../lib/apiFetch.js';
 import normalizeForSpeech from '../lib/normalizeForSpeech.js';
 import splitSentences from '../lib/splitSentences.js';
 
@@ -187,7 +188,7 @@ export default function useTutorVoice(sessionId) {
       if (!text || text.length > MAX_SENTENCE_CHARS) return;
 
       const controller = new AbortController();
-      const urlPromise = fetch(`/api/tutor/${sessionId}/speak`, {
+      const urlPromise = apiFetch(`/api/tutor/${sessionId}/speak`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),

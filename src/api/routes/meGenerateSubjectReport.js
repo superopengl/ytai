@@ -1,12 +1,7 @@
-import { eq } from 'drizzle-orm';
-import db from '../db/index.js';
-import { user } from '../db/schema.js';
 import enqueueSubjectReport, {
   VALID_SUBJECTS,
   normalizePrompt
 } from '../lib/generateSubjectReport.js';
-
-const DEV_USER_NAME = 'dev';
 
 const MAX_PROMPT_LEN = 2000;
 
@@ -31,22 +26,13 @@ export default function meGenerateSubjectReport(fastify) {
       return { error: `prompt must be ${MAX_PROMPT_LEN} characters or fewer.` };
     }
 
-    const [bootstrapUser] = await db()
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.name, DEV_USER_NAME));
-    if (!bootstrapUser) {
-      reply.code(404);
-      return { error: 'User not found' };
-    }
-
     try {
       // Returns as soon as the pending row is inserted; the actual
       // rollup work happens in a background task. The client picks the
       // pending row up via GET /api/me/subject-reports and polls until
       // it transitions to 'ready' or 'failed'.
       return await enqueueSubjectReport({
-        userId: bootstrapUser.id,
+        userId: request.userId,
         subject,
         prompt: normalized,
         log: request.log

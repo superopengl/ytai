@@ -1,3 +1,4 @@
+import apiFetch from './apiFetch.js';
 import fileToDataUrl from './fileToDataUrl.js';
 import pdfToPages from './pdfToPages.js';
 
@@ -32,7 +33,7 @@ export default async function uploadDoc(sessionId, files) {
   if (pages.length === 0) {
     throw new Error('No images decoded from upload.');
   }
-  const res = await fetch(`/api/tutor/${sessionId}/doc`, {
+  const res = await apiFetch(`/api/tutor/${sessionId}/doc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ images: pages, kind: hadPdf ? 'pdf' : 'images' })

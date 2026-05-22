@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Empty, Skeleton, Space, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
 
 const MISTAKE_COLORS = {
@@ -88,7 +89,7 @@ export default function SessionReportPanel({ sessionId, active }) {
       setError(null);
       try {
         const url = `/api/tutor/${sessionId}/report${force ? '?force=1' : ''}`;
-        const res = await fetch(url);
+        const res = await apiFetch(url);
         const body = await res.json();
         if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
         setReport(body);

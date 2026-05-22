@@ -1,10 +1,11 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionDoc, sessionImage, sessionMessage, tutorSession } from '../db/schema.js';
 
 export default function tutorGetMessages(fastify) {
   fastify.get('/api/tutor/:sessionId/messages', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
 
     const [session] = await db()
       .select({
@@ -14,7 +15,7 @@ export default function tutorGetMessages(fastify) {
         currentDocId: tutorSession.currentDocId
       })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
 
     if (!session) {
       reply.code(404);

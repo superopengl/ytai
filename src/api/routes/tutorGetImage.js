@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { sessionImage } from '../db/schema.js';
+import { sessionImage, tutorSession } from '../db/schema.js';
 
 // Serves the flattened canvas bytes (photo + student strokes) for a given
 // session_image row. Used by the chat UI to show the same image the student
@@ -11,11 +11,19 @@ import { sessionImage } from '../db/schema.js';
 export default function tutorGetImage(fastify) {
   fastify.get('/api/tutor/:sessionId/image/:imageId', async (request, reply) => {
     const { sessionId, imageId } = request.params;
+    const userId = request.userId;
 
     const [row] = await db()
       .select({ storageUrl: sessionImage.storageUrl })
       .from(sessionImage)
-      .where(and(eq(sessionImage.id, imageId), eq(sessionImage.sessionId, sessionId)));
+      .innerJoin(tutorSession, eq(sessionImage.sessionId, tutorSession.id))
+      .where(
+        and(
+          eq(sessionImage.id, imageId),
+          eq(sessionImage.sessionId, sessionId),
+          eq(tutorSession.userId, userId)
+        )
+      );
 
     if (!row) {
       reply.code(404);

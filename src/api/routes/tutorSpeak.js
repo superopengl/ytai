@@ -59,7 +59,7 @@ export default function tutorSpeak(fastify) {
     const [session] = await db()
       .select({ id: tutorSession.id })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, request.userId)));
     if (!session) {
       reply.code(404);
       return { error: 'Session not found' };

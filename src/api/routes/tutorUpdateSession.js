@@ -7,6 +7,7 @@ import isSubject, { SUBJECTS } from '../lib/tutorSubject.js';
 export default function tutorUpdateSession(fastify) {
   fastify.patch('/api/tutor/:sessionId', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
     const body = request.body ?? {};
     const hasGuidance = Object.prototype.hasOwnProperty.call(body, 'guidanceLevel');
     const hasSubject = Object.prototype.hasOwnProperty.call(body, 'subject');
@@ -49,7 +50,7 @@ export default function tutorUpdateSession(fastify) {
     const [updated] = await db()
       .update(tutorSession)
       .set(patch)
-      .where(eq(tutorSession.id, sessionId))
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)))
       .returning({
         id: tutorSession.id,
         guidanceLevel: tutorSession.guidanceLevel,

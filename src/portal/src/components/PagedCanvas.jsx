@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Typography } from 'antd';
 import AnnotationCanvas from './AnnotationCanvas.jsx';
+import AuthedImage from './AuthedImage.jsx';
+import useAuthedImageUrl from '../hooks/useAuthedImageUrl.js';
 import { palette } from '../theme.js';
 
 const ACCENT_BLUE = palette.subjects.math.color;
@@ -73,12 +75,16 @@ export default function PagedCanvas({
   }
 
   const imageUrl = `/api/tutor/${sessionId}/image/${activePage.id}`;
+  // Konva calls `new Image().src = imageUrl` — that bypasses fetch and
+  // can't send the Authorization header — so resolve the protected URL
+  // to a blob: URL the browser can load directly.
+  const canvasImageUrl = useAuthedImageUrl(imageUrl);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <AnnotationCanvas
-          imageUrl={imageUrl}
+          imageUrl={canvasImageUrl}
           lines={activeLines}
           onLinesChange={setActiveLines}
           aiAnnotations={activeAi}
@@ -134,7 +140,7 @@ function PageStrip({ pages, activePageNumber, sessionId, aiAnnotationsByPage, on
             }}
             aria-label={`Page ${page.pageNumber}${active ? ' (current)' : ''}`}
           >
-            <img
+            <AuthedImage
               src={`/api/tutor/${sessionId}/image/${page.id}`}
               alt={`page ${page.pageNumber}`}
               style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4, display: 'block' }}

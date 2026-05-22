@@ -28,6 +28,7 @@ import {
   PlusOutlined
 } from '@ant-design/icons';
 import SUBJECTS from '../lib/subjects.js';
+import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
 import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
@@ -178,7 +179,7 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/me/subject-reports');
+      const res = await apiFetch('/api/me/subject-reports');
       if (!res.ok) throw new Error(`Could not load reports (${res.status})`);
       const body = await res.json();
       setReports(body.reports || []);
@@ -218,7 +219,7 @@ export default function ReportsPage() {
     }
     setGenerating(`${customSubject}::${trimmed}`);
     try {
-      const res = await fetch('/api/me/subject-report', {
+      const res = await apiFetch('/api/me/subject-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject: customSubject, prompt: trimmed })
@@ -257,7 +258,7 @@ export default function ReportsPage() {
   const handleDelete = useCallback(
     async (id) => {
       try {
-        const res = await fetch(`/api/me/subject-report/${id}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/me/subject-report/${id}`, { method: 'DELETE' });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body?.error || `Delete failed (${res.status})`);
@@ -276,7 +277,7 @@ export default function ReportsPage() {
     <div style={{ height: '100vh', background: palette.bgPanel, display: 'flex', flexDirection: 'column' }}>
       <header
         style={{
-          padding: '12px 24px',
+          padding: '12px 24px 12px 12px',
           background: palette.surface,
           borderBottom: `1px solid ${palette.borderSoft}`,
           display: 'flex',

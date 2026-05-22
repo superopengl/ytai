@@ -12,9 +12,11 @@ import {
   SoundOutlined,
   StopOutlined
 } from '@ant-design/icons';
+import apiFetch, { authHeaders } from '../lib/apiFetch.js';
 import streamSSE from '../lib/streamSSE.js';
 import uploadDoc from '../lib/uploadDoc.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
+import AuthedImage from './AuthedImage.jsx';
 import { palette } from '../theme.js';
 
 // Subject-blue is the "accent" for chat — it's the math subject color and
@@ -73,7 +75,7 @@ export default function ChatPanel({
     setHistoryLoaded(false);
     setError(null);
 
-    fetch(`/api/tutor/${sessionId}/messages`)
+    apiFetch(`/api/tutor/${sessionId}/messages`)
       .then((res) => {
         if (!res.ok) throw new Error(`History fetch failed (${res.status})`);
         return res.json();
@@ -108,6 +110,7 @@ export default function ChatPanel({
         onDocsLoaded?.({
           docs: body.docs ?? [],
           currentDocId: body.session?.currentDocId ?? null,
+          subject: body.session?.subject ?? null,
           aiAnnotationsByPage: aiByPage
         });
       })
@@ -162,7 +165,7 @@ export default function ChatPanel({
       const previous = guidanceLevel;
       setGuidanceLevel(next);
       try {
-        const res = await fetch(`/api/tutor/${sessionId}`, {
+        const res = await apiFetch(`/api/tutor/${sessionId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ guidanceLevel: next })
@@ -242,7 +245,7 @@ export default function ChatPanel({
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           content: text,
           viewingPage: Number.isInteger(currentPage) ? currentPage : undefined
@@ -713,7 +716,7 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
           onClick={(e) => e.stopPropagation()}
         >
           {pages.map((page) => (
-            <img
+            <AuthedImage
               key={page.id}
               src={`/api/tutor/${sessionId}/image/${page.id}`}
               alt={`page ${page.pageNumber}`}

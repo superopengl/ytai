@@ -1,17 +1,10 @@
 import { desc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
-import { subjectReport, user } from '../db/schema.js';
-
-const DEV_USER_NAME = 'dev';
+import { subjectReport } from '../db/schema.js';
 
 export default function meListSubjectReports(fastify) {
-  fastify.get('/api/me/subject-reports', async () => {
-    const [bootstrapUser] = await db()
-      .select({ id: user.id })
-      .from(user)
-      .where(eq(user.name, DEV_USER_NAME));
-
-    if (!bootstrapUser) return { reports: [] };
+  fastify.get('/api/me/subject-reports', async (request) => {
+    const userId = request.userId;
 
     // Return rows in every status — pending rows let the Reports page
     // render a "Generating…" card the moment the user kicks off a
@@ -32,7 +25,7 @@ export default function meListSubjectReports(fastify) {
         updatedAt: subjectReport.updatedAt
       })
       .from(subjectReport)
-      .where(eq(subjectReport.userId, bootstrapUser.id))
+      .where(eq(subjectReport.userId, userId))
       .orderBy(desc(subjectReport.createdAt));
 
     return { reports: rows };

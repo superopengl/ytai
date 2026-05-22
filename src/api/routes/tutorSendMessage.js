@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   sessionDoc,
@@ -114,6 +114,7 @@ async function loadActiveDoc(sessionId, currentDocId, log) {
 export default function tutorSendMessage(fastify) {
   fastify.post('/api/tutor/:sessionId/message', async (request, reply) => {
     const { sessionId } = request.params;
+    const userId = request.userId;
     const content = typeof request.body?.content === 'string' ? request.body.content.trim() : '';
     // Frontend hint: which page of the doc the student is currently
     // looking at. Passed into the prompt so Brain biases page-specific
@@ -134,7 +135,7 @@ export default function tutorSendMessage(fastify) {
         guidanceLevel: tutorSession.guidanceLevel
       })
       .from(tutorSession)
-      .where(eq(tutorSession.id, sessionId));
+      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
 
     if (!session) {
       reply.code(404);

@@ -36,6 +36,24 @@ export default async function server() {
   }
   await app.register(fastifyJwt, { secret: jwtSecret });
 
+  // Every /api/* request except /api/auth/* and /healthcheck must carry a
+  // valid YTAI JWT. We verify once here and stash the user id on the
+  // request so individual route handlers can scope every query to the
+  // authenticated user — no per-route auth boilerplate, no chance of
+  // forgetting to filter.
+  app.addHook('onRequest', async (request, reply) => {
+    const url = request.raw.url || '';
+    if (!url.startsWith('/api/')) return;
+    if (url.startsWith('/api/auth/')) return;
+    try {
+      await request.jwtVerify();
+      request.userId = request.user?.sub;
+      if (!request.userId) throw new Error('JWT missing sub claim');
+    } catch (err) {
+      reply.code(401).send({ error: 'Unauthorized' });
+    }
+  });
+
   healthcheck(app);
   authGoogle(app);
   meDeleteSubjectReport(app);
