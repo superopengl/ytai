@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Menu, message, Modal, Splitter, Tabs, Tag, Typography } from 'antd';
+import { Avatar, Button, Drawer, Menu, message, Modal, Select, Splitter, Tabs, Typography } from 'antd';
 import { MenuOutlined, UserOutlined } from '@ant-design/icons';
 import PhotoCapture from '../components/PhotoCapture.jsx';
 import PagedCanvas from '../components/PagedCanvas.jsx';
@@ -205,35 +205,31 @@ export default function TutorPage() {
       >
         <Button
           type="text"
-          size="large"
+          shape="circle"
           icon={<MenuOutlined />}
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
         />
         <Logo height={32} />
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {SUBJECTS.map((s) => {
-            const active = subject === s.key;
-            return (
-              <Tag.CheckableTag
-                key={s.key}
-                checked={active}
-                onChange={() => setSubject(s.key)}
-                style={{
-                  padding: '4px 14px',
-                  fontSize: 14,
-                  borderRadius: 16,
-                  border: `1px solid ${active ? s.color : 'transparent'}`,
-                  background: active ? s.color : s.tint,
-                  color: active ? palette.surface : s.color
-                }}
-              >
-                {active && <s.icon style={{ marginRight: 6 }} />}
-                {s.label}
-              </Tag.CheckableTag>
-            );
-          })}
+        <div style={{ marginLeft: 'auto' }}>
+          <Select
+            value={subject}
+            onChange={setSubject}
+            style={{ minWidth: 180 }}
+            options={SUBJECTS.map((s) => {
+              const Icon = s.icon;
+              return {
+                value: s.key,
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <Icon style={{ color: s.color }} />
+                    {s.label}
+                  </span>
+                )
+              };
+            })}
+          />
         </div>
       </header>
       <Drawer
@@ -266,6 +262,7 @@ export default function TutorPage() {
           selectable={false}
           style={{ border: 'none', flex: 1 }}
           onClick={({ key }) => {
+            if (key === '/') return; // handled by the anchor below
             if (key === 'logout') {
               modal.confirm({
                 title: 'Log out?',
@@ -285,9 +282,22 @@ export default function TutorPage() {
             navigate(key);
           }}
           items={[
-            { key: '/', label: 'Home' },
+            {
+              key: '/',
+              label: (
+                <a
+                  href="/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setDrawerOpen(false)}
+                  style={{ display: 'block', color: 'inherit' }}
+                >
+                  Home
+                </a>
+              )
+            },
             { key: '/tutor', label: 'Tutor' },
-            { key: '/reports', label: 'Reports' },
+            { key: '/reports', label: 'Analysis Reports' },
             { type: 'divider' },
             {
               key: 'logout',
