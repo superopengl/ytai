@@ -148,13 +148,12 @@ export default function AnnotationCanvas({
 
         <span style={toolbarDividerStyle} />
 
-        <Tooltip title="Pen thickness">
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
-              padding: '0 8px'
+              padding: '0 8px',
             }}
           >
             <span
@@ -175,11 +174,10 @@ export default function AnnotationCanvas({
               value={penWidth}
               onChange={setPenWidth}
               style={{ width: 120, margin: 0 }}
-              tooltip={{ formatter: (v) => `${v}px` }}
+              tooltip={{formatter: null}}
             />
             <span style={{ minWidth: 28, fontSize: 12, color: palette.textHint }}>{penWidth}px</span>
           </div>
-        </Tooltip>
 
         {toolbarExtras}
       </Space>
