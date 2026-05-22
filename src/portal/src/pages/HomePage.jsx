@@ -38,7 +38,8 @@ const {
   textMuted: INK_MUTED,
   textHint: INK_HINT,
   onDark: ON_DARK,
-  gradient: GRAD
+  gradient: GRAD,
+  tint: TINT
 } = palette;
 
 const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
@@ -424,12 +425,57 @@ export default function HomePage() {
           padding: 'clamp(120px, 14vw, 160px) 24px clamp(80px, 10vw, 110px)',
           position: 'relative',
           overflow: 'hidden',
-          background: BG
+          background: `
+            radial-gradient(ellipse 80% 60% at 50% 0%, ${TINT.primary} 0%, transparent 70%),
+            linear-gradient(180deg, ${TINT.primary} 0%, ${BG} 60%)
+          `
         }}
       >
-        <Blob color={LAVENDER} size={420} top={-100} left={-140} opacity={0.55} blur={70} />
-        <Blob color={MINT} size={320} top={140} right="-60px" kind="b" opacity={0.5} blur={70} />
-        <Blob color={PEACH} size={260} bottom={-60} left="22%" opacity={0.35} blur={60} />
+        {/* Tech dot-grid — fades center-out so the pattern reads as
+            "infinite plane" without fighting the headline. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: `radial-gradient(circle, ${SAGE_DARK}40 1px, transparent 1.4px)`,
+            backgroundSize: '26px 26px',
+            maskImage:
+              'radial-gradient(ellipse 75% 70% at 50% 45%, black 20%, transparent 85%)',
+            WebkitMaskImage:
+              'radial-gradient(ellipse 75% 70% at 50% 45%, black 20%, transparent 85%)',
+            pointerEvents: 'none'
+          }}
+        />
+        {/* Diagonal scan beam — HUD-style highlight angling across the hero. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(115deg, transparent 35%, ${SAGE}1F 50%, transparent 65%)`,
+            mixBlendMode: 'screen',
+            pointerEvents: 'none'
+          }}
+        />
+        {/* Thin glowing horizon line at the section seam — "data plane" cue. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 1,
+            background: `linear-gradient(90deg, transparent 0%, ${SAGE}99 50%, transparent 100%)`,
+            boxShadow: `0 0 24px ${SAGE}88`,
+            pointerEvents: 'none'
+          }}
+        />
+        <Blob color={SAGE} size={520} top={-120} left={-160} opacity={0.4} blur={90} />
+        <Blob color={MAUVE} size={420} top={80} right="-100px" kind="b" opacity={0.32} blur={90} />
+        <Blob color={MINT} size={300} top={260} right="12%" kind="b" opacity={0.35} blur={70} />
+        <Blob color={PEACH} size={240} bottom={-40} left="22%" opacity={0.25} blur={60} />
 
         <div
           className="hero-grid"
@@ -453,11 +499,13 @@ export default function HomePage() {
                 alignItems: 'center',
                 gap: 10,
                 padding: '8px 18px',
-                background: BG,
-                color: SAGE,
+                background: SAGE,
+                color: '#fff',
                 fontSize: 14,
-                fontWeight: 600,
-                marginBottom: 28
+                fontWeight: 700,
+                letterSpacing: 0.3,
+                marginBottom: 28,
+                boxShadow: `0 6px 18px ${SAGE}55`
               }}
             >
               <span
@@ -465,9 +513,9 @@ export default function HomePage() {
                 style={{
                   width: 10,
                   height: 10,
-                  background: SAGE,
+                  background: '#fff',
                   borderRadius: '50%',
-                  boxShadow: `0 0 0 4px ${SAGE}22`
+                  boxShadow: '0 0 0 4px rgba(255,255,255,0.35)'
                 }}
               />
               Early access · A calmer way to learn
@@ -476,16 +524,26 @@ export default function HomePage() {
             <Title
               style={{
                 fontFamily: QUICKSAND,
-                fontSize: 'clamp(44px, 7vw, 76px)',
+                fontSize: 'clamp(48px, 7.5vw, 84px)',
                 marginBottom: 22,
-                lineHeight: 1.05,
-                letterSpacing: -1.5,
+                lineHeight: 1.02,
+                letterSpacing: -1.8,
                 color: INK,
-                fontWeight: 700
+                fontWeight: 800
               }}
             >
-              Homework, <br />
-              <span className="gradient-text">made gentler.</span>
+              <span
+                style={{
+                  background: GRAD.text,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
+                Homework,
+              </span>{' '}
+              <br />
+              <span style={{ color: SAGE_DARK }}>made gentler.</span>
             </Title>
             <Paragraph
               style={{
@@ -510,9 +568,10 @@ export default function HomePage() {
                 alignItems: 'center',
                 gap: 14,
                 padding: '24px 28px 22px',
-                background: BG,
+                background: WHITE,
                 borderRadius: radius.xl,
-                boxShadow: stickerShadow.card,
+                border: `2px solid ${SAGE}33`,
+                boxShadow: `0 14px 40px ${SAGE}33, ${stickerShadow.card}`,
                 scrollMarginTop: 100
               }}
             >
