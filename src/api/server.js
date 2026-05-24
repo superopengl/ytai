@@ -1,5 +1,9 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import fastifyStatic from '@fastify/static';
 import authEmail from './routes/authEmail.js';
 import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
@@ -74,6 +78,32 @@ export default async function server() {
   tutorSendMessage(app);
   tutorSpeak(app);
   tutorUpdateSession(app);
+
+  // SPA serving — only in prod, and only when the built portal exists.
+  // In dev, Vite serves the portal separately on YTAI_PORTAL_PORT, so the
+  // API doesn't need to ship static files. In prod, dist/public lands at
+  // /opt/ytai/public (kpai-style image layout: dist contents copied flat).
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const publicDir = path.resolve(__dirname, '../../public');
+  if (isProd && existsSync(publicDir)) {
+    await app.register(fastifyStatic, { root: publicDir, prefix: '/' });
+    // SPA fallback: any non-/api/* miss falls through to index.html so
+    // react-router-dom can take over client-side. /api/* keeps the
+    // standard JSON 404 so misrouted API calls don't silently land on
+    // the HTML shell.
+    app.setNotFoundHandler((request, reply) => {
+      const url = request.raw.url || '';
+      if (url.startsWith('/api/')) {
+        reply.code(404).send({
+          message: `Route ${request.method}:${url} not found`,
+          error: 'Not Found',
+          statusCode: 404,
+        });
+        return;
+      }
+      reply.sendFile('index.html');
+    });
+  }
 
   try {
     await bootstrapAdmin(app.log);
