@@ -93,7 +93,25 @@ export default function GoogleSignInButton({
             logo_alignment: 'left'
           });
         }
-        setReady(true);
+        // renderButton injects the GIS iframe asynchronously. Poll for the
+        // [role="button"] element before flipping ready, so the AntD proxy
+        // click always has something to forward to. Without this gate,
+        // fast-loading prod bundles set ready=true before the iframe is in
+        // the DOM, and the first click reports "still loading".
+        const startedAt = Date.now();
+        const waitForButton = () => {
+          if (cancelled) return;
+          if (hiddenRef.current?.querySelector('[role="button"]')) {
+            setReady(true);
+            return;
+          }
+          if (Date.now() - startedAt > 5000) {
+            setError('Google sign-in failed to render. Please refresh.');
+            return;
+          }
+          setTimeout(waitForButton, 80);
+        };
+        waitForButton();
       })
       .catch((e) => {
         setError(e.message);
