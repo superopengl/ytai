@@ -255,8 +255,88 @@ export default function LogoPage() {
               minHeight: 200
             }}
           >
-            <Logo variant="mark" height={120} />
+            <Logo variant="square" height={120} />
           </NeuCard>
+        </div>
+
+        <Title level={3} style={{ fontFamily: QUICKSAND }}>
+          Square & app icon
+        </Title>
+        <Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
+          The <Text code>square</Text> variant is the source for every favicon and the iOS
+          home-screen icon. The "app icon" tile shows what it looks like after the iPhone
+          home-screen mask is applied — a generous rounded square that reads as a native iOS app
+          at any size.
+        </Paragraph>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 24,
+            marginBottom: 56
+          }}
+        >
+          <NeuCard
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 200
+            }}
+          >
+            <Logo variant="square" height={140} />
+          </NeuCard>
+          <NeuCard
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 16,
+              minHeight: 200
+            }}
+          >
+            <img
+              src="/ytai-app-icon.png"
+              alt="YouTutorAI app icon"
+              width={140}
+              height={140}
+              style={{
+                width: 140,
+                height: 140,
+                display: 'block',
+                boxShadow: theme.stickerShadow.card
+              }}
+            />
+            <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0.4 }}>
+              iOS HOME-SCREEN ICON
+            </Text>
+          </NeuCard>
+          <div
+            style={{
+              background: '#4A5568',
+              borderRadius: theme.radius.lg,
+              padding: 32,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 16,
+              minHeight: 200,
+              boxShadow: theme.stickerShadow.card
+            }}
+          >
+            <img
+              src="/ytai-app-icon.png"
+              alt="YouTutorAI app icon on dark"
+              width={140}
+              height={140}
+              style={{ width: 140, height: 140, display: 'block' }}
+            />
+            <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600, letterSpacing: 0.4 }}>
+              ON DARK HOME SCREEN
+            </Text>
+          </div>
         </div>
 
         <Title level={3} style={{ fontFamily: QUICKSAND }}>
