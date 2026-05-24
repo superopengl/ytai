@@ -10,7 +10,8 @@
     "release": "./scripts/release.sh",
     "build-and-push": "./scripts/build-and-push.sh",
     "bootstrap-db": "./scripts/bootstrap-db.sh",
-    "migrate": "./scripts/run-migration.sh"
+    "migrate": "./scripts/run-migration.sh",
+    "ecr:lifecycle": "./scripts/ecr-lifecycle.sh"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.150.0",
