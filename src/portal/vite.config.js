@@ -33,8 +33,11 @@ export default defineConfig(({ mode }) => {
     define: {
       // Exposed to client code as `__YTAI_GOOGLE_CLIENT_ID__`. Source comes
       // from the workspace-root `.env` so the same file works for both the
-      // API and the build without a `VITE_*` rename.
-      __YTAI_GOOGLE_CLIENT_ID__: JSON.stringify(env.YTAI_GOOGLE_CLIENT_ID || '')
+      // API and the build without a `VITE_*` rename. process.env fallback
+      // covers CI / release.sh where the var is exported (no .env file).
+      __YTAI_GOOGLE_CLIENT_ID__: JSON.stringify(
+        env.YTAI_GOOGLE_CLIENT_ID || process.env.YTAI_GOOGLE_CLIENT_ID || ''
+      )
     },
     server: {
       port: portalPort,
