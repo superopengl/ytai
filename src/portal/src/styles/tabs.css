@@ -88,3 +88,14 @@
 .ytai-vert-nav-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-typography.ant-typography-secondary {
   color: #718096 !important;
 }
+
+/* The "+ New Report" tab pins the icon + label to the "correct" palette
+   token (passed in as --ytai-new-report-color from the React inline style).
+   Without these overrides the active-tab rule above forces every
+   descendant Typography to the dark slate, which would blank out the
+   green. Specificity is high enough to win against that rule in both
+   the active and inactive states. */
+.ytai-vert-nav-tabs .ant-tabs-tab .ytai-new-report-label .anticon,
+.ytai-vert-nav-tabs .ant-tabs-tab .ytai-new-report-label .ant-typography {
+  color: var(--ytai-new-report-color) !important;
+}

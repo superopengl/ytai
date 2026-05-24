@@ -2,8 +2,8 @@ import { desc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { subjectReport } from '../db/schema.js';
 
-export default function meListSubjectReports(fastify) {
-  fastify.get('/api/me/subject-reports', async (request) => {
+export default function listAnalysisReports(fastify) {
+  fastify.get('/api/analysis-reports', async (request) => {
     const userId = request.userId;
 
     // Return rows in every status — pending rows let the Reports page

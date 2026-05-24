@@ -294,7 +294,7 @@ export default function TutorPage() {
                 </a>
               )
             },
-            { key: '/tutor', label: 'Tutor' },
+            { key: '/tutor', label: 'Tutor Sessions' },
             { key: '/reports', label: 'Analysis Reports' },
             { type: 'divider' },
             {

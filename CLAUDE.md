@@ -78,9 +78,9 @@ Summary:
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
 - `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain hits `find_text_on_image` (EasyOCR cache) first and `lookup_on_image` (Qwen2.5-VL) for anything OCR can't answer. Vision results cached in `vision_extraction` per `(image_id, sha256(question))`; OCR results cached in `image_ocr` per `image_id`.
 - `POST /api/tutor/:sessionId/speak` — synthesize one sentence of MP3 audio (frontend buffers and chunks Brain's stream by sentence). Cached in `tts_audio` per `sha256(text + voice + model)` so kid-tutor catchphrases ("nice work!") are free on repeat. Returns 503 if `YTAI_TTS_BASE_URL` is unset.
-- `GET /api/me/subject-reports` — list every subject-level report for the current user, newest first.
-- `POST /api/me/subject-report` — generate a new subject-level report. Every call inserts a new immutable row (no in-place refresh). Body: `{ subject, prompt }`. Prompts are capped at 2000 chars and only ever see structured session data, never raw transcripts.
-- `DELETE /api/me/subject-report/:id` — delete a report owned by the current user.
+- `GET /api/analysis-reports` — list every analysis report for the current user, newest first.
+- `POST /api/analysis-report` — generate a new analysis report. Every call inserts a new immutable row (no in-place refresh). Body: `{ subject, prompt }`. Prompts are capped at 2000 chars and only ever see structured session data, never raw transcripts.
+- `DELETE /api/analysis-report/:id` — delete a report owned by the current user.
 
 Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 

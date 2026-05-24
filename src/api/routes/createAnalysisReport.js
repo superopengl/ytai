@@ -1,12 +1,12 @@
-import enqueueSubjectReport, {
+import enqueueAnalysisReport, {
   VALID_SUBJECTS,
   normalizePrompt
-} from '../lib/generateSubjectReport.js';
+} from '../lib/generateAnalysisReport.js';
 
 const MAX_PROMPT_LEN = 2000;
 
-export default function meGenerateSubjectReport(fastify) {
-  fastify.post('/api/me/subject-report', async (request, reply) => {
+export default function createAnalysisReport(fastify) {
+  fastify.post('/api/analysis-report', async (request, reply) => {
     const body = request.body || {};
     const subject = String(body.subject || '').toLowerCase();
     const prompt = body.prompt ?? null;
@@ -29,16 +29,16 @@ export default function meGenerateSubjectReport(fastify) {
     try {
       // Returns as soon as the pending row is inserted; the actual
       // rollup work happens in a background task. The client picks the
-      // pending row up via GET /api/me/subject-reports and polls until
+      // pending row up via GET /api/analysis-reports and polls until
       // it transitions to 'ready' or 'failed'.
-      return await enqueueSubjectReport({
+      return await enqueueAnalysisReport({
         userId: request.userId,
         subject,
         prompt: normalized,
         log: request.log
       });
     } catch (err) {
-      request.log.error({ err, subject }, 'meGenerateSubjectReport: enqueue failed');
+      request.log.error({ err, subject }, 'createAnalysisReport: enqueue failed');
       reply.code(502);
       return { error: err.message?.slice(0, 500) || 'Failed to enqueue report' };
     }

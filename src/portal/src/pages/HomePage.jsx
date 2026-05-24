@@ -14,12 +14,14 @@ import {
   GoogleOutlined,
   HeartFilled,
   ArrowRightOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  RocketOutlined
 } from '@ant-design/icons';
 import { palette, stickerShadow } from '../theme.js';
 import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
 import Logo from '../components/Logo.jsx';
 import HeroBackdrop from '../components/HeroBackdrop.jsx';
+import authSession from '../lib/authSession.js';
 
 const { Title, Paragraph, Text, Link } = Typography;
 
@@ -211,7 +213,7 @@ const personas = [
 
 // --- NavBar (floating rounded) ---------------------------------------------
 
-function NavBar({ onSignIn }) {
+function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
   return (
     <div
       style={{
@@ -240,26 +242,49 @@ function NavBar({ onSignIn }) {
       >
         <Logo height={32} />
 
-        <button
-          type="button"
-          className="sticker-btn sticker-press"
-          onClick={onSignIn}
-          style={{
-            background: GRAD.primary,
-            color: '#fff',
-            padding: '10px 24px',
-            fontSize: 15,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 10,
-            border: 0
-          }}
-        >
-          <GoogleOutlined style={{ fontSize: 18 }} />
-          Sign in
-        </button>
+        {isSignedIn ? (
+          <button
+            type="button"
+            className="sticker-btn sticker-press"
+            onClick={onGoToTutor}
+            style={{
+              background: GRAD.primary,
+              color: '#fff',
+              padding: '10px 24px',
+              fontSize: 15,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              border: 0
+            }}
+          >
+            <RocketOutlined style={{ fontSize: 18 }} />
+            Go to Tutor
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="sticker-btn sticker-press"
+            onClick={onSignIn}
+            style={{
+              background: GRAD.primary,
+              color: '#fff',
+              padding: '10px 24px',
+              fontSize: 15,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              border: 0
+            }}
+          >
+            <GoogleOutlined style={{ fontSize: 18 }} />
+            Sign in
+          </button>
+        )}
       </div>
     </div>
   );
@@ -269,16 +294,18 @@ function NavBar({ onSignIn }) {
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const isSignedIn = Boolean(authSession().token);
   const handleGoogleSuccess = (u) => {
     message.success(`Welcome, ${u.name}! Loading your tutor…`);
     navigate('/tutor');
   };
 
   const goToLogin = () => navigate('/login');
+  const goToTutor = () => navigate('/tutor');
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <NavBar onSignIn={goToLogin} />
+      <NavBar isSignedIn={isSignedIn} onSignIn={goToLogin} onGoToTutor={goToTutor} />
 
       {/* ============ HERO ============ */}
       <section

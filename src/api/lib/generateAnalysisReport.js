@@ -92,7 +92,7 @@ async function refreshStaleSessions(manifest, log) {
     } catch (err) {
       log.warn(
         { err, sessionId: entry.sessionId },
-        'generateSubjectReport: skipping session — its report failed to refresh'
+        'generateAnalysisReport: skipping session — its report failed to refresh'
       );
     }
   }
@@ -281,7 +281,7 @@ async function runReporter({ messages, baseUrl, apiKey, model, tool }) {
 // Returns immediately with `{ id, status: 'pending' }` — the actual rollup
 // work runs in a fire-and-forget task. The Reports page polls the list
 // endpoint to watch the row transition.
-export default async function enqueueSubjectReport({
+export default async function enqueueAnalysisReport({
   userId,
   subject,
   prompt,

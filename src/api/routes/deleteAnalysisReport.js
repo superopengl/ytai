@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { subjectReport } from '../db/schema.js';
 
-export default function meDeleteSubjectReport(fastify) {
-  fastify.delete('/api/me/subject-report/:id', async (request, reply) => {
+export default function deleteAnalysisReport(fastify) {
+  fastify.delete('/api/analysis-report/:id', async (request, reply) => {
     const { id } = request.params;
     const userId = request.userId;
 

@@ -182,10 +182,10 @@ data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "inter
 - `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right).
 - Closing the stream from the client triggers `AbortController`, which interrupts both Brain and any in-flight vision call. The partial assistant message is persisted with `interrupted=true`.
 
-## Me (cross-session views)
+## Analysis reports (cross-session views)
 
-### `GET /api/me/subject-reports`
-List every subject-level report (any status) for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated. Pending and failed rows are included so the UI can render in-progress and error states without a separate endpoint.
+### `GET /api/analysis-reports`
+List every analysis report (any status) for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated. Pending and failed rows are included so the UI can render in-progress and error states without a separate endpoint.
 
 **Returns**:
 ```json
@@ -206,8 +206,8 @@ List every subject-level report (any status) for the current user, newest `creat
 
 While `status` is `pending`, `content` may briefly be `null` (during the very first second) or `{ title: "..." }` (after the parallel pre-title call lands) — the UI uses `content.title` as the display name and falls back to a placeholder until it appears.
 
-### `POST /api/me/subject-report`
-Generate a new subject-level report. **Every call inserts a new immutable row** — past reports stay around as a browsable history; there is no in-place refresh. Returns immediately with a `pending` row; the actual rollup runs in a background task. The client picks the row up via `GET /api/me/subject-reports` and polls until it transitions to `ready` or `failed`.
+### `POST /api/analysis-report`
+Generate a new analysis report. **Every call inserts a new immutable row** — past reports stay around as a browsable history; there is no in-place refresh. Returns immediately with a `pending` row; the actual rollup runs in a background task. The client picks the row up via `GET /api/analysis-reports` and polls until it transitions to `ready` or `failed`.
 
 **Body**:
 ```json
@@ -236,7 +236,7 @@ The eventual `content` shape on a `ready` row is `{ title, narrative, sections?:
 - `400` — invalid `subject`, missing/too-long `prompt`
 - `502` — LLM call failed
 
-### `DELETE /api/me/subject-report/:id`
+### `DELETE /api/analysis-report/:id`
 Delete a single report belonging to the current user. Returns `{ ok: true }` on success, `404` if the row does not exist (or is owned by another user).
 
 ## WebSocket *(deferred)*

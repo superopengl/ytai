@@ -12,7 +12,6 @@ import {
   Spin,
   Splitter,
   Tabs,
-  Tag,
   Tooltip,
   Typography,
   message,
@@ -81,6 +80,28 @@ function formatDate(iso) {
   }
 }
 
+function formatTimeAgo(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'just now';
+  if (secs < 90) return '1 minute ago';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.round(days / 30);
+  if (months === 1) return '1 month ago';
+  if (months < 12) return `${months} months ago`;
+  const years = Math.round(days / 365);
+  return years === 1 ? '1 year ago' : `${years} years ago`;
+}
+
 function PromptCard({ prompt, style }) {
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef(null);
@@ -126,6 +147,49 @@ function PromptCard({ prompt, style }) {
         {prompt}
       </Typography.Paragraph>
     </Card>
+  );
+}
+
+function SubjectBadge({ subject, size = 'sm' }) {
+  const meta = SUBJECTS.find((s) => s.key === subject);
+  if (!meta) return null;
+  const Icon = meta.icon;
+  const isLg = size === 'lg';
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: isLg ? 8 : 6,
+        padding: isLg ? '4px 12px 4px 6px' : '2px 10px 2px 4px',
+        background: meta.tint,
+        border: `1.5px solid ${meta.color}`,
+        borderRadius: 999,
+        color: palette.text,
+        fontWeight: 700,
+        fontSize: isLg ? 14 : 12,
+        lineHeight: 1.2,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <span
+        style={{
+          width: isLg ? 22 : 18,
+          height: isLg ? 22 : 18,
+          borderRadius: '50%',
+          background: meta.color,
+          color: '#fff',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: isLg ? 12 : 10,
+          flexShrink: 0
+        }}
+      >
+        <Icon />
+      </span>
+      {meta.label}
+    </span>
   );
 }
 
@@ -185,7 +249,7 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch('/api/me/subject-reports');
+      const res = await apiFetch('/api/analysis-reports');
       if (!res.ok) throw new Error("Couldn't load your reports");
       const body = await res.json();
       setReports(body.reports || []);
@@ -225,7 +289,7 @@ export default function ReportsPage() {
     }
     setGenerating(`${customSubject}::${trimmed}`);
     try {
-      const res = await apiFetch('/api/me/subject-report', {
+      const res = await apiFetch('/api/analysis-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject: customSubject, prompt: trimmed })
@@ -264,7 +328,7 @@ export default function ReportsPage() {
   const handleDelete = useCallback(
     async (id) => {
       try {
-        const res = await apiFetch(`/api/me/subject-report/${id}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/analysis-report/${id}`, { method: 'DELETE' });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body?.error || "Couldn't delete that report");
@@ -353,9 +417,14 @@ function ReportsList({ loading, error, reports, selectedId, onSelect, onNew }) {
       {
         key: 'new',
         label: (
-          <Space size={8} align="center">
-            <PlusOutlined style={{ color: palette.state.correct }} />
-            <Typography.Text strong style={{ color: palette.state.correct }}>New Report</Typography.Text>
+          <Space
+            size={8}
+            align="center"
+            className="ytai-new-report-label"
+            style={{ '--ytai-new-report-color': palette.state.correct }}
+          >
+            <PlusOutlined />
+            <Typography.Text strong>New Report</Typography.Text>
           </Space>
         )
       }
@@ -440,11 +509,9 @@ function ReportTabLabel({ report }) {
   const isPending = report.status === 'pending';
   const isFailed = report.status === 'failed';
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <Tag color={subjectMeta?.color} style={{ margin: 0 }}>
-          {subjectMeta?.label || report.subject}
-        </Tag>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <SubjectBadge subject={report.subject} />
         <Typography.Text strong style={{ fontSize: 13 }}>
           {reportDisplayTitle(report)}
         </Typography.Text>
@@ -474,7 +541,7 @@ function ReportTabLabel({ report }) {
         </Space>
       ) : (
         <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-          {formatDate(report.createdAt || report.generatedAt)}
+          {formatDate(report.generatedAt || report.createdAt)} ({formatTimeAgo(report.generatedAt || report.createdAt)})
         </Typography.Text>
       )}
     </div>
@@ -549,7 +616,7 @@ function GeneratePanel({
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
           <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
-            Report template
+            Report template (optional)
           </Typography.Text>
           <Select
             value={undefined}
@@ -633,15 +700,15 @@ function ReportPanel({ report, onDelete, onGenerateSimilar }) {
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Space size={8} align="center" style={{ marginBottom: 4 }}>
-            <Tag color={subjectMeta?.color} style={{ margin: 0 }}>{subjectLabel}</Tag>
+          <Space size={10} align="center" style={{ marginBottom: 4 }}>
+            <SubjectBadge subject={report.subject} size="lg" />
             <Typography.Title level={4} style={{ margin: 0 }}>{typeLabel}</Typography.Title>
           </Space>
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {isPending
-                ? `Started ${formatDate(report.createdAt)}`
-                : `Generated ${formatDate(report.generatedAt || report.createdAt)}`}
+                ? `Started ${formatDate(report.createdAt)} (${formatTimeAgo(report.createdAt)})`
+                : `Generated ${formatDate(report.generatedAt || report.createdAt)} (${formatTimeAgo(report.generatedAt || report.createdAt)})`}
             </Typography.Text>
           </div>
         </div>
