@@ -37,6 +37,7 @@ export default function GoogleSignInButton({
   block = true
 }) {
   const hiddenRef = useRef(null);
+  const gisButtonRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -93,15 +94,20 @@ export default function GoogleSignInButton({
             logo_alignment: 'left'
           });
         }
-        // renderButton injects the GIS iframe asynchronously. Poll for the
-        // [role="button"] element before flipping ready, so the AntD proxy
-        // click always has something to forward to. Without this gate,
-        // fast-loading prod bundles set ready=true before the iframe is in
-        // the DOM, and the first click reports "still loading".
+        // renderButton injects the GIS iframe asynchronously. Poll for any
+        // clickable child before flipping ready, so the AntD proxy click
+        // always has something to forward to. We capture the node we found
+        // so the click handler can still fire even if GIS later swaps its
+        // DOM (placeholder → iframe), and we fall back to id.prompt() if
+        // the node has been detached by click time.
         const startedAt = Date.now();
         const waitForButton = () => {
           if (cancelled) return;
-          if (hiddenRef.current?.querySelector('[role="button"]')) {
+          const node =
+            hiddenRef.current?.querySelector('[role="button"]') ||
+            hiddenRef.current?.querySelector('div[tabindex], iframe');
+          if (node) {
+            gisButtonRef.current = node;
             setReady(true);
             return;
           }
@@ -123,12 +129,26 @@ export default function GoogleSignInButton({
   }, [role]);
 
   const triggerGoogle = () => {
-    const gisButton = hiddenRef.current?.querySelector('[role="button"]');
-    if (gisButton) {
-      gisButton.click();
-    } else {
-      setError('Google sign-in is still loading. Please try again in a moment.');
+    const live =
+      hiddenRef.current?.querySelector('[role="button"]') ||
+      hiddenRef.current?.querySelector('div[tabindex], iframe');
+    const captured = gisButtonRef.current;
+    const target = live || (captured?.isConnected ? captured : null);
+    if (target) {
+      target.click();
+      return;
     }
+    // Last-ditch fallback: ask GIS to surface its own picker. Triggered
+    // from a click handler, so the user-gesture requirement is satisfied.
+    if (window.google?.accounts?.id?.prompt) {
+      try {
+        window.google.accounts.id.prompt();
+        return;
+      } catch (_) {
+        // fall through to error
+      }
+    }
+    setError('Google sign-in is still loading. Please try again in a moment.');
   };
 
   if (!CLIENT_ID) {
