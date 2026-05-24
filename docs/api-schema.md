@@ -182,30 +182,6 @@ data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "inter
 - `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right).
 - Closing the stream from the client triggers `AbortController`, which interrupts both Brain and any in-flight vision call. The partial assistant message is persisted with `interrupted=true`.
 
-### `GET /api/tutor/:sessionId/report`
-Lazy-generated post-session report. First call (or any call after new messages have been appended) generates / incrementally refreshes the report.
-
-**Query**: `?force=1` rebuilds from scratch instead of incrementally merging.
-
-**Returns**:
-```json
-{
-  "status": "ready",
-  "summary": "Two or three sentences for an adult reader.",
-  "questions": [
-    {
-      "question": "...", "studentAnswer": "...", "correctAnswer": "...",
-      "correct": true, "mistakeType": null, "mistakeNotes": "",
-      "nswOutcomeCode": "MA2-MR-01", "nswOutcomeText": "...",
-      "nswStrand": "...", "nswFocusArea": "...", "nswStage": "Stage 2", "nswSubject": "Mathematics"
-    }
-  ],
-  "modelVersion": "deepseek/deepseek-chat"
-}
-```
-
-Staleness: persisted reports carry a `cursor_message_id`. If new `session_message` rows exist for this session after the cursor, the next GET refreshes the report — incrementally if the prior questions list is valid, otherwise from scratch. Because `session_message` is append-only and immutable, the cursor never needs invalidation from edits.
-
 ## Me (cross-session views)
 
 ### `GET /api/me/subject-reports`
