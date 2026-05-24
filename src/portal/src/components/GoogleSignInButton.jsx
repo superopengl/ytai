@@ -24,11 +24,15 @@ function waitForGoogle(timeoutMs = 4000) {
   });
 }
 
-// Renders a visible AntDesign-styled "Sign in with Google" button that
-// proxy-clicks an invisible Google Identity Services button. We can't
-// directly restyle GIS's rendered button (corners, font, padding are baked
-// in by Google), so we keep it off-screen and forward clicks to it from
-// the AntD button. The GIS credential callback still drives the auth flow.
+// Renders Google Identity Services' own sign-in button into the page.
+//
+// History: we previously wrapped a custom AntD-styled button on top of a
+// hidden GIS button and proxy-clicked it. That approach is fragile —
+// modern GIS sometimes renders inside a cross-origin iframe, where
+// .click() from the parent document is a no-op (the user sees no
+// response). The supported path is to let GIS render its visible button
+// and click it natively; we keep the AntD wrapper around it for spacing
+// and surrounding states (loading / error).
 export default function GoogleSignInButton({
   role = 'student',
   size = 'large',
@@ -36,8 +40,7 @@ export default function GoogleSignInButton({
   onError,
   block = true
 }) {
-  const hiddenRef = useRef(null);
-  const gisButtonRef = useRef(null);
+  const containerRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -83,41 +86,19 @@ export default function GoogleSignInButton({
           itp_support: true
         });
 
-        if (hiddenRef.current) {
-          hiddenRef.current.innerHTML = '';
-          google.accounts.id.renderButton(hiddenRef.current, {
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';
+          google.accounts.id.renderButton(containerRef.current, {
             type: 'standard',
             theme: 'outline',
             size: 'large',
             text: 'signin_with',
             shape: 'rectangular',
-            logo_alignment: 'left'
+            logo_alignment: 'left',
+            width: 320
           });
         }
-        // renderButton injects the GIS iframe asynchronously. Poll for any
-        // clickable child before flipping ready, so the AntD proxy click
-        // always has something to forward to. We capture the node we found
-        // so the click handler can still fire even if GIS later swaps its
-        // DOM (placeholder → iframe), and we fall back to id.prompt() if
-        // the node has been detached by click time.
-        const startedAt = Date.now();
-        const waitForButton = () => {
-          if (cancelled) return;
-          const node =
-            hiddenRef.current?.querySelector('[role="button"]') ||
-            hiddenRef.current?.querySelector('div[tabindex], iframe');
-          if (node) {
-            gisButtonRef.current = node;
-            setReady(true);
-            return;
-          }
-          if (Date.now() - startedAt > 5000) {
-            setError('Google sign-in failed to render. Please refresh.');
-            return;
-          }
-          setTimeout(waitForButton, 80);
-        };
-        waitForButton();
+        setReady(true);
       })
       .catch((e) => {
         setError(e.message);
@@ -127,29 +108,6 @@ export default function GoogleSignInButton({
       cancelled = true;
     };
   }, [role]);
-
-  const triggerGoogle = () => {
-    const live =
-      hiddenRef.current?.querySelector('[role="button"]') ||
-      hiddenRef.current?.querySelector('div[tabindex], iframe');
-    const captured = gisButtonRef.current;
-    const target = live || (captured?.isConnected ? captured : null);
-    if (target) {
-      target.click();
-      return;
-    }
-    // Last-ditch fallback: ask GIS to surface its own picker. Triggered
-    // from a click handler, so the user-gesture requirement is satisfied.
-    if (window.google?.accounts?.id?.prompt) {
-      try {
-        window.google.accounts.id.prompt();
-        return;
-      } catch (_) {
-        // fall through to error
-      }
-    }
-    setError('Google sign-in is still loading. Please try again in a moment.');
-  };
 
   if (!CLIENT_ID) {
     return (
@@ -167,30 +125,19 @@ export default function GoogleSignInButton({
 
   return (
     <div style={{ width: '100%' }}>
-      {/* Hidden GIS-rendered button — kept in the DOM so we can proxy-click it. */}
       <div
-        ref={hiddenRef}
-        aria-hidden="true"
+        ref={containerRef}
         style={{
-          position: 'absolute',
-          width: 0,
-          height: 0,
-          overflow: 'hidden',
-          opacity: 0,
-          pointerEvents: 'none'
+          display: 'flex',
+          justifyContent: 'center',
+          minHeight: 44
         }}
       />
-      <Button
-        size={size}
-        icon={<GoogleOutlined />}
-        onClick={triggerGoogle}
-        loading={submitting}
-        disabled={!ready}
-        block={block}
-        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
-      >
-        Sign in with Google
-      </Button>
+      {submitting && (
+        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12, textAlign: 'center' }}>
+          Signing in…
+        </Text>
+      )}
       {error && (
         <Alert
           type="error"
