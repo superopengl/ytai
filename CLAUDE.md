@@ -163,8 +163,9 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_OPENROUTER_BASE_URL` | Override the OpenRouter base URL | `https://openrouter.ai/api/v1` |
 | `YTAI_VISION_BASE_URL` | Per-route override for Eyes (e.g. local LM Studio at `http://localhost:9529/v1`); falls back to OpenRouter when unset | *(unset)* |
 | `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
-| `YTAI_S3_BUCKET` | Image bucket (prod) | *(required in prod)* |
-| `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days | `30` |
+| `YTAI_S3_BUCKET` | Bucket for session images and TTS audio. Unset → local-disk fallback (dev only). | *(required in prod)* |
+| `YTAI_S3_PREFIX` | Key namespace inside `YTAI_S3_BUCKET`. CDK sets this to the deployed stage (`prod`). Local dev defaults to `dev` so a misconfigured laptop can't write into prod's keyspace. | `dev` |
+| `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days (scoped to `<prefix>/images/` via S3 lifecycle) | `30` |
 | `YTAI_SES_FROM_EMAIL` | Verified AWS SES sender identity for sign-in OTP emails. Unset disables SES (the OTP still lands in the DB and logs so an operator can read it back). | *(unset)* |
 | `YTAI_AWS_REGION` | AWS region for SES and S3. Standard `AWS_*` credentials (env, shared config, IAM role) are resolved by the SDK chain. | `ap-southeast-2` |
 | `YTAI_TTS_BASE_URL` | OpenAI-compatible `/audio/speech` endpoint (e.g. local Kokoro at `http://localhost:9530/v1`). Unset disables voice (route returns 503, UI greys out). | *(unset)* |
