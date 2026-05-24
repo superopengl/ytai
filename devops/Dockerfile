@@ -1,39 +1,85 @@
 # Merged single-container production image for ytai. Three processes co-exist:
 #
-#   - Kokoro-FastAPI (TTS) on 127.0.0.1:8880  (inherited from the base image)
+#   - Kokoro-FastAPI (TTS) on 127.0.0.1:8880
 #   - EasyOCR FastAPI wrapper on 127.0.0.1:9531
-#   - ytai Node.js app on 0.0.0.0:80 (the only port exposed externally)
+#   - ytai Node.js app on 0.0.0.0:80  (the only port exposed externally)
 #
-# Build pattern (kpai-style): `pnpm build:prod` runs OUTSIDE docker and
-# produces `dist/` with the Vite-built portal, the api source, and a
-# consolidated package.json + pnpm-lock.yaml. Docker just installs prod
-# Node deps and copies dist in. Avoids in-image pnpm prompts and keeps
-# the build context tiny via .dockerignore.
+# Image-size strategy: instead of FROM-ing the upstream Kokoro image (which
+# bakes in ~800 MB of Japanese unidic dict + carries a kitchen-sink base
+# with build tools we don't use at runtime), we treat Kokoro as a *donor*:
+# strip unidic in an intermediate stage, then COPY only what's needed into
+# a fresh python:3.10-slim runtime. Cross-stage COPY is the only way to
+# actually shrink — RM in a later layer keeps the bytes around in the
+# earlier layer.
 
-# Kokoro-FastAPI CPU image: Python 3.10 + PyTorch CPU + Kokoro weights +
-# espeak. Digest pinned because `latest` on ghcr.io moves.
-FROM ghcr.io/remsky/kokoro-fastapi-cpu@sha256:d7df384acb57929f88a696d892c1a2e0c6b60fa934802ebec9a88626003b8e9a
+# === STAGE 0: cleaned Kokoro donor ===========================================
+FROM ghcr.io/remsky/kokoro-fastapi-cpu@sha256:d7df384acb57929f88a696d892c1a2e0c6b60fa934802ebec9a88626003b8e9a AS kokoro-donor
 
 USER root
 
-# Node.js 24 from NodeSource. Debian-based base image so apt works.
+# Drop the Japanese unidic dictionary (~800 MB). We only ever request
+# English voices from Kokoro, so the Japanese phonemization pipeline is
+# never instantiated. unidic's Python wrapper imports cleanly without
+# the dicdir/ — it only fails when something asks for the dict path.
+RUN rm -rf /app/.venv/lib/python3.10/site-packages/unidic/dicdir
+
+# === STAGE 1: build ytai frontend + backend ==================================
+FROM node:24-alpine AS node-build
+
+WORKDIR /app
+RUN corepack enable
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY src/portal/package.json ./src/portal/
+COPY deploy/package.json ./deploy/
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm build:prod
+
+# === STAGE 2: production runtime =============================================
+FROM python:3.10-slim
+
+USER root
+
+# Kokoro's runtime deps + Node.js 24 for the ytai app. Combined into one
+# layer with cache cleanup so we don't carry apt's index around.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      espeak-ng espeak-ng-data libsndfile1 ffmpeg \
       curl ca-certificates gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
-    && corepack enable
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt /tmp/* \
+    && corepack enable \
+    && mkdir -p /usr/share/espeak-ng-data \
+    && ln -sf /usr/lib/x86_64-linux-gnu/espeak-ng-data/* /usr/share/espeak-ng-data/ 2>/dev/null || true
 
-# EasyOCR into Kokoro's existing /app/.venv so it shares the already-
-# installed PyTorch CPU build. The base image uses `uv`, not pip, so we
-# go via `uv pip install` with VIRTUAL_ENV pointing at the existing venv.
-# Versions track devops/ocr/requirements.txt.
-#
-# --extra-index-url + --index-strategy unsafe-best-match forces any torch
-# resolution to the CPU-only wheel set. Without it, uv pulls torch from
-# PyPI's default index, which serves the CUDA-enabled build (~2.5 GB of
-# nvidia-* shared libs we'll never use). Pinning torch >= what Kokoro
-# already has prevents an unnecessary upgrade.
+# Bring in uv (Kokoro's package manager) — we use it to add EasyOCR to
+# the existing venv. Copying the static binary is smaller than reinstalling.
+COPY --from=kokoro-donor /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=kokoro-donor /usr/local/bin/uvx /usr/local/bin/uvx
+
+# Pull the cleaned /app from the donor — venv (sans unidic dict) + Kokoro
+# API source + downloaded model weights. ~2 GB once the Japanese dict is
+# gone, vs ~2.8 GB with it.
+COPY --from=kokoro-donor /app /app
+
+# Kokoro's runtime env vars (reproduced from the upstream image so the
+# Python code finds espeak data + the venv binaries on PATH).
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/api \
+    UV_LINK_MODE=copy \
+    USE_GPU=false \
+    PHONEMIZER_ESPEAK_PATH=/usr/bin \
+    PHONEMIZER_ESPEAK_DATA=/usr/share/espeak-ng-data \
+    ESPEAK_DATA_PATH=/usr/share/espeak-ng-data \
+    DEVICE=cpu \
+    PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /app
+
+# EasyOCR into Kokoro's existing venv. CPU torch index keeps uv from
+# pulling the 2.5 GB CUDA wheel set when resolving easyocr's torch dep.
 RUN VIRTUAL_ENV=/app/.venv uv pip install --no-cache \
       --extra-index-url https://download.pytorch.org/whl/cpu \
       --index-strategy unsafe-best-match \
@@ -50,7 +96,7 @@ RUN /app/.venv/bin/python -c "import easyocr; easyocr.Reader(['en'], gpu=False)"
 RUN mkdir -p /opt/ocr
 COPY devops/ocr/server.py /opt/ocr/server.py
 
-# ytai runtime — prod-only node deps first (cached across source changes),
+# ytai runtime — prod-only Node deps first (cached across source changes),
 # then the pre-built dist contents.
 WORKDIR /opt/ytai
 COPY dist/package.json dist/pnpm-lock.yaml dist/.npmrc ./
