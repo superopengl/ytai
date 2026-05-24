@@ -26,15 +26,17 @@ export default function makeTutorTools({
   log,
   emit,
   usedColorsForTurn,
-  signal
+  signal,
+  annotatedByImageId
 }) {
   const pages = activeDoc?.pages ?? [];
+  const annotated = annotatedByImageId instanceof Map ? annotatedByImageId : new Map();
   return async function dispatchTool(call) {
     if (call.name === 'find_text_on_image') {
       return dispatchFindText(call, { pages, log, emit });
     }
     if (call.name === 'lookup_on_image') {
-      return dispatchLookup(call, { pages, viewingPage, log, emit, signal });
+      return dispatchLookup(call, { pages, viewingPage, log, emit, signal, annotated });
     }
     if (call.name === 'draw_annotation') {
       return dispatchDrawAnnotation(call, { pages, viewingPage, log, emit, usedColorsForTurn });
@@ -104,7 +106,7 @@ async function dispatchFindText(call, { pages, log, emit }) {
   return { result, progress };
 }
 
-async function dispatchLookup(call, { pages, viewingPage, log, emit, signal }) {
+async function dispatchLookup(call, { pages, viewingPage, log, emit, signal, annotated }) {
   const question = typeof call.args?.question === 'string' ? call.args.question.trim() : '';
   // Brain is told `page` is required, but fall back to viewing page or
   // page 1 if it forgot — beats a hard error that wastes a round.
@@ -136,13 +138,19 @@ async function dispatchLookup(call, { pages, viewingPage, log, emit, signal }) {
 
   const label = pages.length > 1 ? `p${targetPage.pageNumber}: ${question}` : question;
   emit('lookup-start', { id: call.id, question: label });
+  // If the student drew on this page, Brain's vision call must see those
+  // strokes — substitute the flattened canvas for the original photo and
+  // signal lookupOnImage to dust the cache key with the bytes hash so
+  // stale answers from a previous (un-annotated) turn don't leak through.
+  const annotatedOverride = annotated?.get?.(targetPage.id) ?? null;
   let result;
   try {
     result = await lookupOnImage({
       image: { id: targetPage.id, storageUrl: targetPage.storageUrl },
       question,
       log,
-      signal
+      signal,
+      imageDataUrlOverride: annotatedOverride?.dataUrl ?? null
     });
   } catch (err) {
     log?.error({ err, question, page: targetPage.pageNumber }, 'lookup_on_image failed');

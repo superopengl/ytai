@@ -73,7 +73,7 @@ export default function PhotoCapture({ onStart, busy = false }) {
       for (const p of pages) if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
       setPages([]);
     } catch (err) {
-      setError(err.message || 'Upload failed');
+      setError(err.message || "Couldn't upload that worksheet");
     }
   }
 

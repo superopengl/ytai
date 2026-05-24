@@ -40,7 +40,7 @@ export default async function uploadDoc(sessionId, files) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Upload failed (${res.status})`);
+    throw new Error(body.error || "Couldn't upload that worksheet");
   }
   return res.json();
 }

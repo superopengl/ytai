@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Button, Drawer, Menu, message, Modal, Select, Splitter, Typography } from 'antd';
 import { MenuOutlined, UserOutlined } from '@ant-design/icons';
-import PhotoCapture from '../components/PhotoCapture.jsx';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 import Logo from '../components/Logo.jsx';
 import apiFetch from '../lib/apiFetch.js';
 import authSession from '../lib/authSession.js';
-import uploadDoc from '../lib/uploadDoc.js';
+import currentSubject from '../lib/currentSubject.js';
 import SUBJECTS from '../lib/subjects.js';
 import { palette } from '../theme.js';
 
@@ -23,11 +22,15 @@ export default function TutorPage() {
   // Map<imageId, Array<{id, args}>>
   const [aiAnnotationsByPage, setAiAnnotationsByPage] = useState(() => new Map());
   const [creatingSession, setCreatingSession] = useState(false);
-  const [subject, setSubject] = useState('math');
+  const [subject, setSubject] = useState(() => currentSubject().value);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const currentUser = authSession().user;
   const [modal, modalContextHolder] = Modal.useModal();
+  // Imperative handle on the canvas so ChatPanel can pull a flattened PNG
+  // of (photo + freehand strokes) at send time. Routed via a stable
+  // callback so re-renders don't tear down the listener inside ChatPanel.
+  const canvasRef = useRef(null);
+  const getAnnotatedImage = useCallback(() => canvasRef.current?.flatten?.() ?? null, []);
 
   // Reset doc/canvas state when switching sessions; ChatPanel re-hydrates
   // via onDocsLoaded after its history fetch completes.
@@ -62,11 +65,11 @@ export default function TutorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject })
       });
-      if (!res.ok) throw new Error(`Could not start session (${res.status})`);
+      if (!res.ok) throw new Error("Couldn't start a new session");
       const body = await res.json();
       navigate(`/tutor/${body.sessionId}`);
     } catch (err) {
-      message.error(err.message || 'Could not start a new session');
+      message.error(err.message || "Couldn't start a new session");
     } finally {
       setCreatingSession(false);
     }
@@ -76,6 +79,7 @@ export default function TutorPage() {
     (next) => {
       if (next === subject) return;
       setSubject(next);
+      currentSubject().save(next);
       // Drop the current session from the URL so the effect below picks
       // (or creates) the top session for the newly-selected subject.
       navigate('/tutor', { replace: true });
@@ -92,7 +96,7 @@ export default function TutorPage() {
     (async () => {
       try {
         const listRes = await apiFetch('/api/tutor/sessions');
-        if (!listRes.ok) throw new Error(`Sessions fetch failed (${listRes.status})`);
+        if (!listRes.ok) throw new Error("Couldn't load your sessions");
         const list = await listRes.json();
         if (cancelled) return;
         const all = Array.isArray(list.sessions) ? list.sessions : [];
@@ -106,7 +110,7 @@ export default function TutorPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subject })
         });
-        if (!createRes.ok) throw new Error(`Could not start session (${createRes.status})`);
+        if (!createRes.ok) throw new Error("Couldn't start a new session");
         const body = await createRes.json();
         if (cancelled) return;
         setSessionId(body.sessionId);
@@ -127,8 +131,12 @@ export default function TutorPage() {
     setAiAnnotationsByPage(loadedAi ?? new Map());
     // Keep the subject dropdown synced with whatever this session actually
     // is — opening a /tutor/:id URL for a non-math session should swap the
-    // selector to match instead of misrepresenting the session.
-    if (loadedSubject) setSubject(loadedSubject);
+    // selector to match instead of misrepresenting the session. Persist
+    // so the user lands back on the same subject elsewhere in the app.
+    if (loadedSubject) {
+      setSubject(loadedSubject);
+      currentSubject().save(loadedSubject);
+    }
   }, []);
 
   const handleDocCreated = useCallback((doc) => {
@@ -171,28 +179,12 @@ export default function TutorPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ currentDocId: docId })
         });
-        if (!res.ok) throw new Error(`Could not switch doc (${res.status})`);
+        if (!res.ok) throw new Error("Couldn't switch worksheets");
       } catch (err) {
-        message.error(err.message || 'Could not switch worksheet');
+        message.error(err.message || "Couldn't switch worksheets");
       }
     },
     [sessionId, currentDocId]
-  );
-
-  const handlePhotoCaptureStart = useCallback(
-    async (files) => {
-      if (!sessionId || !files || files.length === 0) return;
-      setUploading(true);
-      try {
-        const { doc } = await uploadDoc(sessionId, files);
-        handleDocCreated(doc);
-      } catch (err) {
-        message.error(err.message || 'Upload failed');
-      } finally {
-        setUploading(false);
-      }
-    },
-    [sessionId, handleDocCreated]
   );
 
   const currentDoc = docs.find((d) => d.id === currentDocId) ?? null;
@@ -271,9 +263,9 @@ export default function TutorPage() {
             if (key === '/') return; // handled by the anchor below
             if (key === 'logout') {
               modal.confirm({
-                title: 'Log out?',
-                content: 'You will be signed out of YouTutorAI.',
-                okText: 'Log out',
+                title: 'Sign out?',
+                content: "You'll be signed out of YouTutorAI.",
+                okText: 'Sign out',
                 okButtonProps: { danger: true },
                 cancelText: 'Cancel',
                 onOk: () => {
@@ -307,7 +299,7 @@ export default function TutorPage() {
             { type: 'divider' },
             {
               key: 'logout',
-              label: <span style={{ color: palette.error }}>Log out</span>
+              label: <span style={{ color: palette.error }}>Sign out</span>
             }
           ]}
         />
@@ -333,18 +325,19 @@ export default function TutorPage() {
         </Splitter.Panel>
         <Splitter.Panel>
           <Splitter style={{ height: '100%', minHeight: 0 }}>
-            <Splitter.Panel defaultSize="58%" min="30%" max="80%">
-              <div
-                style={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  padding: 4,
-                  boxSizing: 'border-box'
-                }}
-              >
-                {currentDoc ? (
+            {currentDoc && (
+              <Splitter.Panel key="canvas" defaultSize="58%" min="30%" max="80%">
+                <div
+                  style={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: 4,
+                    boxSizing: 'border-box'
+                  }}
+                >
                   <PagedCanvas
+                    ref={canvasRef}
                     doc={currentDoc}
                     sessionId={sessionId}
                     currentPage={currentPage}
@@ -352,12 +345,10 @@ export default function TutorPage() {
                     aiAnnotationsByPage={aiAnnotationsByPage}
                     onClearPageAi={handleClearPageAi}
                   />
-                ) : (
-                  <PhotoCapture onStart={handlePhotoCaptureStart} busy={uploading} />
-                )}
-              </div>
-            </Splitter.Panel>
-            <Splitter.Panel>
+                </div>
+              </Splitter.Panel>
+            )}
+            <Splitter.Panel key="chat">
               <ChatPanel
                 sessionId={sessionId}
                 currentDocId={currentDocId}
@@ -367,6 +358,7 @@ export default function TutorPage() {
                 onDocCreated={handleDocCreated}
                 onAiAnnotation={handleAiAnnotation}
                 onSelectDoc={handleSelectDoc}
+                getAnnotatedImage={getAnnotatedImage}
               />
             </Splitter.Panel>
           </Splitter>

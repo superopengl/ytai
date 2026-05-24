@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Typography, Row, Col, message } from 'antd';
 import {
@@ -14,12 +13,13 @@ import {
   TeamOutlined,
   GoogleOutlined,
   HeartFilled,
-  CheckCircleFilled,
-  ArrowRightOutlined
+  ArrowRightOutlined,
+  GlobalOutlined
 } from '@ant-design/icons';
-import { palette, stickerShadow, radius } from '../theme.js';
+import { palette, stickerShadow } from '../theme.js';
 import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
 import Logo from '../components/Logo.jsx';
+import HeroBackdrop from '../components/HeroBackdrop.jsx';
 
 const { Title, Paragraph, Text, Link } = Typography;
 
@@ -146,7 +146,7 @@ const features = [
     color: MINT,
     title: 'Learn, Don’t Copy',
     description:
-      'A Socratic tutor that scaffolds your thinking step by step — never dumps the answer, always builds understanding.'
+      'A Socratic tutor that scaffolds your thinking step by step — never just hands over the answer, always builds understanding.'
   },
   {
     icon: <GoogleOutlined />,
@@ -209,142 +209,9 @@ const personas = [
   }
 ];
 
-// Mood selector — kid-friendly icebreaker in the hero. Same pattern as the
-// reference mental-health demo but the moods map to homework feelings.
-const moods = [
-  { emoji: '😄', label: 'Got this' },
-  { emoji: '🙂', label: 'Mostly ok' },
-  { emoji: '😐', label: 'Confused' },
-  { emoji: '😟', label: 'Stuck' },
-  { emoji: '😭', label: 'Help!' }
-];
-
-// --- Hero preview (mood-meter card) ----------------------------------------
-
-function HeroPreview() {
-  const [mood, setMood] = useState(2);
-  return (
-    <div
-      className="sticker-card"
-      style={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: 440,
-        padding: 28,
-        borderRadius: 28,
-        background: BG
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          marginBottom: 22
-        }}
-      >
-        <IconCircle size={52} color={MINT}>
-          <SmileOutlined />
-        </IconCircle>
-        <div>
-          <div style={{ fontSize: 13, color: INK_MUTED, fontWeight: 600, letterSpacing: 0.4 }}>
-            HOW DOES THIS QUESTION FEEL?
-          </div>
-          <div style={{ fontFamily: QUICKSAND, fontSize: 22, fontWeight: 700, color: INK, marginTop: 2 }}>
-            Today’s homework
-          </div>
-        </div>
-      </div>
-
-      {/* Mood meter — neumorphism pill row */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 10,
-          padding: '14px 10px',
-          borderRadius: 20,
-          marginBottom: 22
-        }}
-        className="neu-inset"
-      >
-        {moods.map((m, i) => (
-          <button
-            type="button"
-            key={m.label}
-            onClick={() => setMood(i)}
-            aria-label={m.label}
-            className="sticker-press"
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: '50%',
-              border: 0,
-              cursor: 'pointer',
-              background: BG,
-              fontSize: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: mood === i ? stickerShadow.inset : stickerShadow.button,
-              transform: mood === i ? 'scale(0.96)' : 'none',
-              transition: 'box-shadow 200ms, transform 200ms'
-            }}
-          >
-            {m.emoji}
-          </button>
-        ))}
-      </div>
-
-      <div
-        style={{
-          padding: 18,
-          borderRadius: 18,
-          background: BG,
-          boxShadow: stickerShadow.button,
-          marginBottom: 16
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: SAGE,
-              boxShadow: `0 0 0 4px ${SAGE}33`
-            }}
-          />
-          <Text style={{ fontSize: 12, fontWeight: 700, color: SAGE, letterSpacing: 0.5 }}>
-            TUTOR
-          </Text>
-        </div>
-        <Text style={{ fontSize: 15, color: INK, lineHeight: 1.55, fontWeight: 500 }}>
-          You’re feeling <b>{moods[mood].label.toLowerCase()}</b>. Let’s slow down — what part of this
-          question makes the most sense to you so far?
-        </Text>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-          color: INK_MUTED,
-          fontSize: 13,
-          fontWeight: 600
-        }}
-      >
-        <CheckCircleFilled style={{ color: SAGE }} />
-        Calm pace. No shame. No copying.
-      </div>
-    </div>
-  );
-}
-
 // --- NavBar (floating rounded) ---------------------------------------------
 
-function NavBar({ onScrollToSignIn }) {
+function NavBar({ onSignIn }) {
   return (
     <div
       style={{
@@ -371,12 +238,12 @@ function NavBar({ onScrollToSignIn }) {
           boxShadow: stickerShadow.button
         }}
       >
-        <Logo height={40} />
+        <Logo height={32} />
 
         <button
           type="button"
           className="sticker-btn sticker-press"
-          onClick={onScrollToSignIn}
+          onClick={onSignIn}
           style={{
             background: GRAD.primary,
             color: '#fff',
@@ -403,21 +270,15 @@ function NavBar({ onScrollToSignIn }) {
 export default function HomePage() {
   const navigate = useNavigate();
   const handleGoogleSuccess = (u) => {
-    if (u.status === 'approved') {
-      message.success(`Welcome, ${u.name}! Loading your tutor…`);
-    } else {
-      message.info('Signed in — waiting for admin approval before you can start tutoring.');
-    }
+    message.success(`Welcome, ${u.name}! Loading your tutor…`);
     navigate('/tutor');
   };
 
-  const scrollToSignIn = () => {
-    document.getElementById('signin')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
+  const goToLogin = () => navigate('/login');
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <NavBar onScrollToSignIn={scrollToSignIn} />
+      <NavBar onSignIn={goToLogin} />
 
       {/* ============ HERO ============ */}
       <section
@@ -431,96 +292,18 @@ export default function HomePage() {
           `
         }}
       >
-        {/* Tech dot-grid — fades center-out so the pattern reads as
-            "infinite plane" without fighting the headline. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: `radial-gradient(circle, ${SAGE_DARK}40 1px, transparent 1.4px)`,
-            backgroundSize: '26px 26px',
-            maskImage:
-              'radial-gradient(ellipse 75% 70% at 50% 45%, black 20%, transparent 85%)',
-            WebkitMaskImage:
-              'radial-gradient(ellipse 75% 70% at 50% 45%, black 20%, transparent 85%)',
-            pointerEvents: 'none'
-          }}
-        />
-        {/* Diagonal scan beam — HUD-style highlight angling across the hero. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `linear-gradient(115deg, transparent 35%, ${SAGE}1F 50%, transparent 65%)`,
-            mixBlendMode: 'screen',
-            pointerEvents: 'none'
-          }}
-        />
-        {/* Thin glowing horizon line at the section seam — "data plane" cue. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 1,
-            background: `linear-gradient(90deg, transparent 0%, ${SAGE}99 50%, transparent 100%)`,
-            boxShadow: `0 0 24px ${SAGE}88`,
-            pointerEvents: 'none'
-          }}
-        />
-        <Blob color={SAGE} size={520} top={-120} left={-160} opacity={0.4} blur={90} />
-        <Blob color={MAUVE} size={420} top={80} right="-100px" kind="b" opacity={0.32} blur={90} />
-        <Blob color={MINT} size={300} top={260} right="12%" kind="b" opacity={0.35} blur={70} />
-        <Blob color={PEACH} size={240} bottom={-40} left="22%" opacity={0.25} blur={60} />
+        <HeroBackdrop />
 
         <div
-          className="hero-grid"
           style={{
             position: 'relative',
             zIndex: 1,
-            maxWidth: 1180,
+            maxWidth: 720,
             margin: '0 auto',
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 0.95fr)',
-            gap: 'clamp(32px, 6vw, 72px)',
-            alignItems: 'center'
+            textAlign: 'center'
           }}
         >
-          {/* Copy column */}
           <div>
-            <div
-              className="sticker-chip"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '8px 18px',
-                background: SAGE,
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 0.3,
-                marginBottom: 28,
-                boxShadow: `0 6px 18px ${SAGE}55`
-              }}
-            >
-              <span
-                className="breathing-circle"
-                style={{
-                  width: 10,
-                  height: 10,
-                  background: '#fff',
-                  borderRadius: '50%',
-                  boxShadow: '0 0 0 4px rgba(255,255,255,0.35)'
-                }}
-              />
-              Early access · A calmer way to learn
-            </div>
-
             <Title
               style={{
                 fontFamily: QUICKSAND,
@@ -549,15 +332,15 @@ export default function HomePage() {
               style={{
                 color: INK_MUTED,
                 fontSize: 'clamp(17px, 2vw, 21px)',
-                maxWidth: 540,
-                marginBottom: 36,
+                maxWidth: 560,
+                margin: '0 auto 36px',
                 lineHeight: 1.65,
                 fontWeight: 500
               }}
             >
               YouTutorAI is a Socratic homework tutor for kids 8–14. Snap the worksheet, circle
-              what’s tricky, and the AI walks you through it — never dumps the answer. The pace is
-              calm. The voice is kind.
+              what’s tricky, and the AI walks you through it — never just hands over the answer.
+              The pace is calm. The voice is kind.
             </Paragraph>
 
             <div
@@ -565,67 +348,35 @@ export default function HomePage() {
               style={{
                 display: 'inline-flex',
                 flexDirection: 'column',
-                alignItems: 'center',
+                alignItems: 'stretch',
                 gap: 14,
-                padding: '24px 28px 22px',
-                background: WHITE,
-                borderRadius: radius.xl,
-                border: `2px solid ${SAGE}33`,
-                boxShadow: `0 14px 40px ${SAGE}33, ${stickerShadow.card}`,
-                scrollMarginTop: 100
+                scrollMarginTop: 100,
+                minWidth: 320
               }}
             >
               <GoogleSignInButton
                 role="student"
                 size="large"
-                width={280}
-                scale={1.4}
                 onSuccess={handleGoogleSuccess}
               />
-              <Text style={{ color: INK_MUTED, fontSize: 13, fontWeight: 600 }}>
-                Free during early access · Admin-approved only
-              </Text>
+              <button
+                type="button"
+                onClick={goToLogin}
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  cursor: 'pointer',
+                  color: SAGE_DARK,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  textDecoration: 'underline'
+                }}
+              >
+                Or use a sign-in code
+              </button>
             </div>
-
-            <div
-              style={{
-                marginTop: 28,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 18,
-                color: INK,
-                fontSize: 14,
-                fontWeight: 600
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircleFilled style={{ color: SAGE, fontSize: 18 }} /> Kid-safe by design
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircleFilled style={{ color: SAGE, fontSize: 18 }} /> Math · Reading · Writing
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircleFilled style={{ color: SAGE, fontSize: 18 }} /> Never just gives the answer
-              </span>
-            </div>
-          </div>
-
-          {/* Preview column */}
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <HeroPreview />
           </div>
         </div>
-
-        <style>{`
-          @media (max-width: 880px) {
-            .hero-grid {
-              grid-template-columns: minmax(0, 1fr) !important;
-              text-align: center;
-            }
-            .hero-grid > div:first-child .sticker-chip,
-            .hero-grid > div:first-child > div[id="signin"] { margin-inline: auto; }
-          }
-        `}</style>
       </section>
 
       {/* ============ SUBJECTS strip ============ */}
@@ -646,18 +397,6 @@ export default function HomePage() {
             alignItems: 'center'
           }}
         >
-          <Text
-            style={{
-              color: INK_MUTED,
-              marginRight: 4,
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              textTransform: 'uppercase'
-            }}
-          >
-            Covers
-          </Text>
           {subjects.map((s) => (
             <div
               key={s.label}
@@ -949,23 +688,13 @@ export default function HomePage() {
         style={{
           padding: '96px 24px',
           textAlign: 'center',
-          position: 'relative',
-          overflow: 'hidden',
-          background: BG
+          background: '#A595B8'
         }}
       >
-        <Blob color={MINT} size={420} top="10%" left="8%" opacity={0.4} blur={90} />
-        <Blob color={LAVENDER} size={360} bottom="10%" right="12%" kind="b" opacity={0.45} blur={90} />
         <div
           style={{
-            position: 'relative',
-            zIndex: 1,
             maxWidth: 620,
-            margin: '0 auto',
-            padding: '56px 40px 48px',
-            background: BG,
-            borderRadius: 32,
-            boxShadow: stickerShadow.cardHover
+            margin: '0 auto'
           }}
         >
           <div
@@ -990,18 +719,30 @@ export default function HomePage() {
             level={2}
             style={{
               fontFamily: QUICKSAND,
-              color: INK,
+              color: WHITE,
               fontSize: 'clamp(32px, 5vw, 46px)',
               marginBottom: 14,
               letterSpacing: -1,
               fontWeight: 700
             }}
           >
-            Ready for a <span className="gradient-text">calmer</span> homework hour?
+            Ready for a{' '}
+            <span
+              style={{
+                background: `linear-gradient(135deg, ${CREAM_PEACH} 0%, ${PEACH} 100%)`,
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                color: 'transparent'
+              }}
+            >
+              calmer
+            </span>{' '}
+            homework hour?
           </Title>
           <Paragraph
             style={{
-              color: INK_MUTED,
+              color: 'rgba(255, 255, 255, 0.88)',
               fontSize: 18,
               marginBottom: 36,
               lineHeight: 1.65,
@@ -1014,20 +755,31 @@ export default function HomePage() {
             style={{
               display: 'inline-flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              gap: 12
+              alignItems: 'stretch',
+              gap: 12,
+              minWidth: 320
             }}
           >
             <GoogleSignInButton
               role="student"
               size="large"
-              width={280}
-              scale={1.4}
               onSuccess={handleGoogleSuccess}
             />
-            <Text style={{ color: INK_MUTED, fontSize: 13, fontWeight: 600 }}>
-              No password. Cancel any time.
-            </Text>
+            <button
+              type="button"
+              onClick={goToLogin}
+              style={{
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                color: WHITE,
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: 'underline'
+              }}
+            >
+              Or use a sign-in code
+            </button>
           </div>
         </div>
       </section>
@@ -1037,7 +789,7 @@ export default function HomePage() {
         style={{
           padding: '48px 24px 40px',
           textAlign: 'center',
-          background: '#4A5568',
+          background: '#1A202C',
           color: ON_DARK.text,
           display: 'flex',
           flexDirection: 'column',
@@ -1046,11 +798,8 @@ export default function HomePage() {
         }}
       >
         <div style={{ marginBottom: 6 }}>
-          <Logo height={40} />
+          <Logo height={28} />
         </div>
-        <Text style={{ color: ON_DARK.text, fontSize: 13, fontWeight: 500 }}>
-          Made with <HeartFilled style={{ color: PEACH, fontSize: 12 }} /> for kids who learn out loud.
-        </Text>
         <Text style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
           &copy;2019&ndash;2026 Techseeding PTY LTD. All rights reserved.
         </Text>
@@ -1058,9 +807,9 @@ export default function HomePage() {
           href="https://techseeding.com.au"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: MINT, fontWeight: 600 }}
+          style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
         >
-          techseeding.com.au
+          <GlobalOutlined/> techseeding.com.au
         </Link>
         <Text style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
           ABN: 35631597450 / ACN: 631597450
@@ -1078,7 +827,7 @@ export default function HomePage() {
             href="/privacy_policy"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: ON_DARK.text, fontWeight: 600 }}
+            style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
           >
             Privacy
           </Link>
@@ -1086,7 +835,7 @@ export default function HomePage() {
             href="/terms_of_use"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: ON_DARK.text, fontWeight: 600 }}
+            style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
           >
             Terms
           </Link>

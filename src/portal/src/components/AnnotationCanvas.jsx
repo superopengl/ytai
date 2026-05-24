@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   Stage,
   Layer,
@@ -11,7 +11,7 @@ import {
   Tag,
   Text as KonvaText
 } from 'react-konva';
-import { Button, ColorPicker, Slider, Space, Tooltip } from 'antd';
+import { Button, ColorPicker, Popover, Slider, Space, Tooltip } from 'antd';
 import { ClearOutlined, HighlightOutlined, UndoOutlined } from '@ant-design/icons';
 import { palette } from '../theme.js';
 
@@ -24,14 +24,21 @@ const PEN_WIDTH_DEFAULT = 7;
 // Single-page canvas. Strokes are passed in via `lines` and surfaced via
 // `onLinesChange` so a parent (e.g. PagedCanvas) can keep a per-page map
 // — strokes survive page switches that way.
-export default function AnnotationCanvas({
-  imageUrl,
-  lines = [],
-  onLinesChange,
-  aiAnnotations = [],
-  onClearAiAnnotations,
-  toolbarExtras = null
-}) {
+//
+// Imperative handle: { flatten() } — returns a PNG dataURL of the photo +
+// strokes (rendered at the original image resolution so Eyes sees the
+// marks crisply) when there is at least one user stroke, else null.
+function AnnotationCanvas(
+  {
+    imageUrl,
+    lines = [],
+    onLinesChange,
+    aiAnnotations = [],
+    onClearAiAnnotations,
+    toolbarExtras = null
+  },
+  ref
+) {
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const aiLayerRef = useRef(null);
@@ -40,6 +47,25 @@ export default function AnnotationCanvas({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [penColor, setPenColor] = useState(PEN_PRESETS[0]);
   const [penWidth, setPenWidth] = useState(PEN_WIDTH_DEFAULT);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flatten() {
+        if (!stageRef.current || !image) return null;
+        if (!Array.isArray(lines) || lines.length === 0) return null;
+        // Re-export at the source image's native resolution so freehand
+        // strokes are sharp for Eyes — the display fit may be much smaller.
+        // Cap the pixel ratio at 2 to keep payload sizes reasonable even on
+        // very high-res photos.
+        const fitWidth = stageRef.current.width();
+        const pixelRatio =
+          fitWidth > 0 && image.width > 0 ? Math.min(2, image.width / fitWidth) : 1;
+        return stageRef.current.toDataURL({ mimeType: 'image/png', pixelRatio });
+      }
+    }),
+    [image, lines]
+  );
 
   useEffect(() => {
     if (!imageUrl) {
@@ -104,8 +130,12 @@ export default function AnnotationCanvas({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Space style={{ marginTop: 4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }} size={[8, 8]}>
-        <Tooltip title="Undo last stroke">
+      <Space
+        align="center"
+        style={{ marginTop: 4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }}
+        size={[8, 8]}
+      >
+        <Tooltip title="Undo last mark">
           <Button
             icon={<UndoOutlined />}
             onClick={() => setLines((prev) => prev.slice(0, -1))}
@@ -135,8 +165,6 @@ export default function AnnotationCanvas({
           </Tooltip>
         )}
 
-        <span style={toolbarDividerStyle} />
-
         <Tooltip title="Pen color">
           <ColorPicker
             value={penColor}
@@ -146,15 +174,30 @@ export default function AnnotationCanvas({
           />
         </Tooltip>
 
-        <span style={toolbarDividerStyle} />
-
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '0 8px',
-            }}
+        <Popover
+          trigger="click"
+          placement="bottom"
+          content={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 200 }}>
+              <Slider
+                min={PEN_WIDTH_MIN}
+                max={PEN_WIDTH_MAX}
+                step={1}
+                value={penWidth}
+                onChange={setPenWidth}
+                style={{ flex: 1, margin: 0 }}
+                tooltip={{ formatter: null }}
+              />
+              <span style={{ minWidth: 28, fontSize: 12, color: palette.textHint, lineHeight: 1 }}>
+                {penWidth}px
+              </span>
+            </div>
+          }
+        >
+          <Button
+            title="Pen thickness"
+            aria-label={`Pen thickness: ${penWidth}px`}
+            style={{ width: 48, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <span
               aria-hidden
@@ -163,21 +206,11 @@ export default function AnnotationCanvas({
                 width: penWidth,
                 height: penWidth,
                 borderRadius: '50%',
-                background: penColor,
-                flexShrink: 0
+                background: penColor
               }}
             />
-            <Slider
-              min={PEN_WIDTH_MIN}
-              max={PEN_WIDTH_MAX}
-              step={1}
-              value={penWidth}
-              onChange={setPenWidth}
-              style={{ width: 120, margin: 0 }}
-              tooltip={{formatter: null}}
-            />
-            <span style={{ minWidth: 28, fontSize: 12, color: palette.textHint }}>{penWidth}px</span>
-          </div>
+          </Button>
+        </Popover>
 
         {toolbarExtras}
       </Space>
@@ -242,6 +275,8 @@ export default function AnnotationCanvas({
     </div>
   );
 }
+
+export default forwardRef(AnnotationCanvas);
 
 const toolbarDividerStyle = {
   display: 'inline-block',

@@ -89,7 +89,8 @@ export default async function tutorPrompt({
   viewingPage,
   usedColors = [],
   guidanceLevel,
-  subject
+  subject,
+  annotatedPages = []
 } = {}) {
   const level = isGuidanceLevel(guidanceLevel) ? guidanceLevel : DEFAULT_GUIDANCE_LEVEL;
   const subjectKey = isSubject(subject) ? subject : DEFAULT_SUBJECT;
@@ -149,6 +150,15 @@ export default async function tutorPrompt({
         '\n' +
         'Chain calls if you need more. Each call is one focused query.\n' +
         '\n' +
+        'The student can draw freehand on the page — colored circles, underlines, highlights — ' +
+        'to point at what they are stuck on. These marks DO show up to lookup_on_image (Eyes ' +
+        'sees the flattened canvas, not the bare photo) and you should look for them whenever ' +
+        'the student asks about "this", "what I circled", "the highlighted bit", or anything ' +
+        'pointing at the page without naming printed text. find_text_on_image cannot see ' +
+        'freehand marks — it reads printed text only — so for "what did I circle?" use ' +
+        'lookup_on_image with a question like "What is enclosed by the colored freehand mark ' +
+        'the student drew on this page?"\n' +
+        '\n' +
         'Annotation is the default — almost every turn that references the page should call ' +
         'draw_annotation. But do not loop on OCR failures:\n' +
         '- Try find_text_on_image once with the most distinctive printed phrase. If it returns ' +
@@ -169,6 +179,29 @@ export default async function tutorPrompt({
     // empty — fall back to the full palette so Brain still has options
     // rather than picking nothing.
     const freeList = (free.length > 0 ? free : ANNOTATION_COLOR_NAMES).join(', ');
+    // Surface the per-turn signal that the student just drew on the page,
+    // so Brain doesn't pattern-match its older "I see no red marks" replies.
+    const annotatedList = Array.isArray(annotatedPages)
+      ? annotatedPages.filter((n) => Number.isInteger(n) && n >= 1)
+      : [];
+    if (annotatedList.length > 0) {
+      const pageList =
+        annotatedList.length === 1
+          ? `page ${annotatedList[0]}`
+          : `pages ${annotatedList.join(', ')}`;
+      messages.push({
+        role: 'system',
+        content:
+          `Heads up: the student drew freehand on ${pageList} for THIS turn. Their mark is ` +
+          'visible to lookup_on_image — call it on that page with a question about the ' +
+          "freehand mark (e.g. \"What did the student circle on this page? Describe what is " +
+          'inside the colored freehand ring and quote any printed text it surrounds."). Do not ' +
+          'tell the student you cannot see the mark — Eyes can. Once you know what is inside ' +
+          'the mark, follow up with find_text_on_image on a distinctive phrase from that area ' +
+          'and draw_annotation on the bbox to acknowledge it.'
+      });
+    }
+
     messages.push({
       role: 'system',
       content:

@@ -18,39 +18,63 @@ function visionConfig() {
   };
 }
 
-function hashQuestion(question) {
-  return createHash('sha256').update(question.trim().toLowerCase()).digest('hex');
+function hashQuestion(question, bytesSignature) {
+  // Dust the question hash with a bytes signature so two turns with the
+  // *same* question but *different* canvas annotations don't collide on
+  // the cached row. The original-photo case passes an empty signature so
+  // its rows stay where past sessions expect them.
+  const seed = bytesSignature ? `${question.trim().toLowerCase()}|bytes:${bytesSignature}` : question.trim().toLowerCase();
+  return createHash('sha256').update(seed).digest('hex');
+}
+
+function bytesSignatureFromDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string') return '';
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx < 0) return '';
+  // Hash only the base64 payload — the data URL prefix is constant per
+  // mime and the payload alone identifies the bytes.
+  return createHash('sha256').update(dataUrl.slice(commaIdx + 1)).digest('hex');
 }
 
 // Hashed natural-language vision Q&A cache. Brain often asks the same thing
 // twice during a session (e.g. "list the questions") — caching makes the
 // second-and-onwards calls free. Keyed by (imageId, hashedQuestion); when
-// annotations change the imageId changes too, so cached answers correctly
-// expire.
+// `imageDataUrlOverride` is passed (student-drawn freehand on the canvas),
+// the question hash is dusted with the override's bytes hash so each
+// distinct annotation state caches independently and stale answers from a
+// past, un-annotated turn don't leak through.
 export default async function lookupOnImage({
   image,
   question,
   log,
-  signal
+  signal,
+  imageDataUrlOverride = null
 }) {
-  const questionHash = hashQuestion(question);
+  const bytesSignature = imageDataUrlOverride ? bytesSignatureFromDataUrl(imageDataUrlOverride) : '';
+  const questionHash = hashQuestion(question, bytesSignature);
   const [cached] = await db()
     .select({ extracted: visionExtraction.extracted })
     .from(visionExtraction)
     .where(and(eq(visionExtraction.imageId, image.id), eq(visionExtraction.regionHash, questionHash)));
   if (cached?.extracted) {
-    log?.info({ imageId: image.id, questionHash: questionHash.slice(0, 12) }, 'vision cache hit');
+    log?.info(
+      { imageId: image.id, questionHash: questionHash.slice(0, 12), annotated: !!imageDataUrlOverride },
+      'vision cache hit'
+    );
     return cached.extracted;
   }
 
-  const imageDataUrl = await loadImageDataUrl(image.storageUrl);
+  const imageDataUrl = imageDataUrlOverride || (await loadImageDataUrl(image.storageUrl));
   if (!imageDataUrl) {
     log?.warn({ imageId: image.id }, 'cannot run vision: no data URL and storage unreadable');
     return { answer: '', bbox: null, error: 'image-unavailable' };
   }
 
   const { baseUrl, apiKey, model } = visionConfig();
-  log?.info({ imageId: image.id, question, model }, 'running Eyes (lookup_on_image)');
+  log?.info(
+    { imageId: image.id, question, model, annotated: !!imageDataUrlOverride },
+    'running Eyes (lookup_on_image)'
+  );
   const { answer, modelVersion } = await askVisionModel({
     imageDataUrl,
     question,

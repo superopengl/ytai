@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, ConfigProvider, Empty, message, Popconfirm, Spin, theme, Typography, Space } from 'antd';
-import { DeleteOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, FileAddOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
 import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
 
@@ -26,12 +26,12 @@ export default function TutorSessionsSider({
   const load = useCallback(async () => {
     try {
       const res = await apiFetch('/api/tutor/sessions');
-      if (!res.ok) throw new Error(`Sessions fetch failed (${res.status})`);
+      if (!res.ok) throw new Error("Couldn't load your sessions");
       const body = await res.json();
       setSessions(Array.isArray(body.sessions) ? body.sessions : []);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Could not load sessions.');
+      setError(err.message || "Couldn't load your sessions.");
       setSessions([]);
     }
   }, []);
@@ -45,11 +45,11 @@ export default function TutorSessionsSider({
       setDeletingId(sessionId);
       try {
         const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+        if (!res.ok) throw new Error("Couldn't delete that session");
         setSessions((prev) => (prev ? prev.filter((s) => s.id !== sessionId) : prev));
         onSessionDeleted?.(sessionId);
       } catch (err) {
-        message.error(err.message || 'Could not delete session');
+        message.error(err.message || "Couldn't delete that session");
       } finally {
         setDeletingId(null);
       }
@@ -61,18 +61,13 @@ export default function TutorSessionsSider({
     <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
       <div style={containerStyle}>
         <style>{ROW_CSS}</style>
-        <div style={headerStyle}>
-          <Typography.Text strong style={{ color: TEXT_PRIMARY }}>
-            All Sessions
-          </Typography.Text>
-        </div>
         {onNewSession ? (
           <div style={actionStyle}>
             <Button
               ghost
               type="primary"
               block
-              icon={<PlusOutlined />}
+              icon={<FileAddOutlined />}
               onClick={onNewSession}
               loading={creatingSession}
             >
@@ -142,7 +137,7 @@ function SessionRow({ session, active, deleting, onSelect, onDelete }) {
           <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
             <Popconfirm
               title="Delete this session?"
-              description="This will permanently remove the chat, images, and report. This cannot be undone."
+              description="This permanently removes the chat, images, and any reports. You can't undo it."
               okText="Delete"
               okButtonProps={{ danger: true, loading: deleting }}
               cancelText="Cancel"
@@ -209,7 +204,7 @@ const headerStyle = {
   gap: 8
 };
 const actionStyle = {
-  padding: '8px 12px',
+  padding: '12px',
   // borderBottom: `1px solid ${SIDER_BORDER}`
 };
 const scrollStyle = {

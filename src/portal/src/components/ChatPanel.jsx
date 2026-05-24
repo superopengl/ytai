@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Input, Select, Tooltip, Typography, Upload } from 'antd';
+import { Alert, Button, Input, Select, Tooltip, Upload } from 'antd';
 import {
   AudioOutlined,
   CheckOutlined,
@@ -8,6 +8,7 @@ import {
   LoadingOutlined,
   MutedOutlined,
   PictureOutlined,
+  PlusOutlined,
   SendOutlined,
   SoundOutlined,
   StopOutlined
@@ -17,6 +18,7 @@ import streamSSE from '../lib/streamSSE.js';
 import uploadDoc from '../lib/uploadDoc.js';
 import useTutorVoice from '../hooks/useTutorVoice.js';
 import AuthedImage from './AuthedImage.jsx';
+import PhotoCapture from './PhotoCapture.jsx';
 import { palette } from '../theme.js';
 
 // Subject-blue is the "accent" for chat — it's the math subject color and
@@ -43,6 +45,9 @@ import MarkdownMessage from './MarkdownMessage.jsx';
 //   onDocCreated(doc)                     — fired when a new doc was uploaded
 //   onSelectDoc(docId, pageNumber)        — fired when student clicks a
 //                                           past doc bubble
+//   getAnnotatedImage()                   — pull-callback returning the
+//     current canvas as { imageId, dataUrl } when the student has drawn on
+//     the active page, else null. Read at send time so Eyes sees the marks.
 export default function ChatPanel({
   sessionId,
   currentDocId,
@@ -51,7 +56,8 @@ export default function ChatPanel({
   onDocsLoaded,
   onAiAnnotation,
   onDocCreated,
-  onSelectDoc
+  onSelectDoc,
+  getAnnotatedImage
 }) {
   const [messages, setMessages] = useState([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -77,7 +83,7 @@ export default function ChatPanel({
 
     apiFetch(`/api/tutor/${sessionId}/messages`)
       .then((res) => {
-        if (!res.ok) throw new Error(`History fetch failed (${res.status})`);
+        if (!res.ok) throw new Error("Couldn't load chat history");
         return res.json();
       })
       .then((body) => {
@@ -117,7 +123,7 @@ export default function ChatPanel({
       .catch((err) => {
         if (!cancelled) {
           setHistoryLoaded(true);
-          setError(err.message || 'Could not load chat history.');
+          setError(err.message || "Couldn't load chat history.");
         }
       });
 
@@ -172,11 +178,11 @@ export default function ChatPanel({
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Could not change tutor mode (${res.status})`);
+          throw new Error(body.error || "Couldn't change tutor mode");
         }
       } catch (err) {
         setGuidanceLevel(previous);
-        setError(err.message || 'Could not change tutor mode.');
+        setError(err.message || "Couldn't change tutor mode.");
       }
     },
     [guidanceLevel, sessionId]
@@ -201,7 +207,7 @@ export default function ChatPanel({
         const { doc } = await uploadDoc(sessionId, files);
         onDocCreated?.(doc);
       } catch (err) {
-        setError(err.message || 'Upload failed.');
+        setError(err.message || "Couldn't upload that worksheet.");
       } finally {
         setUploading(false);
       }
@@ -242,13 +248,27 @@ export default function ChatPanel({
     abortRef.current = controller;
     voice.setActiveTarget(placeholderId);
 
+    // Pull a flattened PNG of the photo + freehand strokes if the student
+    // has marked the page. Null when the canvas is clean — server then
+    // falls back to the original photo for vision lookups.
+    let annotatedImage = null;
+    try {
+      annotatedImage = typeof getAnnotatedImage === 'function' ? getAnnotatedImage() : null;
+    } catch {
+      // Konva can throw if the underlying image is tainted (cross-origin
+      // without anonymous). Swallow and proceed without annotations rather
+      // than blocking the send.
+      annotatedImage = null;
+    }
+
     try {
       const stream = streamSSE(`/api/tutor/${sessionId}/message`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           content: text,
-          viewingPage: Number.isInteger(currentPage) ? currentPage : undefined
+          viewingPage: Number.isInteger(currentPage) ? currentPage : undefined,
+          annotatedImage: annotatedImage || undefined
         }),
         signal: controller.signal
       });
@@ -313,13 +333,13 @@ export default function ChatPanel({
           }
         } else if (event === 'error') {
           setAwaitingTokens(false);
-          setError(data.error || 'Something went wrong.');
+          setError(data.error || "Something went wrong. Please try again.");
           voice.stop();
         }
       }
     } catch (err) {
       if (sendGenRef.current === myGen && err.name !== 'AbortError') {
-        setError(err.message || 'Request failed.');
+        setError(err.message || "Couldn't reach the tutor. Please try again.");
         voice.stop();
       }
     } finally {
@@ -329,7 +349,7 @@ export default function ChatPanel({
         setAwaitingTokens(false);
       }
     }
-  }, [input, sessionId, currentPage, voice, speech, onAiAnnotation]);
+  }, [input, sessionId, currentPage, voice, speech, onAiAnnotation, getAnnotatedImage]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -380,10 +400,10 @@ export default function ChatPanel({
         <Tooltip
           title={
             !voice.supported
-              ? 'Voice is not configured on the server.'
+              ? "Voice isn't set up yet."
               : voice.enabled
                 ? 'Turn voice off'
-                : 'Turn voice on (tutor will read replies aloud)'
+                : 'Turn voice on — tutor will read replies aloud'
           }
         >
           <Button
@@ -401,7 +421,9 @@ export default function ChatPanel({
             <LoadingOutlined style={{ marginRight: 8 }} /> Loading chat…
           </div>
         ) : timeline.length === 0 ? (
-          <EmptyHint />
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <PhotoCapture onStart={handleUploadFiles} busy={uploading} />
+          </div>
         ) : (
           timeline.map((item, idx) => {
             if (item.kind === 'doc') {
@@ -460,7 +482,7 @@ export default function ChatPanel({
       )}
 
       <div style={composerStyle}>
-        <Tooltip title="Upload a new worksheet (photos or PDF)">
+        <Tooltip title="Add a worksheet or PDF">
           <Upload
             beforeUpload={(file, list) => {
               // antd fires beforeUpload once per file in a multi-select.
@@ -479,7 +501,7 @@ export default function ChatPanel({
             disabled={uploading}
           >
             <Button
-              icon={uploading ? <LoadingOutlined /> : <PictureOutlined />}
+              icon={uploading ? <LoadingOutlined /> : <PlusOutlined />}
               disabled={uploading}
               aria-label="Upload a new worksheet"
             />
@@ -506,8 +528,8 @@ export default function ChatPanel({
             speech.listening
               ? 'Listening… speak now, then click the mic to stop.'
               : busy
-                ? 'Tutor is responding — type or dictate to jump in…'
-                : 'Ask about a question, or upload a worksheet…'
+                ? 'Tutor is thinking — type or speak to jump in…'
+                : 'Ask a question, or add a worksheet…'
           }
           readOnly={speech.listening}
           maxLength={2000}
@@ -528,7 +550,7 @@ export default function ChatPanel({
           icon={<SendOutlined />}
           onClick={send}
           disabled={!input.trim()}
-          title={busy || voice.speaking ? 'Send (this will interrupt the tutor)' : undefined}
+          title={busy || voice.speaking ? 'Send (the tutor will pause and listen)' : undefined}
         >
           Send
         </Button>
@@ -776,26 +798,15 @@ function SpeakingIcon() {
 
 function dictationErrorMessage(code) {
   if (code === 'not-allowed' || code === 'service-not-allowed') {
-    return 'Microphone access was blocked. Allow it in your browser settings to dictate.';
+    return 'Microphone is blocked. Allow it in your browser settings to use voice.';
   }
   if (code === 'audio-capture') {
-    return 'No microphone was detected.';
+    return "I couldn't find a microphone.";
   }
   if (code === 'network') {
-    return 'Voice input needs an internet connection.';
+    return 'Voice needs an internet connection.';
   }
-  return 'Voice input is unavailable right now.';
-}
-
-function EmptyHint() {
-  return (
-    <div style={{ ...centeredHint, flexDirection: 'column', gap: 6 }}>
-      <Typography.Text strong>Ask away</Typography.Text>
-      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        Try: "Can you help me with question 3?"
-      </Typography.Text>
-    </div>
-  );
+  return "Voice isn't working right now.";
 }
 
 const headerStyle = {

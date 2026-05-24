@@ -111,6 +111,22 @@ async function loadActiveDoc(sessionId, currentDocId, log) {
   return { id: doc.id, kind: doc.kind, pages };
 }
 
+// Decode `data:image/...;base64,...` into a raw byte Buffer. Returns null
+// for malformed or unsupported inputs. Used to validate the per-turn
+// annotated canvas the frontend ships when the student has marked the page.
+function decodeImageDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string') return null;
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) return null;
+  try {
+    const bytes = Buffer.from(match[2], 'base64');
+    if (bytes.length === 0) return null;
+    return { mimeType: match[1], bytes };
+  } catch {
+    return null;
+  }
+}
+
 export default function tutorSendMessage(fastify) {
   fastify.post('/api/tutor/:sessionId/message', async (request, reply) => {
     const { sessionId } = request.params;
@@ -122,6 +138,19 @@ export default function tutorSendMessage(fastify) {
     const viewingPage = Number.isInteger(request.body?.viewingPage)
       ? Math.max(1, request.body.viewingPage)
       : null;
+    // Per-turn ephemeral canvas snapshot: { imageId, dataUrl } where the
+    // dataUrl is a PNG of (photo + freehand strokes) the student drew on
+    // the active page. Not persisted — Brain's `lookup_on_image` for that
+    // imageId substitutes these bytes for the original photo so Eyes can
+    // see what the student circled. Absent when the canvas is clean.
+    const annotatedImageRaw = request.body?.annotatedImage;
+    const annotatedImage =
+      annotatedImageRaw &&
+      typeof annotatedImageRaw === 'object' &&
+      typeof annotatedImageRaw.imageId === 'string' &&
+      typeof annotatedImageRaw.dataUrl === 'string'
+        ? annotatedImageRaw
+        : null;
 
     if (!content) {
       reply.code(400);
@@ -145,12 +174,40 @@ export default function tutorSendMessage(fastify) {
 
     const activeDoc = await loadActiveDoc(sessionId, session.currentDocId, request.log);
 
+    // Build the per-imageId annotated-bytes map for this turn. Only honor an
+    // annotated image whose imageId belongs to a page of the active doc —
+    // a stale imageId from a switched-out doc gets dropped, not trusted.
+    const annotatedByImageId = new Map();
+    if (annotatedImage && activeDoc) {
+      const pageMatch = activeDoc.pages.find((p) => p.id === annotatedImage.imageId);
+      if (pageMatch) {
+        const decoded = decodeImageDataUrl(annotatedImage.dataUrl);
+        if (decoded) {
+          annotatedByImageId.set(pageMatch.id, {
+            dataUrl: annotatedImage.dataUrl,
+            byteLength: decoded.bytes.length
+          });
+        } else {
+          request.log.warn(
+            { sessionId, imageId: annotatedImage.imageId },
+            'annotatedImage: malformed dataUrl — falling back to original photo'
+          );
+        }
+      } else {
+        request.log.warn(
+          { sessionId, imageId: annotatedImage.imageId, activeDocId: activeDoc.id },
+          'annotatedImage: imageId not in active doc — ignoring'
+        );
+      }
+    }
+
     request.log.info(
       {
         sessionId,
         currentDocId: session.currentDocId,
         pageCount: activeDoc?.pages.length ?? 0,
-        viewingPage
+        viewingPage,
+        annotatedPages: Array.from(annotatedByImageId.keys())
       },
       'turn start'
     );
@@ -181,12 +238,22 @@ export default function tutorSendMessage(fastify) {
       })
       .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
+    // Page numbers the student annotated this turn — fed into the system
+    // prompt so Brain knows to ask Eyes about the marks instead of insisting
+    // it sees none.
+    const annotatedPageNumbers = activeDoc
+      ? activeDoc.pages
+          .filter((p) => annotatedByImageId.has(p.id))
+          .map((p) => p.pageNumber)
+      : [];
+
     const promptMessages = await tutorPrompt({
       activeDoc,
       viewingPage,
       usedColors,
       guidanceLevel: session.guidanceLevel,
-      subject: session.subject
+      subject: session.subject,
+      annotatedPages: annotatedPageNumbers
     });
 
     const modelMessages = [
@@ -249,7 +316,8 @@ export default function tutorSendMessage(fastify) {
       log: request.log,
       emit: sse,
       usedColorsForTurn,
-      signal: abortController.signal
+      signal: abortController.signal,
+      annotatedByImageId
     });
 
     const {

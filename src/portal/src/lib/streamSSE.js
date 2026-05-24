@@ -2,7 +2,7 @@ export default async function* streamSSE(url, options = {}) {
   const res = await fetch(url, options);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    const err = new Error(`Request failed (${res.status}): ${text.slice(0, 200)}`);
+    const err = new Error("Couldn't reach the tutor. Please try again.");
     err.status = res.status;
     throw err;
   }

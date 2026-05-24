@@ -29,6 +29,7 @@ import {
 } from '@ant-design/icons';
 import SUBJECTS from '../lib/subjects.js';
 import apiFetch from '../lib/apiFetch.js';
+import currentSubject from '../lib/currentSubject.js';
 import { palette } from '../theme.js';
 import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
@@ -173,14 +174,19 @@ export default function ReportsPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [generating, setGenerating] = useState(null);
   const [customPrompt, setCustomPrompt] = useState('');
-  const [customSubject, setCustomSubject] = useState('math');
+  const [customSubject, setCustomSubject] = useState(() => currentSubject().value);
+
+  const updateSubject = useCallback((next) => {
+    setCustomSubject(next);
+    currentSubject().save(next);
+  }, []);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await apiFetch('/api/me/subject-reports');
-      if (!res.ok) throw new Error(`Could not load reports (${res.status})`);
+      if (!res.ok) throw new Error("Couldn't load your reports");
       const body = await res.json();
       setReports(body.reports || []);
     } catch (err) {
@@ -226,7 +232,7 @@ export default function ReportsPage() {
       });
       const body = await res.json();
       if (!res.ok) {
-        throw new Error(body?.error || `Generation failed (${res.status})`);
+        throw new Error(body?.error || "Couldn't generate the report");
       }
       if (body.status === 'empty') {
         message.info('No sessions for this subject yet — finish a session in the tutor first.');
@@ -248,11 +254,11 @@ export default function ReportsPage() {
 
   const handleGenerateSimilar = useCallback(
     (report) => {
-      setCustomSubject(report.subject);
+      updateSubject(report.subject);
       setCustomPrompt(report.customPrompt || '');
       setSelectedId(null);
     },
-    []
+    [updateSubject]
   );
 
   const handleDelete = useCallback(
@@ -261,7 +267,7 @@ export default function ReportsPage() {
         const res = await apiFetch(`/api/me/subject-report/${id}`, { method: 'DELETE' });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body?.error || `Delete failed (${res.status})`);
+          throw new Error(body?.error || "Couldn't delete that report");
         }
         message.success('Report deleted');
         setSelectedId(null);
@@ -324,7 +330,7 @@ export default function ReportsPage() {
               <GeneratePanel
                 generating={generating}
                 customSubject={customSubject}
-                setCustomSubject={setCustomSubject}
+                setCustomSubject={updateSubject}
                 customPrompt={customPrompt}
                 setCustomPrompt={setCustomPrompt}
                 onSubmit={handleSubmit}
@@ -702,7 +708,7 @@ function FailedReportBody({ report }) {
         type="error"
         showIcon
         message="Report generation failed"
-        description={report.error || 'The model didn’t return a usable report. Try again.'}
+        description={report.error || 'Something went wrong generating this report. Try again.'}
       />
       {report.customPrompt ? (
         <PromptCard prompt={report.customPrompt} style={{ marginTop: 16 }} />

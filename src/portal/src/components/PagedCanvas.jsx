@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Typography } from 'antd';
 import AnnotationCanvas from './AnnotationCanvas.jsx';
 import AuthedImage from './AuthedImage.jsx';
@@ -22,14 +22,23 @@ const ATTENTION_DOT = palette.subjects.writing.color;
 //   onCurrentPageChange:  (page) => void
 //   aiAnnotationsByPage:  Map<imageId, Array<{id, args}>>
 //   onClearPageAi:        (imageId) => void
-export default function PagedCanvas({
-  doc,
-  sessionId,
-  currentPage,
-  onCurrentPageChange,
-  aiAnnotationsByPage,
-  onClearPageAi
-}) {
+//
+// Imperative handle: { flatten() } — returns { imageId, dataUrl } for the
+// currently visible page when the student has drawn at least one stroke
+// on it, else null. ChatPanel pulls this on send so Eyes can see the
+// marks.
+function PagedCanvas(
+  {
+    doc,
+    sessionId,
+    currentPage,
+    onCurrentPageChange,
+    aiAnnotationsByPage,
+    onClearPageAi
+  },
+  ref
+) {
+  const canvasRef = useRef(null);
   // Per-page strokes live here so switching pages doesn't lose work. The
   // map is keyed by sessionImage.id which is stable across the session.
   const [linesByImage, setLinesByImage] = useState(new Map());
@@ -49,6 +58,19 @@ export default function PagedCanvas({
   const activeImageId = activePage?.id ?? null;
   const activeLines = activeImageId ? linesByImage.get(activeImageId) ?? [] : [];
   const activeAi = activeImageId ? aiAnnotationsByPage?.get(activeImageId) ?? [] : [];
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flatten() {
+        if (!activeImageId || !canvasRef.current) return null;
+        const dataUrl = canvasRef.current.flatten();
+        if (!dataUrl) return null;
+        return { imageId: activeImageId, dataUrl };
+      }
+    }),
+    [activeImageId]
+  );
 
   const setActiveLines = useCallback(
     (next) => {
@@ -84,6 +106,7 @@ export default function PagedCanvas({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <AnnotationCanvas
+          ref={canvasRef}
           imageUrl={canvasImageUrl}
           lines={activeLines}
           onLinesChange={setActiveLines}
@@ -103,6 +126,8 @@ export default function PagedCanvas({
     </div>
   );
 }
+
+export default forwardRef(PagedCanvas);
 
 function PageStrip({ pages, activePageNumber, sessionId, aiAnnotationsByPage, onSelect }) {
   return (
