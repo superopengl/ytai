@@ -15,7 +15,17 @@ Create a user directly (bypasses login request flow). Admin-only.
 **Body**: `{ name: string, role: "student" | "parent" | "teacher" | "admin" }`
 **Returns**: `{ userId: string }`
 
-## Auth / Google SSO
+## Auth
+
+Three sign-in paths, all returning the same `{ token, user }` shape:
+
+| Path | Audience | Notes |
+|---|---|---|
+| `POST /api/auth/google` | Anyone with a Google account | One-tap GIS popup; always preferred |
+| `POST /api/auth/email` + `POST /api/auth/otp` | Anyone with an email | Two-step: request a 6-digit code, then verify it |
+| `POST /api/auth/password` | Admins only | Username + password fallback for when Google/email are down |
+
+All four endpoints sit under `/api/auth/*` so the global JWT hook lets them through unauthenticated.
 
 ### `POST /api/auth/google`
 Verify a Google Identity Services ID token (`credential`), upsert the `user` row, and return a YTAI JWT. The token is verified via Google's `https://oauth2.googleapis.com/tokeninfo` endpoint — issuer, audience, and email-verification claims are all checked. Existing local accounts are linked when the email matches; otherwise a new row is inserted with `auth_provider='google'` and `status='pending'` (admin approval still required).
@@ -48,6 +58,43 @@ Verify a Google Identity Services ID token (`credential`), upsert the `user` row
 - `400` — missing `credential`
 - `401` — invalid / expired / audience-mismatched Google token
 - `503` — `YTAI_GOOGLE_CLIENT_ID` is unset on the server
+
+### `POST /api/auth/email`
+Issue a 6-digit OTP for the given email and (best-effort) send it via AWS SES. The OTP row is stored in plain text so an operator can read it back when email delivery is broken (logs always carry the code). If the email is unknown, a new `pending` user is auto-created with `auth_provider='email'`. Resending within a 30 s window reuses the live row so a kid mashing the button doesn't fan out into a dozen valid codes.
+
+**Body**: `{ "email": "string" }`
+
+**Returns**: `{ "expiresAt": "<iso8601>" }` — when the issued code stops being valid.
+
+**Errors**:
+- `400` — missing / malformed email
+
+### `POST /api/auth/otp`
+Verify the 6-digit code against the latest unconsumed OTP for the email. Wrong attempts increment a counter; after 5 the row is burned and the user has to request a fresh code. On success the row is deleted (no replay) and a 30-day YTAI JWT is returned. Response shape matches `/api/auth/google`.
+
+**Body**: `{ "email": "string", "code": "string" }` (`code` must be exactly 6 digits)
+
+**Returns**: same `{ token, user }` shape as `/api/auth/google`.
+
+**Errors**:
+- `400` — missing / malformed email or code
+- `401` — code didn't match the stored row
+- `404` — no active OTP for this email
+- `410` — code expired (request a fresh one)
+- `429` — too many wrong attempts on this code
+
+### `POST /api/auth/password`
+Admin-only username + password sign-in. Every other auth path is passwordless; this one exists so an operator can sign in even when Google or email delivery is down. Only users with `role='admin'` and a non-null `password_hash` can authenticate here — every other failure mode (missing user, wrong password, non-admin role) returns the same generic 401 so we don't leak which case fired. Passwords are stored as scrypt hashes (`scrypt$<saltHex>$<keyHex>`); plain-text passwords are never persisted.
+
+**Body**: `{ "userName": "string", "password": "string" }`
+
+**Returns**: same `{ token, user }` shape as `/api/auth/google`.
+
+**Errors**:
+- `400` — missing username or password
+- `401` — invalid username or password (covers every failure mode)
+
+**Bootstrap**: On every server start, `bootstrapAdmin` ensures at least one admin user exists. It honours `YTAI_ADMIN_USERNAME` / `YTAI_ADMIN_PASSWORD` if both are set, otherwise falls back to the hardcoded default `admin` / `adminadmin`. The default exists so a fresh checkout has a working admin sign-in without any extra setup — change the env vars (or the row) for any non-dev deployment.
 
 ## Tutor
 

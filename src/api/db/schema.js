@@ -20,18 +20,28 @@ export const user = ytai.table(
     role: text('role').notNull(),
     status: text('status').notNull().default('pending'),
     // 'local' for name/role-only signups (legacy & dev bootstrap user), 'google'
-    // for users who came in through Google Identity Services. Determines which
-    // fields are populated below — Google users always have email + googleId.
+    // for users who came in through Google Identity Services, 'email' for
+    // OTP-only signups. Determines which fields are populated below — Google
+    // users always have email + googleId; email users always have email.
     authProvider: text('auth_provider').notNull().default('local'),
     email: text('email'),
     googleId: text('google_id'),
     picture: text('picture'),
+    // Lowercase login handle used by the admin password sign-in path. Only
+    // set on accounts that can authenticate with a password (i.e. admins
+    // bootstrapped from env vars). Optional everywhere else.
+    userName: text('user_name'),
+    // scrypt-derived password hash, format: `scrypt$<saltHex>$<keyHex>`.
+    // Only set on accounts with `role='admin'` that authenticate via the
+    // username/password path. Plain-text passwords are never stored.
+    passwordHash: text('password_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
   },
   (t) => ({
     userEmailUnique: uniqueIndex('user_email_uq').on(t.email),
-    userGoogleIdUnique: uniqueIndex('user_google_id_uq').on(t.googleId)
+    userGoogleIdUnique: uniqueIndex('user_google_id_uq').on(t.googleId),
+    userUserNameUnique: uniqueIndex('user_user_name_uq').on(t.userName)
   })
 );
 
@@ -39,6 +49,22 @@ export const loginRequest = ytai.table('login_request', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => user.id),
   status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});
+
+// Short-lived 6-digit email sign-in codes. Stored in plain text on purpose —
+// admins can read codes out to a student whose email isn't reaching them.
+// Lifetime is bounded by expiresAt (10 minutes by default); rows are
+// opportunistically swept on every new code request, and burned on
+// successful verification or after too many wrong attempts.
+export const loginOtp = ytai.table('login_otp', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => user.id),
+  email: text('email').notNull(),
+  code: text('code').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });

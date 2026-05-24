@@ -7,7 +7,9 @@ Schema defined in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 ## Tables
 
 ### `user`
-Application users. One row per person. Three roles share the same table: `student`, `parent`, `teacher`, plus `admin`. `auth_provider` distinguishes name/role-only signups (`local`) from Google Identity Services signups (`google`); on Google sign-in we link an existing local row by `email` before falling back to insert.
+Application users. One row per person. Roles: `student`, `parent`, `teacher`, `admin`. `auth_provider` records how the row got created — `local` (legacy / bootstrapped admins), `google` (one-tap GIS), or `email` (auto-created on first OTP request). Sign-in resolution always tries `google_id` → `email` → `user_name` before inserting.
+
+`user_name` and `password_hash` are only populated on accounts that can authenticate via the username/password path — in practice that's just `role='admin'` users bootstrapped from env vars (or the hardcoded default `admin` / `adminadmin` in dev). Passwords are stored as scrypt-derived hashes (`scrypt$<saltHex>$<keyHex>`); plain text is never persisted.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -15,14 +17,16 @@ Application users. One row per person. Three roles share the same table: `studen
 | `name` | text | display name |
 | `role` | text | `student` \| `parent` \| `teacher` \| `admin` |
 | `status` | text | `pending` \| `approved` \| `rejected` |
-| `auth_provider` | text | `local` \| `google` |
+| `auth_provider` | text | `local` \| `google` \| `email` |
 | `email` | text | nullable; unique when present |
 | `google_id` | text | Google `sub` claim; nullable; unique when present |
 | `picture` | text | profile image URL from Google; nullable |
+| `user_name` | text | nullable; unique when present; lowercase login handle for the admin password path |
+| `password_hash` | text | nullable; `scrypt$<saltHex>$<keyHex>` format |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
-Unique indexes on `email` and `google_id`.
+Unique indexes on `email`, `google_id`, and `user_name`.
 
 ### `login_request`
 A user's request to log in; admin must approve before the user can start a session. The login page polls status by `id`.
@@ -34,6 +38,22 @@ A user's request to log in; admin must approve before the user can start a sessi
 | `status` | text | `pending` \| `approved` \| `rejected` |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
+
+### `login_otp`
+Short-lived 6-digit email sign-in codes. Stored in plain text on purpose — an admin can read the code out of the DB / server logs when SES delivery is broken. Rows live ~10 minutes, are opportunistically swept on every new code request, and are burned on successful verify or after 5 wrong attempts.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `user.id` |
+| `email` | text | denormalized for fast lookup; lowercase |
+| `code` | text | the 6-digit code, plain text |
+| `attempts` | int | wrong-attempt counter; row burns at 5 |
+| `expires_at` | timestamptz | hard cutoff (~10 min from `created_at`) |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+Indexes on `email` (for verification lookup) and `expires_at` (for the opportunistic sweep).
 
 ### `tutor_session`
 One row per tutoring sitting. A user starts a new session each time they begin tutoring; the session holds the chat transcript and the uploaded image(s).

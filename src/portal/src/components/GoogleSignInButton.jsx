@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Typography } from 'antd';
 import { GoogleOutlined } from '@ant-design/icons';
 import authSession from '../lib/authSession.js';
+import { radius } from '../theme.js';
 
 const { Text } = Typography;
 
@@ -23,25 +24,19 @@ function waitForGoogle(timeoutMs = 4000) {
   });
 }
 
-// Renders Google's official "Sign in with Google" button. On credential
-// receipt, POSTs to /api/auth/google with the desired role, persists the
-// returned JWT + user, then calls onSuccess(user). Render either a real
-// Google button (preferred) or a styled fallback if the SDK / client ID is
-// missing.
+// Renders a visible AntDesign-styled "Sign in with Google" button that
+// proxy-clicks an invisible Google Identity Services button. We can't
+// directly restyle GIS's rendered button (corners, font, padding are baked
+// in by Google), so we keep it off-screen and forward clicks to it from
+// the AntD button. The GIS credential callback still drives the auth flow.
 export default function GoogleSignInButton({
   role = 'student',
   size = 'large',
-  text = 'signin_with',
   onSuccess,
   onError,
-  width,
-  // Visual scale multiplier applied via CSS zoom so the GIS-rendered
-  // button (capped at 40px tall natively) can match the page's larger
-  // action buttons. Layout reflows correctly with `zoom`, unlike
-  // `transform: scale()`.
-  scale = 1
+  block = true
 }) {
-  const containerRef = useRef(null);
+  const hiddenRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -87,16 +82,15 @@ export default function GoogleSignInButton({
           itp_support: true
         });
 
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';
-          google.accounts.id.renderButton(containerRef.current, {
+        if (hiddenRef.current) {
+          hiddenRef.current.innerHTML = '';
+          google.accounts.id.renderButton(hiddenRef.current, {
             type: 'standard',
             theme: 'outline',
-            size: size === 'large' ? 'large' : 'medium',
-            text,
-            shape: 'pill',
-            logo_alignment: 'left',
-            width: typeof width === 'number' ? Math.min(Math.max(width, 200), 400) : undefined
+            size: 'large',
+            text: 'signin_with',
+            shape: 'rectangular',
+            logo_alignment: 'left'
           });
         }
         setReady(true);
@@ -108,7 +102,16 @@ export default function GoogleSignInButton({
     return () => {
       cancelled = true;
     };
-  }, [role, size, text, width]);
+  }, [role]);
+
+  const triggerGoogle = () => {
+    const gisButton = hiddenRef.current?.querySelector('[role="button"]');
+    if (gisButton) {
+      gisButton.click();
+    } else {
+      setError('Google sign-in is still loading. Please try again in a moment.');
+    }
+  };
 
   if (!CLIENT_ID) {
     return (
@@ -116,7 +119,8 @@ export default function GoogleSignInButton({
         size={size}
         icon={<GoogleOutlined />}
         disabled
-        style={{ borderRadius: 24, fontWeight: 600 }}
+        block={block}
+        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
       >
         Google sign-in (configure YTAI_GOOGLE_CLIENT_ID)
       </Button>
@@ -124,25 +128,43 @@ export default function GoogleSignInButton({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-      <div ref={containerRef} aria-busy={submitting} style={scale !== 1 ? { zoom: scale } : undefined} />
-      {!ready && (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Loading Google sign-in…
-        </Text>
-      )}
-      {submitting && (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Signing you in…
-        </Text>
-      )}
+    <div style={{ width: '100%' }}>
+      {/* Hidden GIS-rendered button — kept in the DOM so we can proxy-click it. */}
+      <div
+        ref={hiddenRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          width: 0,
+          height: 0,
+          overflow: 'hidden',
+          opacity: 0,
+          pointerEvents: 'none'
+        }}
+      />
+      <Button
+        size={size}
+        icon={<GoogleOutlined />}
+        onClick={triggerGoogle}
+        loading={submitting}
+        disabled={!ready}
+        block={block}
+        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
+      >
+        Sign in with Google
+      </Button>
       {error && (
         <Alert
           type="error"
           showIcon
           message={error}
-          style={{ borderRadius: 8, padding: '4px 10px' }}
+          style={{ marginTop: 8, borderRadius: 8, padding: '4px 10px' }}
         />
+      )}
+      {!ready && !error && (
+        <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12, textAlign: 'center' }}>
+          Loading Google sign-in…
+        </Text>
       )}
     </div>
   );

@@ -1,6 +1,10 @@
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import authEmail from './routes/authEmail.js';
 import authGoogle from './routes/authGoogle.js';
+import authOtp from './routes/authOtp.js';
+import authPassword from './routes/authPassword.js';
+import bootstrapAdmin from './lib/bootstrapAdmin.js';
 import healthcheck from './routes/healthcheck.js';
 import meDeleteSubjectReport from './routes/meDeleteSubjectReport.js';
 import meGenerateSubjectReport from './routes/meGenerateSubjectReport.js';
@@ -55,7 +59,10 @@ export default async function server() {
   });
 
   healthcheck(app);
+  authEmail(app);
   authGoogle(app);
+  authOtp(app);
+  authPassword(app);
   meDeleteSubjectReport(app);
   meGenerateSubjectReport(app);
   meListSubjectReports(app);
@@ -69,6 +76,12 @@ export default async function server() {
   tutorSendMessage(app);
   tutorSpeak(app);
   tutorUpdateSession(app);
+
+  try {
+    await bootstrapAdmin(app.log);
+  } catch (err) {
+    app.log.error({ err }, 'bootstrapAdmin failed');
+  }
 
   const port = Number(process.env.YTAI_API_PORT ?? 9521);
   await app.listen({ port, host: '0.0.0.0' });

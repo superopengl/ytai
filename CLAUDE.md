@@ -15,18 +15,19 @@ Students aged 8-14, plus the parents and teachers who help them. Three personas 
 
 Multi-page app with these views:
 
-1. **Homepage** (`/`) — Public landing page with feature highlights and the "Sign in with Google" entry point. Google SSO is the only sign-in path; there is no `/login` or `/signup` page.
-2. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
+1. **Homepage** (`/`) — Public landing page with feature highlights and a "Sign in with Google" entry point. Inline buttons also link to the full `/login` page for the email-OTP and admin-password paths.
+2. **Login** (`/login`) — Three sign-in paths in one card: Google SSO (preferred, one-tap), email OTP (6-digit code sent via SES; auto-creates a `pending` student on first sign-in), and an Admin tab with username + password (only role=admin users can log in here).
+3. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
    - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
-3. **Analysis Reports** (`/reports`) — AntDesign Splitter layout: left panel lists every generated report (tagged with subject + LLM-generated title + timestamp) as a scrollable history; right panel shows the selected report viewer, or — when nothing is selected — a "Generate a new report" pane: pick a subject, optionally prefill from a prompt template, edit, and hit Generate. Every generation inserts a new immutable `subject_report` row.
-4. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
+4. **Analysis Reports** (`/reports`) — AntDesign Splitter layout: left panel lists every generated report (tagged with subject + LLM-generated title + timestamp) as a scrollable history; right panel shows the selected report viewer, or — when nothing is selected — a "Generate a new report" pane: pick a subject, optionally prefill from a prompt template, edit, and hit Generate. Every generation inserts a new immutable `subject_report` row.
+5. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
 
 Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sheet).
 
 ## How It Works
 
-1. User visits the homepage, signs in with Google, waits for admin approval
+1. User visits the homepage and signs in via one of: Google SSO (one-tap), email OTP (`/login`, 6-digit code), or — admins only — username + password (`/login` → Admin tab). Non-admin sign-ins create a `pending` user that an admin must approve.
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
 3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Bytes are deduped by sha256 and persisted; the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
 4. **deepseek-v4-flash ("Brain")** runs on every turn. Two image tools, used in order of cheapness:
@@ -56,7 +57,7 @@ Subjects are the fixed 4-enum (math / thinking / reading / writing), bound 1:1 t
 
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` ('local' | 'google'), `email`, `google_id`, and `picture` for Google SSO users; `email` and `google_id` are unique.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `login_otp`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` (`local` | `google` | `email`), `email`, `google_id`, `picture`, plus the admin-only `user_name` + `password_hash` (scrypt) pair; `email`, `google_id`, and `user_name` are unique. `login_otp` stores 6-digit email codes in plain text so an admin can read them back when SES delivery fails.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 
@@ -68,7 +69,10 @@ Fastify HTTP API. All routes prefixed with `/api` except `/healthcheck`. Auth vi
 
 Summary:
 - `GET /healthcheck` — public
-- `POST /api/auth/google` — verify a Google Identity Services ID token, upsert the user (linking by `google_id` then `email`), return a YTAI JWT (`{ token, user }`). New users land in `status: 'pending'`. Returns 503 if `YTAI_GOOGLE_CLIENT_ID` is unset. **This is the only sign-in path.**
+- `POST /api/auth/google` — verify a Google Identity Services ID token, upsert the user (linking by `google_id` then `email`), return a YTAI JWT (`{ token, user }`). New users land in `status: 'pending'`. Returns 503 if `YTAI_GOOGLE_CLIENT_ID` is unset.
+- `POST /api/auth/email` — issue a 6-digit OTP for an email, store it plain text in `login_otp` (admin can read it out if SES delivery fails), and best-effort send via AWS SES. Auto-creates a `pending` user on first request.
+- `POST /api/auth/otp` — verify a 6-digit code, burn the row, return the same `{ token, user }` shape as Google. 5-wrong-attempts and 10-minute TTL guard against brute force.
+- `POST /api/auth/password` — admin-only username + password sign-in. Verifies the scrypt hash; only `role='admin'` users can sign in here. Every failure returns the same generic 401. Bootstrapped via `YTAI_ADMIN_USERNAME` / `YTAI_ADMIN_PASSWORD`, defaulting to `admin` / `adminadmin` so a fresh checkout has a working admin.
 - `POST /api/admin/user` — create a user (admin) *(planned)*
 - `POST /api/tutor/session` — start a tutoring session
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
@@ -148,7 +152,11 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_PORTAL_PORT` | Vite dev server port | `9522` |
 | `YTAI_PUBLIC_URL` | Public-facing app origin | `http://localhost:9522` |
 | `YTAI_JWT_SECRET` | JWT signing secret | *(required)* |
-| `YTAI_GOOGLE_CLIENT_ID` | OAuth 2.0 Web Client ID from the Google Cloud Console. Enables the "Sign in with Google" button on the homepage / signup page and the `POST /api/auth/google` route. Unset disables Google SSO. | *(unset)* |
+| `YTAI_GOOGLE_CLIENT_ID` | OAuth 2.0 Web Client ID from the Google Cloud Console. Enables the "Sign in with Google" button on the homepage / `/login` page and the `POST /api/auth/google` route. Unset disables Google SSO. | *(unset)* |
+| `YTAI_ADMIN_USERNAME` | Username for the boot-time admin upsert. With `YTAI_ADMIN_PASSWORD`, the server ensures a `role='admin'` user exists with this hash on every restart. | `admin` |
+| `YTAI_ADMIN_PASSWORD` | Plain password hashed (scrypt) and persisted as `user.password_hash` on boot. Used to verify `POST /api/auth/password`. Default exists so a fresh checkout has a working admin — **change it for any non-dev deploy**. | `adminadmin` |
+| `YTAI_SES_FROM_EMAIL` | Verified SES sender for sign-in OTP emails. Unset → SES is skipped; codes are still issued and visible in server logs / the DB. | *(unset)* |
+| `YTAI_AWS_REGION` | AWS region used by the SES client | `ap-southeast-2` |
 | `YTAI_OPENROUTER_API_KEY` | OpenRouter API key (used for both Eyes and Brain) | *(required)* |
 | `YTAI_OPENROUTER_CHAT_MODEL` | Brain model id on OpenRouter | `deepseek/deepseek-chat` |
 | `YTAI_OPENROUTER_VISION_MODEL` | Eyes model id on OpenRouter | `qwen/qwen2.5-vl-72b-instruct` |
@@ -157,6 +165,8 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
 | `YTAI_S3_BUCKET` | Image bucket (prod) | *(required in prod)* |
 | `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days | `30` |
+| `YTAI_SES_FROM_EMAIL` | Verified AWS SES sender identity for sign-in OTP emails. Unset disables SES (the OTP still lands in the DB and logs so an operator can read it back). | *(unset)* |
+| `YTAI_AWS_REGION` | AWS region for SES and S3. Standard `AWS_*` credentials (env, shared config, IAM role) are resolved by the SDK chain. | `ap-southeast-2` |
 | `YTAI_TTS_BASE_URL` | OpenAI-compatible `/audio/speech` endpoint (e.g. local Kokoro at `http://localhost:9530/v1`). Unset disables voice (route returns 503, UI greys out). | *(unset)* |
 | `YTAI_TTS_API_KEY` | Optional auth for the TTS endpoint | *(unset)* |
 | `YTAI_TTS_MODEL` | TTS model id | `kokoro` |
