@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Button, Typography } from 'antd';
 import { GoogleOutlined } from '@ant-design/icons';
 import authSession from '../lib/authSession.js';
@@ -13,10 +13,10 @@ const CLIENT_ID = typeof __YTAI_GOOGLE_CLIENT_ID__ !== 'undefined' ? __YTAI_GOOG
 
 function waitForGoogle(timeoutMs = 4000) {
   return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.id) return resolve(window.google);
+    if (window.google?.accounts?.oauth2) return resolve(window.google);
     const start = Date.now();
     const tick = () => {
-      if (window.google?.accounts?.id) return resolve(window.google);
+      if (window.google?.accounts?.oauth2) return resolve(window.google);
       if (Date.now() - start > timeoutMs) return reject(new Error('Google SDK failed to load'));
       setTimeout(tick, 80);
     };
@@ -24,15 +24,14 @@ function waitForGoogle(timeoutMs = 4000) {
   });
 }
 
-// Renders Google Identity Services' own sign-in button into the page.
-//
-// History: we previously wrapped a custom AntD-styled button on top of a
-// hidden GIS button and proxy-clicked it. That approach is fragile —
-// modern GIS sometimes renders inside a cross-origin iframe, where
-// .click() from the parent document is a no-op (the user sees no
-// response). The supported path is to let GIS render its visible button
-// and click it natively; we keep the AntD wrapper around it for spacing
-// and surrounding states (loading / error).
+// AntD "Sign in with Google" button backed by the OAuth 2.0 implicit flow
+// (oauth2.initTokenClient). We previously tried id.renderButton, but GIS
+// auto-personalizes that variant to "Sign in as <name>" the moment the
+// visitor has a Google session — and the rendered button doesn't expose
+// a way to opt out. initTokenClient leaves the button styling entirely to
+// us and just pops Google's account chooser on click; the resulting
+// access token goes to /api/auth/google, which resolves it via the
+// userinfo endpoint server-side.
 export default function GoogleSignInButton({
   role = 'student',
   size = 'large',
@@ -40,7 +39,6 @@ export default function GoogleSignInButton({
   onError,
   block = true
 }) {
-  const containerRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -48,66 +46,83 @@ export default function GoogleSignInButton({
   useEffect(() => {
     if (!CLIENT_ID) return;
     let cancelled = false;
-
     waitForGoogle()
-      .then((google) => {
-        if (cancelled) return;
-        google.accounts.id.initialize({
-          client_id: CLIENT_ID,
-          callback: async (response) => {
-            if (!response?.credential) {
-              setError('No credential returned from Google');
-              return;
-            }
-            setSubmitting(true);
-            setError(null);
-            try {
-              const res = await fetch('/api/auth/google', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ credential: response.credential, role })
-              });
-              if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Sign-in failed (${res.status})`);
-              }
-              const data = await res.json();
-              authSession().save(data);
-              onSuccess?.(data.user);
-            } catch (e) {
-              setError(e.message);
-              onError?.(e);
-            } finally {
-              setSubmitting(false);
-            }
-          },
-          ux_mode: 'popup',
-          auto_select: false,
-          itp_support: true
-        });
-
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';
-          google.accounts.id.renderButton(containerRef.current, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            text: 'signin_with',
-            shape: 'rectangular',
-            logo_alignment: 'left',
-            width: 320
-          });
-        }
-        setReady(true);
+      .then(() => {
+        if (!cancelled) setReady(true);
       })
       .catch((e) => {
-        setError(e.message);
+        console.error('[GoogleSignIn] Google SDK never loaded', e);
+        if (!cancelled) setError(e.message);
       });
-
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, []);
+
+  const triggerSignIn = () => {
+    if (!window.google?.accounts?.oauth2) {
+      setError('Google sign-in not ready');
+      return;
+    }
+    setError(null);
+    let client;
+    try {
+      client = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: 'openid email profile',
+        callback: async (response) => {
+          if (response.error) {
+            console.error('[GoogleSignIn] token client error', response);
+            const detail = response.error_description || response.error;
+            setError(detail);
+            onError?.(new Error(detail));
+            return;
+          }
+          if (!response.access_token) {
+            console.error('[GoogleSignIn] no access_token in response', response);
+            setError('No access token returned from Google');
+            return;
+          }
+          setSubmitting(true);
+          try {
+            const res = await fetch('/api/auth/google', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accessToken: response.access_token, role })
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              const detail = body.error || `Sign-in failed (${res.status})`;
+              console.error('[GoogleSignIn] /api/auth/google failed', {
+                status: res.status,
+                body
+              });
+              throw new Error(detail);
+            }
+            const data = await res.json();
+            authSession().save(data);
+            onSuccess?.(data.user);
+          } catch (e) {
+            console.error('[GoogleSignIn] sign-in exchange threw', e);
+            setError(e.message);
+            onError?.(e);
+          } finally {
+            setSubmitting(false);
+          }
+        }
+      });
+    } catch (e) {
+      console.error('[GoogleSignIn] initTokenClient threw', e);
+      setError(e.message);
+      return;
+    }
+    try {
+      client.requestAccessToken();
+    } catch (e) {
+      console.error('[GoogleSignIn] requestAccessToken threw', e);
+      setError(e.message);
+    }
+  };
 
   if (!CLIENT_ID) {
     return (
@@ -125,19 +140,17 @@ export default function GoogleSignInButton({
 
   return (
     <div style={{ width: '100%' }}>
-      <div
-        ref={containerRef}
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          minHeight: 44
-        }}
-      />
-      {submitting && (
-        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12, textAlign: 'center' }}>
-          Signing in…
-        </Text>
-      )}
+      <Button
+        size={size}
+        icon={<GoogleOutlined />}
+        onClick={triggerSignIn}
+        loading={submitting}
+        disabled={!ready}
+        block={block}
+        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
+      >
+        Sign in with Google
+      </Button>
       {error && (
         <Alert
           type="error"

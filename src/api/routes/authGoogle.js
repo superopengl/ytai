@@ -2,22 +2,29 @@ import { eq, or } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import { user } from '../db/schema.js';
 import verifyGoogleIdToken from '../lib/verifyGoogleIdToken.js';
+import verifyGoogleAccessToken from '../lib/verifyGoogleAccessToken.js';
 
 const ALLOWED_ROLES = new Set(['student', 'parent', 'teacher']);
 const DEFAULT_ROLE = 'student';
 
 // POST /api/auth/google
-//   body: { credential: <google_id_token>, role?: 'student'|'parent'|'teacher' }
+//   body: { credential?, accessToken?, role?: 'student'|'parent'|'teacher' }
 //
-// Verifies the ID token with Google, then upserts the user (by google_id, falling
-// back to email so we can link a legacy local account to its Google identity on
-// first sign-in). Returns a YTAI JWT plus the user record. New users land in
-// `status: 'pending'` — admin approval is still required for MVP.
+// Two accepted token shapes:
+//   - `credential` — a Google Identity Services ID token (legacy, from the
+//     GIS-rendered button credential callback).
+//   - `accessToken` — an OAuth 2.0 access token from oauth2.initTokenClient,
+//     which is what the current frontend uses so it can ship its own AntD-
+//     styled button instead of GIS's personalized "Sign in as X" variant.
+//
+// Both paths resolve to the same claims shape (sub/email/name/picture) and
+// drive the same upsert. New users land in `status: 'pending'` — admin
+// approval is still required.
 export default function authGoogle(fastify) {
   fastify.post('/api/auth/google', async (request, reply) => {
-    const { credential, role: requestedRole } = request.body || {};
-    if (!credential) {
-      return reply.code(400).send({ error: 'Missing Google credential' });
+    const { credential, accessToken, role: requestedRole } = request.body || {};
+    if (!credential && !accessToken) {
+      return reply.code(400).send({ error: 'Missing Google credential or access token' });
     }
 
     const clientId = process.env.YTAI_GOOGLE_CLIENT_ID;
@@ -27,9 +34,11 @@ export default function authGoogle(fastify) {
 
     let claims;
     try {
-      claims = await verifyGoogleIdToken(credential, { clientId });
+      claims = accessToken
+        ? await verifyGoogleAccessToken(accessToken, { clientId })
+        : await verifyGoogleIdToken(credential, { clientId });
     } catch (err) {
-      request.log.warn({ err }, 'Google ID token verification failed');
+      request.log.warn({ err }, 'Google token verification failed');
       return reply.code(401).send({ error: 'Invalid Google credential' });
     }
 
