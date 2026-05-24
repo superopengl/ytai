@@ -146,12 +146,21 @@ export default class YoututoraiStack extends Stack {
 
     // === Image bucket =======================================================
 
+    // Shared bucket: `images/<hash>.<ext>` (session uploads, expire on a
+    // schedule), `audio/<hash>.mp3` (TTS cache, kept indefinitely since
+    // synthesis cost dominates storage). The lifecycle rule is scoped to
+    // the images/ prefix so audio survives.
     const imageBucket = new Bucket(this, "ImageBucket", {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       lifecycleRules: [
-        { enabled: true, expiration: Duration.days(imageRetentionDays) },
+        {
+          id: `expire-${stage}-images`,
+          enabled: true,
+          prefix: `${stage}/images/`,
+          expiration: Duration.days(imageRetentionDays),
+        },
       ],
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
       autoDeleteObjects: !isProd,
@@ -199,12 +208,11 @@ export default class YoututoraiStack extends Stack {
         YTAI_PG_PORT: dbPort,
         YTAI_PG_DATABASE: "ytai",
         YTAI_S3_BUCKET: imageBucket.bucketName,
+        // Per-stage key namespace in S3. "prod/images/…", "prod/audio/…".
+        // Local-dev laptops use "dev/…" by default.
+        YTAI_S3_PREFIX: stage,
         YTAI_AWS_REGION: this.region,
         YTAI_IMAGE_RETENTION_DAYS: String(imageRetentionDays),
-        // TTS audio cache lives in container ephemeral storage. The DB is
-        // the source of truth (tts_audio table) — the on-disk copy is just
-        // a CDN-style cache that's fine to lose on restart.
-        YTAI_AUDIO_DIR: "/tmp/ytai-audio",
         YTAI_ADMIN_USERNAME: "admin",
         ...(googleClientId ? { YTAI_GOOGLE_CLIENT_ID: googleClientId } : {}),
         ...(sesFromEmail ? { YTAI_SES_FROM_EMAIL: sesFromEmail } : {}),
