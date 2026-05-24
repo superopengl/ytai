@@ -1,5 +1,5 @@
 import { eq, or } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { user } from '../db/schema.js';
 import verifyGoogleIdToken from '../lib/verifyGoogleIdToken.js';
 
@@ -35,34 +35,34 @@ export default function authGoogle(fastify) {
 
     const desiredRole = ALLOWED_ROLES.has(requestedRole) ? requestedRole : DEFAULT_ROLE;
 
-    let [existing] = await db()
-      .select()
-      .from(user)
-      .where(
-        or(
-          eq(user.googleId, claims.sub),
-          claims.email ? eq(user.email, claims.email) : eq(user.googleId, claims.sub)
+    const record = await withTx(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(user)
+        .where(
+          or(
+            eq(user.googleId, claims.sub),
+            claims.email ? eq(user.email, claims.email) : eq(user.googleId, claims.sub)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    let record;
-    if (existing) {
-      // Link Google identity onto an existing local account, refresh profile fields.
-      const [updated] = await db()
-        .update(user)
-        .set({
-          googleId: claims.sub,
-          email: existing.email || claims.email,
-          picture: claims.picture || existing.picture,
-          authProvider: 'google',
-          updatedAt: new Date()
-        })
-        .where(eq(user.id, existing.id))
-        .returning();
-      record = updated;
-    } else {
-      const [created] = await db()
+      if (existing) {
+        // Link Google identity onto an existing local account, refresh profile fields.
+        const [updated] = await tx
+          .update(user)
+          .set({
+            googleId: claims.sub,
+            email: existing.email || claims.email,
+            picture: claims.picture || existing.picture,
+            authProvider: 'google',
+            updatedAt: new Date()
+          })
+          .where(eq(user.id, existing.id))
+          .returning();
+        return updated;
+      }
+      const [created] = await tx
         .insert(user)
         .values({
           name: claims.name,
@@ -74,8 +74,8 @@ export default function authGoogle(fastify) {
           picture: claims.picture
         })
         .returning();
-      record = created;
-    }
+      return created;
+    });
 
     const token = await reply.jwtSign(
       { sub: record.id, role: record.role, status: record.status },

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { user, loginOtp } from '../db/schema.js';
 import generateOtp from '../lib/generateOtp.js';
 import sendOtpEmail from '../lib/sendOtpEmail.js';
@@ -36,53 +36,57 @@ export default function authEmail(fastify) {
       return reply.code(400).send({ error: 'Please enter a valid email address' });
     }
 
-    // Opportunistic GC of expired OTP rows so the table stays small without
-    // a cron. Indexed on expires_at so it's cheap.
-    await db().delete(loginOtp).where(lte(loginOtp.expiresAt, new Date()));
+    const { otpRow, matchedUser } = await withTx(async (tx) => {
+      // Opportunistic GC of expired OTP rows so the table stays small without
+      // a cron. Indexed on expires_at so it's cheap.
+      await tx.delete(loginOtp).where(lte(loginOtp.expiresAt, new Date()));
 
-    let [matchedUser] = await db()
-      .select()
-      .from(user)
-      .where(sql`lower(${user.email}) = ${email}`)
-      .limit(1);
+      let [matched] = await tx
+        .select()
+        .from(user)
+        .where(sql`lower(${user.email}) = ${email}`)
+        .limit(1);
 
-    if (!matchedUser) {
-      const [created] = await db()
-        .insert(user)
-        .values({
-          name: deriveDisplayName(email),
-          role: 'student',
-          status: 'pending',
-          authProvider: 'email',
-          email
-        })
-        .returning();
-      matchedUser = created;
-    }
+      if (!matched) {
+        const [created] = await tx
+          .insert(user)
+          .values({
+            name: deriveDisplayName(email),
+            role: 'student',
+            status: 'pending',
+            authProvider: 'email',
+            email
+          })
+          .returning();
+        matched = created;
+      }
 
-    const cutoff = new Date(Date.now() - RESEND_COOLDOWN_MS);
-    const [recent] = await db()
-      .select()
-      .from(loginOtp)
-      .where(
-        and(
-          eq(loginOtp.userId, matchedUser.id),
-          gt(loginOtp.createdAt, cutoff),
-          sql`${loginOtp.expiresAt} > now()`
+      const cutoff = new Date(Date.now() - RESEND_COOLDOWN_MS);
+      const [recent] = await tx
+        .select()
+        .from(loginOtp)
+        .where(
+          and(
+            eq(loginOtp.userId, matched.id),
+            gt(loginOtp.createdAt, cutoff),
+            sql`${loginOtp.expiresAt} > now()`
+          )
         )
-      )
-      .orderBy(desc(loginOtp.createdAt))
-      .limit(1);
+        .orderBy(desc(loginOtp.createdAt))
+        .limit(1);
 
-    let otpRow = recent;
-    if (!otpRow) {
-      const code = generateOtp();
-      const expiresAt = new Date(Date.now() + OTP_TTL_MS);
-      [otpRow] = await db()
-        .insert(loginOtp)
-        .values({ userId: matchedUser.id, email, code, expiresAt })
-        .returning();
-    }
+      let row = recent;
+      if (!row) {
+        const code = generateOtp();
+        const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+        [row] = await tx
+          .insert(loginOtp)
+          .values({ userId: matched.id, email, code, expiresAt })
+          .returning();
+      }
+
+      return { otpRow: row, matchedUser: matched };
+    });
 
     await sendOtpEmail({
       to: email,

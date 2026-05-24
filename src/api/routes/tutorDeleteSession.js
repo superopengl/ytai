@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import {
   imageOcr,
   sessionDoc,
@@ -15,38 +15,43 @@ export default function tutorDeleteSession(fastify) {
     const { sessionId } = request.params;
     const userId = request.userId;
 
-    const [session] = await db()
-      .select({ id: tutorSession.id })
-      .from(tutorSession)
-      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
+    const result = await withTx(async (tx) => {
+      const [session] = await tx
+        .select({ id: tutorSession.id })
+        .from(tutorSession)
+        .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
 
-    if (!session) {
+      if (!session) return { kind: 'notFound' };
+
+      const images = await tx
+        .select({ id: sessionImage.id })
+        .from(sessionImage)
+        .where(eq(sessionImage.sessionId, sessionId));
+      const imageIds = images.map((i) => i.id);
+
+      await tx.delete(sessionMessage).where(eq(sessionMessage.sessionId, sessionId));
+      if (imageIds.length > 0) {
+        await tx.delete(imageOcr).where(inArray(imageOcr.imageId, imageIds));
+        await tx.delete(visionExtraction).where(inArray(visionExtraction.imageId, imageIds));
+      }
+      // current_doc_id references session_doc, which references session_image;
+      // null the pointer first so FK chains unwind in safe order.
+      await tx
+        .update(tutorSession)
+        .set({ currentDocId: null })
+        .where(eq(tutorSession.id, sessionId));
+      await tx.delete(sessionImage).where(eq(sessionImage.sessionId, sessionId));
+      await tx.delete(sessionDoc).where(eq(sessionDoc.sessionId, sessionId));
+      await tx.delete(sessionReport).where(eq(sessionReport.sessionId, sessionId));
+      await tx.delete(tutorSession).where(eq(tutorSession.id, sessionId));
+
+      return { kind: 'ok' };
+    });
+
+    if (result.kind === 'notFound') {
       reply.code(404);
       return { error: 'Session not found' };
     }
-
-    const images = await db()
-      .select({ id: sessionImage.id })
-      .from(sessionImage)
-      .where(eq(sessionImage.sessionId, sessionId));
-    const imageIds = images.map((i) => i.id);
-
-    await db().delete(sessionMessage).where(eq(sessionMessage.sessionId, sessionId));
-    if (imageIds.length > 0) {
-      await db().delete(imageOcr).where(inArray(imageOcr.imageId, imageIds));
-      await db().delete(visionExtraction).where(inArray(visionExtraction.imageId, imageIds));
-    }
-    // current_doc_id references session_doc, which references session_image;
-    // null the pointer first so FK chains unwind in safe order.
-    await db()
-      .update(tutorSession)
-      .set({ currentDocId: null })
-      .where(eq(tutorSession.id, sessionId));
-    await db().delete(sessionImage).where(eq(sessionImage.sessionId, sessionId));
-    await db().delete(sessionDoc).where(eq(sessionDoc.sessionId, sessionId));
-    await db().delete(sessionReport).where(eq(sessionReport.sessionId, sessionId));
-    await db().delete(tutorSession).where(eq(tutorSession.id, sessionId));
-
     return { ok: true };
   });
 }

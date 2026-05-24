@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { sessionDoc, tutorSession } from '../db/schema.js';
 import { GUIDANCE_LEVELS, isGuidanceLevel } from '../lib/tutorPrompt.js';
 import isSubject, { SUBJECTS } from '../lib/tutorSubject.js';
@@ -30,16 +30,6 @@ export default function tutorUpdateSession(fastify) {
         reply.code(400);
         return { error: 'currentDocId must be a uuid string or null' };
       }
-      // Make sure the doc belongs to this session so a client can't point at
-      // another user's doc.
-      const [doc] = await db()
-        .select({ id: sessionDoc.id })
-        .from(sessionDoc)
-        .where(and(eq(sessionDoc.id, body.currentDocId), eq(sessionDoc.sessionId, sessionId)));
-      if (!doc) {
-        reply.code(404);
-        return { error: 'Doc not found in this session' };
-      }
     }
 
     const patch = { updatedAt: new Date() };
@@ -47,22 +37,42 @@ export default function tutorUpdateSession(fastify) {
     if (hasSubject) patch.subject = body.subject;
     if (hasCurrentDoc) patch.currentDocId = body.currentDocId;
 
-    const [updated] = await db()
-      .update(tutorSession)
-      .set(patch)
-      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)))
-      .returning({
-        id: tutorSession.id,
-        guidanceLevel: tutorSession.guidanceLevel,
-        subject: tutorSession.subject,
-        currentDocId: tutorSession.currentDocId
-      });
+    const result = await withTx(async (tx) => {
+      if (hasCurrentDoc && body.currentDocId !== null) {
+        // Make sure the doc belongs to this session so a client can't point at
+        // another user's doc.
+        const [doc] = await tx
+          .select({ id: sessionDoc.id })
+          .from(sessionDoc)
+          .where(and(eq(sessionDoc.id, body.currentDocId), eq(sessionDoc.sessionId, sessionId)));
+        if (!doc) return { kind: 'docNotFound' };
+      }
 
-    if (!updated) {
+      const [updated] = await tx
+        .update(tutorSession)
+        .set(patch)
+        .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)))
+        .returning({
+          id: tutorSession.id,
+          guidanceLevel: tutorSession.guidanceLevel,
+          subject: tutorSession.subject,
+          currentDocId: tutorSession.currentDocId
+        });
+
+      if (!updated) return { kind: 'sessionNotFound' };
+      return { kind: 'ok', updated };
+    });
+
+    if (result.kind === 'docNotFound') {
+      reply.code(404);
+      return { error: 'Doc not found in this session' };
+    }
+    if (result.kind === 'sessionNotFound') {
       reply.code(404);
       return { error: 'Session not found' };
     }
 
+    const { updated } = result;
     return {
       sessionId: updated.id,
       guidanceLevel: updated.guidanceLevel,

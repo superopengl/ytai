@@ -11,3 +11,7 @@ export default function db() {
   }
   return instance;
 }
+
+export function withTx(fn) {
+  return db().transaction(fn);
+}

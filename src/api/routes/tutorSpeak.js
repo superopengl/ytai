@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { ttsAudio, tutorSession } from '../db/schema.js';
 import persistAudio from '../lib/persistAudio.js';
 import synthesizeSpeech from '../lib/synthesizeSpeech.js';
@@ -55,30 +55,76 @@ export default function tutorSpeak(fastify) {
       return { error: 'TTS is not configured (YTAI_TTS_BASE_URL unset)' };
     }
     const voice = requestedVoice || defaultVoice;
+    const textHash = hashKey({ text, voice, model });
 
-    const [session] = await db()
-      .select({ id: tutorSession.id })
-      .from(tutorSession)
-      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, request.userId)));
-    if (!session) {
+    const abortController = new AbortController();
+    request.raw.on('close', () => abortController.abort());
+
+    // Single transaction wraps session check → cache lookup → (on miss)
+    // synthesis + persist + insert. Synthesis holds the connection during
+    // the HTTP round-trip; acceptable because sentence audio is small and
+    // the cache hit-rate is high.
+    let result;
+    try {
+      result = await withTx(async (tx) => {
+        const [session] = await tx
+          .select({ id: tutorSession.id })
+          .from(tutorSession)
+          .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, request.userId)));
+        if (!session) return { kind: 'notFound' };
+
+        const [cached] = await tx
+          .select({ storageUrl: ttsAudio.storageUrl, bytes: ttsAudio.bytes })
+          .from(ttsAudio)
+          .where(
+            and(
+              eq(ttsAudio.textHash, textHash),
+              eq(ttsAudio.voice, voice),
+              eq(ttsAudio.model, model)
+            )
+          );
+
+        if (cached && cached.storageUrl.startsWith('file://')) {
+          return { kind: 'cached', cached };
+        }
+
+        const synth = await synthesizeSpeech({
+          text,
+          baseUrl,
+          apiKey,
+          model,
+          voice,
+          signal: abortController.signal
+        });
+
+        const { storageUrl } = await persistAudio({ bytes: synth.bytes, contentHash: textHash });
+        await tx
+          .insert(ttsAudio)
+          .values({
+            textHash,
+            voice,
+            model,
+            storageUrl,
+            bytes: synth.bytes.length
+          })
+          .onConflictDoNothing();
+
+        return { kind: 'fresh', synth };
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      request.log.error({ err, sessionId, voice, model }, 'TTS synthesis failed');
+      reply.code(502);
+      return { error: `TTS synthesis failed: ${err.message?.slice(0, 200) ?? 'unknown'}` };
+    }
+
+    if (result.kind === 'notFound') {
       reply.code(404);
       return { error: 'Session not found' };
     }
 
-    const textHash = hashKey({ text, voice, model });
-
-    const [cached] = await db()
-      .select({ storageUrl: ttsAudio.storageUrl, bytes: ttsAudio.bytes })
-      .from(ttsAudio)
-      .where(
-        and(
-          eq(ttsAudio.textHash, textHash),
-          eq(ttsAudio.voice, voice),
-          eq(ttsAudio.model, model)
-        )
-      );
-
-    if (cached && cached.storageUrl.startsWith('file://')) {
+    if (result.kind === 'cached') {
+      const { cached } = result;
       request.log.info(
         { sessionId, voice, model, textHash: textHash.slice(0, 12), bytes: cached.bytes },
         'tts cache hit'
@@ -90,43 +136,11 @@ export default function tutorSpeak(fastify) {
       return reply.send(createReadStream(fileURLToPath(cached.storageUrl)));
     }
 
-    const abortController = new AbortController();
-    request.raw.on('close', () => abortController.abort());
-
-    let synth;
-    try {
-      synth = await synthesizeSpeech({
-        text,
-        baseUrl,
-        apiKey,
-        model,
-        voice,
-        signal: abortController.signal
-      });
-    } catch (err) {
-      if (abortController.signal.aborted) return;
-      request.log.error({ err, sessionId, voice, model }, 'TTS synthesis failed');
-      reply.code(502);
-      return { error: `TTS synthesis failed: ${err.message?.slice(0, 200) ?? 'unknown'}` };
-    }
-
-    const { storageUrl } = await persistAudio({ bytes: synth.bytes, contentHash: textHash });
-    await db()
-      .insert(ttsAudio)
-      .values({
-        textHash,
-        voice,
-        model,
-        storageUrl,
-        bytes: synth.bytes.length
-      })
-      .onConflictDoNothing();
-
+    const { synth } = result;
     request.log.info(
       { sessionId, voice, model, textHash: textHash.slice(0, 12), bytes: synth.bytes.length },
       'tts synthesized'
     );
-
     reply
       .header('Content-Type', synth.contentType)
       .header('Cache-Control', 'private, max-age=86400')

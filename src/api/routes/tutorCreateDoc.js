@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import db from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { sessionDoc, sessionImage, tutorSession } from '../db/schema.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
 import hashBuffer from '../lib/hashBuffer.js';
@@ -28,76 +28,131 @@ export default function tutorCreateDoc(fastify) {
       return { error: 'images array is required (at least one image)' };
     }
 
-    const [session] = await db()
-      .select({ id: tutorSession.id })
-      .from(tutorSession)
-      .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
-    if (!session) {
+    // Decode + S3-persist all images up front so the DB transaction below
+    // doesn't hold a Postgres connection during multi-megabyte uploads.
+    const decoded = images.map((img) => decodeAndDescribe(img));
+    const usable = decoded.filter((d) => d !== null);
+    if (usable.length === 0) {
+      reply.code(400);
+      return { error: 'no valid images supplied' };
+    }
+    const persisted = [];
+    for (const d of usable) {
+      const { storageUrl } = await persistImage({
+        bytes: d.bytes,
+        contentHash: d.contentHash,
+        mimeType: d.mimeType
+      });
+      persisted.push({ ...d, storageUrl });
+    }
+
+    let txResult;
+    try {
+      txResult = await withTx(async (tx) => {
+        const [session] = await tx
+          .select({ id: tutorSession.id })
+          .from(tutorSession)
+          .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
+        if (!session) return { kind: 'notFound' };
+
+        // Where this doc lands in the session's doc timeline. We bump
+        // sort_order to (max + 1) so the new doc appears after every existing
+        // one. The integer is cosmetic — created_at is the real timeline — but
+        // having it makes the order stable across same-ms inserts.
+        const [maxRow] = await tx
+          .select({ next: sql`COALESCE(MAX(${sessionDoc.sortOrder}), -1) + 1` })
+          .from(sessionDoc)
+          .where(eq(sessionDoc.sessionId, sessionId));
+        const nextSort = Number(maxRow?.next) || 0;
+
+        const [docRow] = await tx
+          .insert(sessionDoc)
+          .values({
+            sessionId,
+            kind,
+            pageCount: 0,
+            sortOrder: nextSort
+          })
+          .returning({
+            id: sessionDoc.id,
+            kind: sessionDoc.kind,
+            sortOrder: sessionDoc.sortOrder,
+            createdAt: sessionDoc.createdAt
+          });
+
+        const inserted = [];
+        let pageNumber = 1;
+        for (const p of persisted) {
+          // Dedup within the doc: re-uploading the same bytes onto the same
+          // page collides on (doc_id, content_hash). When it does, skip.
+          const [row] = await tx
+            .insert(sessionImage)
+            .values({
+              sessionId,
+              docId: docRow.id,
+              pageNumber,
+              contentHash: p.contentHash,
+              storageUrl: p.storageUrl,
+              width: p.width,
+              height: p.height
+            })
+            .onConflictDoNothing()
+            .returning({
+              id: sessionImage.id,
+              pageNumber: sessionImage.pageNumber,
+              width: sessionImage.width,
+              height: sessionImage.height
+            });
+          if (row) {
+            inserted.push({ ...row, storageUrl: p.storageUrl });
+            pageNumber += 1;
+          }
+        }
+
+        if (inserted.length === 0) {
+          // Throw to roll back the empty doc row. Caller sees 400.
+          const err = new Error('no rows inserted');
+          err.code = 'NO_ROWS';
+          throw err;
+        }
+
+        await tx
+          .update(sessionDoc)
+          .set({ pageCount: inserted.length, updatedAt: new Date() })
+          .where(eq(sessionDoc.id, docRow.id));
+
+        await tx
+          .update(tutorSession)
+          .set({ currentDocId: docRow.id, updatedAt: new Date() })
+          .where(eq(tutorSession.id, sessionId));
+
+        return { kind: 'ok', docRow, inserted };
+      });
+    } catch (err) {
+      if (err?.code === 'NO_ROWS') {
+        reply.code(400);
+        return { error: 'no valid images supplied' };
+      }
+      throw err;
+    }
+
+    if (txResult.kind === 'notFound') {
       reply.code(404);
       return { error: 'Session not found' };
     }
 
-    // Where this doc lands in the session's doc timeline. We bump
-    // sort_order to (max + 1) so the new doc appears after every existing
-    // one. The integer is cosmetic — created_at is the real timeline — but
-    // having it makes the order stable across same-ms inserts.
-    const [maxRow] = await db()
-      .select({ next: sql`COALESCE(MAX(${sessionDoc.sortOrder}), -1) + 1` })
-      .from(sessionDoc)
-      .where(eq(sessionDoc.sessionId, sessionId));
-    const nextSort = Number(maxRow?.next) || 0;
+    const { docRow, inserted } = txResult;
 
-    const [docRow] = await db()
-      .insert(sessionDoc)
-      .values({
-        sessionId,
-        kind,
-        pageCount: 0,
-        sortOrder: nextSort
-      })
-      .returning({
-        id: sessionDoc.id,
-        kind: sessionDoc.kind,
-        sortOrder: sessionDoc.sortOrder,
-        createdAt: sessionDoc.createdAt
-      });
-
-    const pages = [];
-    let pageNumber = 1;
-    for (const img of images) {
-      const inserted = await persistOnePage({
-        sessionId,
-        docId: docRow.id,
-        pageNumber,
-        image: img,
-        log: request.log
-      });
-      if (inserted) {
-        pages.push(inserted);
-        pageNumber += 1;
-      }
+    // Fire OCR jobs after commit so the inserted session_image rows are
+    // visible to the background workers.
+    for (const row of inserted) {
+      ensureImageOcr({ imageId: row.id, storageUrl: row.storageUrl, log: request.log }).catch(
+        () => {}
+      );
     }
-
-    if (pages.length === 0) {
-      // Every image was malformed — roll back the empty doc so we don't
-      // leave a zombie row.
-      await db().delete(sessionDoc).where(eq(sessionDoc.id, docRow.id));
-      reply.code(400);
-      return { error: 'no valid images supplied' };
-    }
-
-    await db()
-      .update(sessionDoc)
-      .set({ pageCount: pages.length, updatedAt: new Date() })
-      .where(eq(sessionDoc.id, docRow.id));
-
-    await db()
-      .update(tutorSession)
-      .set({ currentDocId: docRow.id, updatedAt: new Date() })
-      .where(eq(tutorSession.id, sessionId));
 
     request.log.info(
-      { sessionId, docId: docRow.id, pageCount: pages.length },
+      { sessionId, docId: docRow.id, pageCount: inserted.length },
       'tutorCreateDoc: doc created'
     );
 
@@ -107,8 +162,13 @@ export default function tutorCreateDoc(fastify) {
         kind: docRow.kind,
         sortOrder: docRow.sortOrder,
         createdAt: docRow.createdAt,
-        pageCount: pages.length,
-        pages
+        pageCount: inserted.length,
+        pages: inserted.map(({ id, pageNumber, width, height }) => ({
+          id,
+          pageNumber,
+          width,
+          height
+        }))
       }
     };
   });
@@ -121,55 +181,14 @@ function decodeDataUrl(dataUrl) {
   return { mimeType: match[1], bytes: Buffer.from(match[2], 'base64') };
 }
 
-// Persist one image as a page of a given doc. Returns the public-facing
-// page shape (id, pageNumber, width, height) or null when the input was
-// unusable.
-export async function persistOnePage({ sessionId, docId, pageNumber, image, log }) {
+function decodeAndDescribe(image) {
   const decoded = decodeDataUrl(image?.dataUrl);
-  if (!decoded) {
-    log?.warn({ sessionId, docId, pageNumber }, 'persistOnePage: malformed image, skipping');
-    return null;
-  }
-  const contentHash = hashBuffer(decoded.bytes);
-  const width = Math.max(0, Math.round(Number(image?.width) || 0));
-  const height = Math.max(0, Math.round(Number(image?.height) || 0));
-
-  // Dedup within the doc: re-uploading the same bytes onto the same page
-  // collides on (doc_id, content_hash). When it does, reuse the row.
-  const { storageUrl } = await persistImage({
+  if (!decoded) return null;
+  return {
     bytes: decoded.bytes,
-    contentHash,
-    mimeType: decoded.mimeType
-  });
-
-  const [row] = await db()
-    .insert(sessionImage)
-    .values({
-      sessionId,
-      docId,
-      pageNumber,
-      contentHash,
-      storageUrl,
-      width,
-      height
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: sessionImage.id,
-      pageNumber: sessionImage.pageNumber,
-      width: sessionImage.width,
-      height: sessionImage.height
-    });
-
-  if (!row) {
-    log?.info(
-      { sessionId, docId, pageNumber, contentHash: contentHash.slice(0, 12) },
-      'persistOnePage: duplicate hash within doc, skipping'
-    );
-    return null;
-  }
-
-  ensureImageOcr({ imageId: row.id, storageUrl, log }).catch(() => {});
-
-  return row;
+    mimeType: decoded.mimeType,
+    contentHash: hashBuffer(decoded.bytes),
+    width: Math.max(0, Math.round(Number(image?.width) || 0)),
+    height: Math.max(0, Math.round(Number(image?.height) || 0))
+  };
 }

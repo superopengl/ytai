@@ -108,6 +108,7 @@ Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 - **Shared logic in `lib/`** — reusable utilities go in `src/api/lib/`, one function per file.
 - **Design tokens in `theme.js`** — no hardcoded colors in components.
 - **Logical commits** — separate by concern (backend, frontend, schema, infra).
+- **Single transaction is preferred for each API invocation** — each route controller should wrap all of its DB operations in one transaction via `withTx(async (tx) => { ... })` from [src/api/db/index.js](src/api/db/index.js), and pass `tx` to every drizzle call inside. The pattern: do CPU/IO work that doesn't need DB (decode, hash, validate inputs) up front, then enter the transaction for all reads + writes, then do post-commit work (fire-and-forget background jobs, response streaming) outside. Early-return error cases should return a discriminated result from the tx callback and translate to HTTP status codes after the tx settles, so the rollback semantics stay obvious. Exceptions: streaming SSE endpoints (e.g. `tutorSendMessage`) and any handler that does long external IO between writes — pinning a Postgres connection for the duration of an LLM stream exhausts the pool, so those use discrete short transactions.
 
 ## Commands
 
