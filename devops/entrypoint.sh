@@ -12,6 +12,14 @@
 
 set -eu
 
+# Build YTAI_DATABASE_URL from the individual env vars/secrets injected by
+# ECS (so we can pull user/password from the shared Aurora secret while
+# hard-coding host/port/database). The app and drizzle.config both read
+# YTAI_DATABASE_URL directly.
+if [ -n "${YTAI_PG_HOST:-}" ] && [ -z "${YTAI_DATABASE_URL:-}" ]; then
+  export YTAI_DATABASE_URL="postgres://${YTAI_PG_USER}:${YTAI_PG_PASSWORD}@${YTAI_PG_HOST}:${YTAI_PG_PORT:-5432}/${YTAI_PG_DATABASE:-ytai}"
+fi
+
 # Forward SIGTERM to the background children so ECS task stop drains them
 # rather than waiting for the grace-period SIGKILL.
 shutdown() {
