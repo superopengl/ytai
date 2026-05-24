@@ -4,13 +4,21 @@
 #   - EasyOCR FastAPI wrapper on 127.0.0.1:9531
 #   - ytai Node.js app on 0.0.0.0:80  (the only port exposed externally)
 #
-# Image-size strategy: instead of FROM-ing the upstream Kokoro image (which
-# bakes in ~800 MB of Japanese unidic dict + carries a kitchen-sink base
-# with build tools we don't use at runtime), we treat Kokoro as a *donor*:
-# strip unidic in an intermediate stage, then COPY only what's needed into
-# a fresh python:3.10-slim runtime. Cross-stage COPY is the only way to
-# actually shrink — RM in a later layer keeps the bytes around in the
-# earlier layer.
+# Layer ordering: layers are sorted by change-frequency so a typical
+# code-only rebuild only invalidates the bottom ytai-source COPY. From the
+# top down: pinned-SHA donor image, system packages, Python deps + EasyOCR
+# weights, OCR wrapper, entrypoint + runtime ENVs, ytai prod node deps,
+# ytai backend source, ytai frontend assets. The two ytai-source layers
+# are split so a backend-only or frontend-only change invalidates just one.
+#
+# All large COPY operations use `--link` so BuildKit treats them as
+# content-addressable add-ons. That keeps cached layers from being
+# re-extracted when an unrelated layer above changes, and makes the donor
+# COPY (~2 GB) a no-op on warm builds.
+#
+# `dist/` is built on the host (see `pnpm build:prod`) before docker
+# build, so this Dockerfile has no Node build stage. The .dockerignore
+# restricts the context to `dist/` + `devops/`, keeping context tiny.
 
 # === STAGE 0: cleaned Kokoro donor ===========================================
 FROM ghcr.io/remsky/kokoro-fastapi-cpu@sha256:d7df384acb57929f88a696d892c1a2e0c6b60fa934802ebec9a88626003b8e9a AS kokoro-donor
@@ -23,21 +31,7 @@ USER root
 # the dicdir/ — it only fails when something asks for the dict path.
 RUN rm -rf /app/.venv/lib/python3.10/site-packages/unidic/dicdir
 
-# === STAGE 1: build ytai frontend + backend ==================================
-FROM node:24-alpine AS node-build
-
-WORKDIR /app
-RUN corepack enable
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY src/portal/package.json ./src/portal/
-COPY deploy/package.json ./deploy/
-RUN pnpm install --frozen-lockfile
-
-COPY . .
-RUN pnpm build:prod
-
-# === STAGE 2: production runtime =============================================
+# === STAGE 1: production runtime =============================================
 FROM python:3.10-slim
 
 USER root
@@ -56,13 +50,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Bring in uv (Kokoro's package manager) — we use it to add EasyOCR to
 # the existing venv. Copying the static binary is smaller than reinstalling.
-COPY --from=kokoro-donor /usr/local/bin/uv /usr/local/bin/uv
-COPY --from=kokoro-donor /usr/local/bin/uvx /usr/local/bin/uvx
+COPY --link --from=kokoro-donor /usr/local/bin/uv /usr/local/bin/uv
+COPY --link --from=kokoro-donor /usr/local/bin/uvx /usr/local/bin/uvx
 
 # Pull the cleaned /app from the donor — venv (sans unidic dict) + Kokoro
 # API source + downloaded model weights. ~2 GB once the Japanese dict is
-# gone, vs ~2.8 GB with it.
-COPY --from=kokoro-donor /app /app
+# gone, vs ~2.8 GB with it. `--link` makes this content-addressable so
+# downstream layer churn doesn't force a re-extract.
+COPY --link --from=kokoro-donor /app /app
 
 # Kokoro's runtime env vars (reproduced from the upstream image so the
 # Python code finds espeak data + the venv binaries on PATH).
@@ -92,24 +87,31 @@ RUN VIRTUAL_ENV=/app/.venv uv pip install --no-cache \
 # first request after a cold task start doesn't pay the network fetch.
 RUN /app/.venv/bin/python -c "import easyocr; easyocr.Reader(['en'], gpu=False)"
 
-# OCR FastAPI wrapper.
+# OCR FastAPI wrapper. Sits above the ytai-source COPYs so a ytai-only
+# change keeps this layer cached.
 RUN mkdir -p /opt/ocr
-COPY devops/ocr/server.py /opt/ocr/server.py
+COPY --link devops/ocr/server.py /opt/ocr/server.py
 
-# ytai runtime — prod-only Node deps first (cached across source changes),
-# then the pre-built dist contents.
-WORKDIR /opt/ytai
-COPY dist/package.json dist/pnpm-lock.yaml dist/.npmrc ./
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --prod
-COPY dist ./
-
-COPY --chmod=755 devops/entrypoint.sh /usr/local/bin/entrypoint.sh
-
+# Entrypoint + ytai runtime ENVs. Above the ytai-source COPYs for the
+# same caching reason — they rarely change relative to app code.
+COPY --link --chmod=755 devops/entrypoint.sh /usr/local/bin/entrypoint.sh
 ENV NODE_ENV=production \
     YTAI_OCR_BASE_URL=http://127.0.0.1:9531 \
     YTAI_TTS_BASE_URL=http://127.0.0.1:8880/v1 \
     YTAI_API_PORT=80
+
+# ytai prod node_modules. Lockfile-pinned, so this layer survives any
+# source-only change.
+WORKDIR /opt/ytai
+COPY dist/package.json dist/pnpm-lock.yaml dist/.npmrc ./
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --prod
+
+# ytai payload — split so a backend-only or frontend-only change
+# invalidates just one of the two layers (and the donor + node_modules
+# layers above stay cached either way).
+COPY --link dist/src ./src
+COPY --link dist/public ./public
 
 EXPOSE 80
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
