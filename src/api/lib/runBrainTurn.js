@@ -65,8 +65,10 @@ export default async function runBrainTurn({
   }
 
   let assistantContent = '';
-  let promptTokens = null;
-  let completionTokens = null;
+  // Per-round usage records. One entry per upstream chat completion call
+  // (i.e. per tool-call round). Keeps the audit log faithful — billing
+  // sums these rather than re-deriving from the conversation.
+  const usageRecords = [];
   let interrupted = false;
   let error = null;
   const allToolCalls = [];
@@ -106,6 +108,8 @@ export default async function runBrainTurn({
       let assistantContentThisRound = '';
       let reasoningThisRound = '';
       let finishReason = null;
+      let usageThisRound = null;
+      let modelVersionThisRound = null;
 
       for await (const chunk of agentChat({
         baseUrl,
@@ -140,10 +144,12 @@ export default async function runBrainTurn({
           }
         }
         if (chunk.finishReason) finishReason = chunk.finishReason;
-        if (chunk.usage) {
-          promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
-          completionTokens = chunk.usage.completion_tokens ?? completionTokens;
-        }
+        if (chunk.usage) usageThisRound = chunk.usage;
+        if (chunk.modelVersion) modelVersionThisRound = chunk.modelVersion;
+      }
+
+      if (usageThisRound) {
+        usageRecords.push({ usage: usageThisRound, modelVersion: modelVersionThisRound });
       }
 
       const pendingCalls = [];
@@ -291,8 +297,7 @@ export default async function runBrainTurn({
   return {
     assistantContent,
     allToolCalls,
-    promptTokens,
-    completionTokens,
+    usageRecords,
     hitRoundCap,
     interrupted,
     error

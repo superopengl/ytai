@@ -159,7 +159,23 @@ export const visionExtraction = ytai.table(
     regionBbox: jsonb('region_bbox'),
     extracted: jsonb('extracted').notNull(),
     confidence: numeric('confidence'),
+    // Eyes (vision) identity for the call that populated this row. `model`
+    // is what we asked for; `modelVersion` is what the provider returned.
+    // Subsequent reads of this row are cache hits — they don't write a new
+    // llm_usage record, so these columns are the only record of what the
+    // original call cost.
+    provider: text('provider'),
+    model: text('model'),
     modelVersion: text('model_version').notNull(),
+    // Token + cost snapshot for the one upstream call that produced this
+    // cached answer. Stays with the row forever — every cache hit on this
+    // (imageId, regionHash) avoided this many tokens / this much cost.
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    reasoningTokens: integer('reasoning_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheWriteTokens: integer('cache_write_tokens'),
+    costUsd: numeric('cost_usd'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
   },
@@ -196,9 +212,30 @@ export const sessionMessage = ytai.table('session_message', {
   content: text('content').notNull(),
   imageId: uuid('image_id').references(() => sessionImage.id),
   regionHash: text('region_hash'),
+  // Brain's model identity for this turn. `provider` is the platform that
+  // served it (openrouter, anthropic, openai, …); `modelId` is the model
+  // string we asked for (e.g. "deepseek/deepseek-v4-flash"). The audit
+  // log in llm_usage carries one row per upstream call with the same pair.
+  provider: text('provider'),
   modelId: text('model_id'),
-  promptTokens: integer('prompt_tokens'),
-  completionTokens: integer('completion_tokens'),
+  // Token + cost rollup for this assistant turn. Sum of the Brain chat call
+  // and every Eyes (vision) lookup it triggered — i.e. the full bill for
+  // producing this message. The per-call breakdown lives in llm_usage.
+  //
+  // inputTokens / outputTokens: standard prompt + completion counts.
+  // reasoningTokens: subset of outputTokens that the provider attributed
+  //   to chain-of-thought (DeepSeek / o1-style models).
+  // cacheReadTokens: subset of inputTokens that hit the provider's prompt
+  //   cache and was billed at a discount.
+  // cacheWriteTokens: tokens the provider wrote into its prompt cache on
+  //   this call (Anthropic / DeepSeek). Billed at a small premium.
+  // costUsd: what OpenRouter reported as `usage.cost`, summed across calls.
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  reasoningTokens: integer('reasoning_tokens'),
+  cacheReadTokens: integer('cache_read_tokens'),
+  cacheWriteTokens: integer('cache_write_tokens'),
+  costUsd: numeric('cost_usd'),
   interrupted: boolean('interrupted').notNull().default(false),
   toolCalls: jsonb('tool_calls'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -226,10 +263,15 @@ export const sessionReport = ytai.table('session_report', {
   questions: jsonb('questions'),
   cursorMessageId: uuid('cursor_message_id').references(() => sessionMessage.id),
   cursorMessageAt: timestamp('cursor_message_at', { withTimezone: true }),
+  provider: text('provider'),
   modelVersion: text('model_version'),
   error: text('error'),
-  promptTokens: integer('prompt_tokens'),
-  completionTokens: integer('completion_tokens'),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  reasoningTokens: integer('reasoning_tokens'),
+  cacheReadTokens: integer('cache_read_tokens'),
+  cacheWriteTokens: integer('cache_write_tokens'),
+  costUsd: numeric('cost_usd'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
 });
@@ -256,12 +298,60 @@ export const subjectReport = ytai.table(
     content: jsonb('content'),
     narrative: text('narrative'),
     includedSessions: jsonb('included_sessions'),
+    provider: text('provider'),
     modelVersion: text('model_version'),
-    promptTokens: integer('prompt_tokens'),
-    completionTokens: integer('completion_tokens'),
+    // Aggregates the main generation call + the parallel title-generation
+    // call. Per-call breakdown lives in llm_usage.
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    reasoningTokens: integer('reasoning_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheWriteTokens: integer('cache_write_tokens'),
+    costUsd: numeric('cost_usd'),
     error: text('error'),
     generatedAt: timestamp('generated_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
   }
 );
+
+// Per-call billing audit log. One row per actual upstream LLM API hit
+// (cache hits in vision_extraction don't write here — they didn't cost
+// anything). Every Brain chat completion, every Eyes vision call, every
+// session/subject report generation, and every parallel title call lands
+// here. This table is the source of truth for billing and the only place
+// that needs to be touched to roll usage up per user or per period — the
+// denormalised columns on session_message / session_report / subject_report
+// are convenience caches.
+//
+// `purpose` enumerates the call site: brain_chat | vision_lookup |
+// session_report | subject_report | subject_report_title. Most rows carry
+// one (and only one) FK pointing back at the entity that triggered the
+// call — `messageId` for brain_chat, `imageId` for vision_lookup, etc. —
+// so a `WHERE user_id = ? AND created_at >= ?` query reads cleanly.
+//
+// `usageRaw` snapshots the entire provider `usage` object so any field we
+// haven't promoted to a column yet (reasoning tokens, audio tokens, future
+// breakdowns) is still recoverable for back-billing.
+export const llmUsage = ytai.table('llm_usage', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => user.id),
+  sessionId: uuid('session_id').references(() => tutorSession.id),
+  messageId: uuid('message_id').references(() => sessionMessage.id),
+  imageId: uuid('image_id').references(() => sessionImage.id),
+  sessionReportId: uuid('session_report_id').references(() => sessionReport.sessionId),
+  subjectReportId: uuid('subject_report_id').references(() => subjectReport.id),
+  purpose: text('purpose').notNull(),
+  provider: text('provider').notNull().default('openrouter'),
+  model: text('model').notNull(),
+  modelVersion: text('model_version'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+  cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+  cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  costUsd: numeric('cost_usd'),
+  usageRaw: jsonb('usage_raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+});

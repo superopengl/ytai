@@ -27,7 +27,8 @@ export default function makeTutorTools({
   emit,
   usedColorsForTurn,
   signal,
-  annotatedByImageId
+  annotatedByImageId,
+  visionUsageCollector = null
 }) {
   const pages = activeDoc?.pages ?? [];
   const annotated = annotatedByImageId instanceof Map ? annotatedByImageId : new Map();
@@ -36,7 +37,15 @@ export default function makeTutorTools({
       return dispatchFindText(call, { pages, log, emit });
     }
     if (call.name === 'lookup_on_image') {
-      return dispatchLookup(call, { pages, viewingPage, log, emit, signal, annotated });
+      return dispatchLookup(call, {
+        pages,
+        viewingPage,
+        log,
+        emit,
+        signal,
+        annotated,
+        visionUsageCollector
+      });
     }
     if (call.name === 'draw_annotation') {
       return dispatchDrawAnnotation(call, { pages, viewingPage, log, emit, usedColorsForTurn });
@@ -106,7 +115,10 @@ async function dispatchFindText(call, { pages, log, emit }) {
   return { result, progress };
 }
 
-async function dispatchLookup(call, { pages, viewingPage, log, emit, signal, annotated }) {
+async function dispatchLookup(
+  call,
+  { pages, viewingPage, log, emit, signal, annotated, visionUsageCollector }
+) {
   const question = typeof call.args?.question === 'string' ? call.args.question.trim() : '';
   // Brain is told `page` is required, but fall back to viewing page or
   // page 1 if it forgot — beats a hard error that wastes a round.
@@ -150,7 +162,8 @@ async function dispatchLookup(call, { pages, viewingPage, log, emit, signal, ann
       question,
       log,
       signal,
-      imageDataUrlOverride: annotatedOverride?.dataUrl ?? null
+      imageDataUrlOverride: annotatedOverride?.dataUrl ?? null,
+      usageCollector: visionUsageCollector
     });
   } catch (err) {
     log?.error({ err, question, page: targetPage.pageNumber }, 'lookup_on_image failed');

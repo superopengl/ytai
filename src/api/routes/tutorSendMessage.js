@@ -9,6 +9,7 @@ import {
 import brainTools from '../lib/brainTools.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
 import makeTutorTools from '../lib/makeTutorTools.js';
+import recordLlmUsage, { normaliseUsage, sumUsage } from '../lib/recordLlmUsage.js';
 import runBrainTurn from '../lib/runBrainTurn.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 
@@ -310,6 +311,11 @@ export default function tutorSendMessage(fastify) {
       abortController.abort();
     });
 
+    // Collects { usage, model, modelVersion, imageId } for each Eyes
+    // (lookup_on_image) call this turn so we can write a billing row per
+    // call and roll the cost into the assistant message.
+    const visionUsageCollector = [];
+
     const dispatchTool = makeTutorTools({
       activeDoc,
       viewingPage,
@@ -317,14 +323,14 @@ export default function tutorSendMessage(fastify) {
       emit: sse,
       usedColorsForTurn,
       signal: abortController.signal,
-      annotatedByImageId
+      annotatedByImageId,
+      visionUsageCollector
     });
 
     const {
       assistantContent,
       allToolCalls,
-      promptTokens,
-      completionTokens,
+      usageRecords,
       interrupted,
       error: turnError
     } = await runBrainTurn({
@@ -357,6 +363,13 @@ export default function tutorSendMessage(fastify) {
       );
     }
 
+    // Roll Brain rounds + Eyes calls into one bill for this assistant
+    // message. The audit-table inserts happen after the row is created so
+    // every llm_usage record has the right messageId FK.
+    const brainNormalised = (usageRecords ?? []).map((r) => normaliseUsage(r.usage));
+    const visionNormalised = visionUsageCollector.map((r) => normaliseUsage(r.usage));
+    const turnTotals = sumUsage([...brainNormalised, ...visionNormalised]);
+
     try {
       const [assistantRow] = await db()
         .insert(sessionMessage)
@@ -364,14 +377,48 @@ export default function tutorSendMessage(fastify) {
           sessionId,
           role: 'assistant',
           content: assistantContent,
+          provider: 'openrouter',
           modelId,
           imageId: null,
-          promptTokens,
-          completionTokens,
+          inputTokens: turnTotals.inputTokens || null,
+          outputTokens: turnTotals.outputTokens || null,
+          reasoningTokens: turnTotals.reasoningTokens || null,
+          cacheReadTokens: turnTotals.cacheReadTokens || null,
+          cacheWriteTokens: turnTotals.cacheWriteTokens || null,
+          costUsd: turnTotals.costUsd,
           interrupted,
           toolCalls: allToolCalls.length > 0 ? allToolCalls : null
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
+
+      // Best-effort audit log. Records every actual upstream call — one
+      // per Brain round + one per Eyes lookup that hit the network. Cache
+      // hits don't write rows because they didn't cost anything.
+      for (const rec of usageRecords ?? []) {
+        recordLlmUsage({
+          userId,
+          sessionId,
+          messageId: assistantRow.id,
+          purpose: 'brain_chat',
+          model: modelId,
+          modelVersion: rec.modelVersion,
+          usage: rec.usage,
+          log: request.log
+        }).catch(() => {});
+      }
+      for (const rec of visionUsageCollector) {
+        recordLlmUsage({
+          userId,
+          sessionId,
+          messageId: assistantRow.id,
+          imageId: rec.imageId,
+          purpose: 'vision_lookup',
+          model: rec.model,
+          modelVersion: rec.modelVersion,
+          usage: rec.usage,
+          log: request.log
+        }).catch(() => {});
+      }
 
       if (turnError) {
         sse('error', {
@@ -390,8 +437,12 @@ export default function tutorSendMessage(fastify) {
       } else {
         sse('done', {
           messageId: assistantRow.id,
-          promptTokens,
-          completionTokens,
+          inputTokens: turnTotals.inputTokens || null,
+          outputTokens: turnTotals.outputTokens || null,
+          reasoningTokens: turnTotals.reasoningTokens || null,
+          cacheReadTokens: turnTotals.cacheReadTokens || null,
+          cacheWriteTokens: turnTotals.cacheWriteTokens || null,
+          costUsd: turnTotals.costUsd,
           interrupted,
           // 'done' payload keeps its historical shape: only the UI-facing
           // draw_annotation calls. The full lookup chain lives in DB.

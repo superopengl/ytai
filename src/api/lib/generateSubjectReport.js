@@ -8,6 +8,7 @@ import {
 } from '../db/schema.js';
 import agentChat from './agentChat.js';
 import generateSessionReport from './generateSessionReport.js';
+import recordLlmUsage, { normaliseUsage, sumUsage } from './recordLlmUsage.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
@@ -207,7 +208,7 @@ async function generateReportTitle({ prompt, subject, log }) {
     `Call submit_report_title exactly once and write no other text.`;
   const { baseUrl, apiKey, model } = reporterConfig();
   try {
-    const { args } = await runReporter({
+    const { args, usage, modelVersion } = await runReporter({
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: prompt }
@@ -218,10 +219,10 @@ async function generateReportTitle({ prompt, subject, log }) {
       tool: TITLE_TOOL
     });
     const t = typeof args.title === 'string' ? args.title.trim() : '';
-    return t || null;
+    return { title: t || null, usage, model, modelVersion };
   } catch (err) {
     log.warn({ err: err.message }, 'generateReportTitle failed; falling back to default label');
-    return null;
+    return { title: null, usage: null, model, modelVersion: null };
   }
 }
 
@@ -240,6 +241,7 @@ async function runReporter({ messages, baseUrl, apiKey, model, tool }) {
   const accum = new Map();
   let finishReason = null;
   let usage = null;
+  let modelVersion = null;
   for await (const chunk of agentChat({ baseUrl, apiKey, model, messages, tools: [tool] })) {
     if (chunk.toolCallChunks) {
       for (const tc of chunk.toolCallChunks) {
@@ -256,6 +258,7 @@ async function runReporter({ messages, baseUrl, apiKey, model, tool }) {
     }
     if (chunk.finishReason) finishReason = chunk.finishReason;
     if (chunk.usage) usage = chunk.usage;
+    if (chunk.modelVersion) modelVersion = chunk.modelVersion;
   }
   const wanted = tool.function.name;
   const call = Array.from(accum.values()).find((c) => c.name === wanted);
@@ -266,7 +269,7 @@ async function runReporter({ messages, baseUrl, apiKey, model, tool }) {
   } catch (err) {
     throw new Error(`Subject reporter ${wanted} args were not valid JSON: ${err.message}`);
   }
-  return { args, usage };
+  return { args, usage, modelVersion };
 }
 
 // Subject reports are immutable once generated: every enqueue inserts a
@@ -320,9 +323,14 @@ export default async function enqueueSubjectReport({
   // the row 'failed'; any unexpected throw from the catch arm itself
   // (e.g. DB outage during the failure write) is logged but not rethrown,
   // because nobody is awaiting this promise.
-  runSubjectReport({ rowId: row.id, manifest, subject, prompt: normalizedPrompt, log }).catch(
-    (err) => log.error({ err, rowId: row.id }, 'runSubjectReport background task crashed')
-  );
+  runSubjectReport({
+    rowId: row.id,
+    userId,
+    manifest,
+    subject,
+    prompt: normalizedPrompt,
+    log
+  }).catch((err) => log.error({ err, rowId: row.id }, 'runSubjectReport background task crashed'));
 
   return {
     id: row.id,
@@ -333,7 +341,7 @@ export default async function enqueueSubjectReport({
   };
 }
 
-async function runSubjectReport({ rowId, manifest, subject, prompt, log }) {
+async function runSubjectReport({ rowId, userId, manifest, subject, prompt, log }) {
   try {
     // Pre-generate the title in parallel with the session-refresh work so
     // the polling UI can show the real report name within a couple of
@@ -341,12 +349,24 @@ async function runSubjectReport({ rowId, manifest, subject, prompt, log }) {
     const titlePromise = generateReportTitle({ prompt, subject, log });
 
     await refreshStaleSessions(manifest, log);
-    const earlyTitle = await titlePromise;
+    const titleResult = await titlePromise;
+    const earlyTitle = titleResult?.title ?? null;
     if (earlyTitle) {
       await db()
         .update(subjectReport)
         .set({ content: { title: earlyTitle }, updatedAt: new Date() })
         .where(eq(subjectReport.id, rowId));
+    }
+    if (titleResult?.usage) {
+      recordLlmUsage({
+        userId,
+        subjectReportId: rowId,
+        purpose: 'subject_report_title',
+        model: titleResult.model,
+        modelVersion: titleResult.modelVersion,
+        usage: titleResult.usage,
+        log
+      }).catch(() => {});
     }
 
     const data = rolledUpSessionData(manifest);
@@ -368,7 +388,7 @@ async function runSubjectReport({ rowId, manifest, subject, prompt, log }) {
     });
     let content = result.args;
     const narrative = typeof result.args.narrative === 'string' ? result.args.narrative : '';
-    const modelVersion = model;
+    const modelVersion = result.modelVersion || model;
     const usage = result.usage;
 
     // If the main call dropped or blanked the title, preserve the
@@ -380,6 +400,11 @@ async function runSubjectReport({ rowId, manifest, subject, prompt, log }) {
     const snapshot = includedSessionsSnapshot(manifest);
     const now = new Date();
 
+    // Denormalised columns aggregate both the title call and the main call —
+    // billing for this report row is the sum of every LLM hit that produced
+    // it. The per-call breakdown is in llm_usage.
+    const totals = sumUsage([normaliseUsage(titleResult?.usage), normaliseUsage(usage)]);
+
     await db()
       .update(subjectReport)
       .set({
@@ -387,14 +412,29 @@ async function runSubjectReport({ rowId, manifest, subject, prompt, log }) {
         content,
         narrative,
         includedSessions: snapshot,
+        provider: 'openrouter',
         modelVersion,
-        promptTokens: usage?.prompt_tokens ?? null,
-        completionTokens: usage?.completion_tokens ?? null,
+        inputTokens: totals.inputTokens || null,
+        outputTokens: totals.outputTokens || null,
+        reasoningTokens: totals.reasoningTokens || null,
+        cacheReadTokens: totals.cacheReadTokens || null,
+        cacheWriteTokens: totals.cacheWriteTokens || null,
+        costUsd: totals.costUsd,
         error: null,
         generatedAt: now,
         updatedAt: now
       })
       .where(eq(subjectReport.id, rowId));
+
+    recordLlmUsage({
+      userId,
+      subjectReportId: rowId,
+      purpose: 'subject_report',
+      model,
+      modelVersion,
+      usage,
+      log
+    }).catch(() => {});
   } catch (err) {
     log.error({ err, rowId, subject }, 'runSubjectReport failed');
     await db()

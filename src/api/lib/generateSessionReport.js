@@ -12,6 +12,7 @@ import {
   visionExtraction
 } from '../db/schema.js';
 import agentChat from './agentChat.js';
+import recordLlmUsage, { normaliseUsage } from './recordLlmUsage.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
@@ -274,6 +275,7 @@ async function callReporter({ messages, baseUrl, apiKey, model }) {
   const accum = new Map();
   let finishReason = null;
   let usage = null;
+  let modelVersion = null;
 
   for await (const chunk of agentChat({
     baseUrl,
@@ -297,6 +299,7 @@ async function callReporter({ messages, baseUrl, apiKey, model }) {
     }
     if (chunk.finishReason) finishReason = chunk.finishReason;
     if (chunk.usage) usage = chunk.usage;
+    if (chunk.modelVersion) modelVersion = chunk.modelVersion;
   }
 
   const call = Array.from(accum.values()).find((c) => c.name === 'submit_report');
@@ -309,7 +312,7 @@ async function callReporter({ messages, baseUrl, apiKey, model }) {
   } catch (err) {
     throw new Error(`Reporter submit_report args were not valid JSON: ${err.message}`);
   }
-  return { args, usage };
+  return { args, usage, modelVersion };
 }
 
 // Drop questions with codes the model invented, and enrich every kept
@@ -362,7 +365,7 @@ async function latestMessage(sessionId) {
 
 export default async function generateSessionReport({ sessionId, log, force = false }) {
   const [session] = await db()
-    .select({ id: tutorSession.id })
+    .select({ id: tutorSession.id, userId: tutorSession.userId })
     .from(tutorSession)
     .where(eq(tutorSession.id, sessionId));
   if (!session) throw new Error(`Session ${sessionId} not found`);
@@ -486,8 +489,14 @@ export default async function generateSessionReport({ sessionId, log, force = fa
       },
       'generateSessionReport: calling Brain'
     );
-    const { args, usage } = await callReporter({ messages: promptMessages, baseUrl, apiKey, model });
+    const { args, usage, modelVersion } = await callReporter({
+      messages: promptMessages,
+      baseUrl,
+      apiKey,
+      model
+    });
     const normalized = normalizeReport(args, { log });
+    const normalisedUsage = normaliseUsage(usage);
 
     await db()
       .update(sessionReport)
@@ -497,13 +506,29 @@ export default async function generateSessionReport({ sessionId, log, force = fa
         questions: normalized.questions,
         cursorMessageId: latest?.id ?? null,
         cursorMessageAt: latest?.createdAt ?? null,
-        modelVersion: model,
-        promptTokens: usage?.prompt_tokens ?? null,
-        completionTokens: usage?.completion_tokens ?? null,
+        provider: 'openrouter',
+        modelVersion: modelVersion || model,
+        inputTokens: normalisedUsage?.inputTokens ?? null,
+        outputTokens: normalisedUsage?.outputTokens ?? null,
+        reasoningTokens: normalisedUsage?.reasoningTokens ?? null,
+        cacheReadTokens: normalisedUsage?.cacheReadTokens ?? null,
+        cacheWriteTokens: normalisedUsage?.cacheWriteTokens ?? null,
+        costUsd: normalisedUsage?.costUsd ?? null,
         error: null,
         updatedAt: new Date()
       })
       .where(eq(sessionReport.sessionId, sessionId));
+
+    recordLlmUsage({
+      userId: session.userId,
+      sessionId,
+      sessionReportId: sessionId,
+      purpose: 'session_report',
+      model,
+      modelVersion,
+      usage,
+      log
+    }).catch(() => {});
 
     return {
       status: 'ready',

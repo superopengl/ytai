@@ -50,6 +50,8 @@ export default async function askVisionModel({ imageDataUrl, question, baseUrl, 
     ],
     temperature: 0,
     stream: false,
+    // OpenRouter extension: include per-call USD cost in the usage block.
+    usage: { include: true },
     response_format: {
       type: 'json_schema',
       json_schema: {
@@ -98,6 +100,7 @@ export default async function askVisionModel({ imageDataUrl, question, baseUrl, 
   return {
     answer,
     usage: json.usage ?? null,
-    modelVersion: json.model ?? model
+    modelVersion: json.model ?? model,
+    model
   };
 }

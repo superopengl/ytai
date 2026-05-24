@@ -4,6 +4,7 @@ import db from '../db/index.js';
 import { visionExtraction } from '../db/schema.js';
 import askVisionModel from './askVisionModel.js';
 import loadImageDataUrl from './loadImageDataUrl.js';
+import { normaliseUsage } from './recordLlmUsage.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
@@ -43,12 +44,18 @@ function bytesSignatureFromDataUrl(dataUrl) {
 // the question hash is dusted with the override's bytes hash so each
 // distinct annotation state caches independently and stale answers from a
 // past, un-annotated turn don't leak through.
+//
+// Billing: when the caller supplies a `usageCollector` array, every actual
+// upstream call (not cache hits — those didn't cost anything) appends
+// { usage, model, modelVersion, imageId } so the turn can roll the cost
+// into the assistant message after it knows the message id.
 export default async function lookupOnImage({
   image,
   question,
   log,
   signal,
-  imageDataUrlOverride = null
+  imageDataUrlOverride = null,
+  usageCollector = null
 }) {
   const bytesSignature = imageDataUrlOverride ? bytesSignatureFromDataUrl(imageDataUrlOverride) : '';
   const questionHash = hashQuestion(question, bytesSignature);
@@ -75,7 +82,7 @@ export default async function lookupOnImage({
     { imageId: image.id, question, model, annotated: !!imageDataUrlOverride },
     'running Eyes (lookup_on_image)'
   );
-  const { answer, modelVersion } = await askVisionModel({
+  const { answer, modelVersion, usage } = await askVisionModel({
     imageDataUrl,
     question,
     baseUrl,
@@ -84,14 +91,31 @@ export default async function lookupOnImage({
     signal
   });
 
+  if (Array.isArray(usageCollector)) {
+    usageCollector.push({ usage, model, modelVersion, imageId: image.id });
+  }
+
   const extracted = { question, answer };
+  // Snapshot what the call cost onto the cache row itself. Every future
+  // hit on this (imageId, questionHash) reads the answer back without
+  // hitting Eyes again — these columns are the only record of what the
+  // first computation cost.
+  const normalisedUsage = normaliseUsage(usage);
   await db()
     .insert(visionExtraction)
     .values({
       imageId: image.id,
       regionHash: questionHash,
       extracted,
-      modelVersion
+      provider: 'openrouter',
+      model,
+      modelVersion,
+      inputTokens: normalisedUsage?.inputTokens ?? null,
+      outputTokens: normalisedUsage?.outputTokens ?? null,
+      reasoningTokens: normalisedUsage?.reasoningTokens ?? null,
+      cacheReadTokens: normalisedUsage?.cacheReadTokens ?? null,
+      cacheWriteTokens: normalisedUsage?.cacheWriteTokens ?? null,
+      costUsd: normalisedUsage?.costUsd ?? null
     })
     .onConflictDoNothing();
   log?.info(

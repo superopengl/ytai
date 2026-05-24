@@ -26,6 +26,10 @@ export default async function* agentChat({
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    // OpenRouter extension: ask the provider to include the per-call USD
+    // cost in the final `usage` block so we can persist it for billing.
+    // OpenAI-compat back-ends ignore the field harmlessly.
+    usage: { include: true },
     // Skip the reasoning phase. deepseek-v4-flash and other thinking models
     // burn wall-clock streaming reasoning_content before any user text.
     // enable_thinking is the model-native flag (DeepSeek / Qwen);
@@ -170,8 +174,13 @@ export default async function* agentChat({
           if (choice?.finish_reason) {
             yield { finishReason: choice.finish_reason };
           }
-          if (json.usage) {
-            yield { usage: json.usage };
+          // Many OpenRouter providers emit usage chunks on every delta. The
+          // last one wins downstream; yielding all of them is harmless.
+          // `json.model` is the provider's resolved model id (often a more
+          // specific version than what we requested) — surface it so we
+          // can persist it alongside the usage record.
+          if (json.usage || json.model) {
+            yield { usage: json.usage ?? null, modelVersion: json.model ?? null };
           }
         } catch {
           // keep-alive or malformed chunk; ignore
