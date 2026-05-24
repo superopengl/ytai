@@ -88,16 +88,17 @@ export default function authEmail(fastify) {
       return { otpRow: row, matchedUser: matched };
     });
 
-    await sendOtpEmail({
+    // Fire-and-forget: the OTP is already committed, so the client doesn't
+    // need to wait on SES latency. sendOtpEmail catches its own errors and
+    // logs them; the .catch here is a defensive backstop.
+    sendOtpEmail({
       to: email,
       code: otpRow.code,
       expiresAt: otpRow.expiresAt,
       recipientName: matchedUser.name || null,
       log: request.log
-    });
+    }).catch((err) => request.log.error({ err, to: email }, 'sendOtpEmail threw'));
 
-    // Salt the resend response with a request id so reload-based replay is
-    // distinguishable in logs; not strictly needed but cheap.
     request.log.info({ requestId: randomBytes(4).toString('hex'), to: email }, 'OTP request handled');
 
     return { expiresAt: otpRow.expiresAt.toISOString() };
