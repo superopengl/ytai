@@ -30,6 +30,7 @@ import {
 import { HostedZone, ARecord, RecordTarget } from "aws-cdk-lib/aws-route53";
 import { LoadBalancerTarget } from "aws-cdk-lib/aws-route53-targets";
 import { Bucket, BlockPublicAccess, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 
 export default class YoututoraiStack extends Stack {
   constructor(scope, id, props) {
@@ -42,6 +43,8 @@ export default class YoututoraiStack extends Stack {
       appRepoName,
       imageTag,
       imageRetentionDays,
+      googleClientId,
+      sesFromEmail,
       // Imported from kpai's deployed CFN outputs via the release script.
       vpcId,
       clusterName,
@@ -127,6 +130,18 @@ export default class YoututoraiStack extends Stack {
         "Populate after first deploy: aws secretsmanager put-secret-value --secret-id ytai/<stage>/openrouter --secret-string sk-or-...",
     });
 
+    // Admin password for the local username+password sign-in path. Auto-
+    // generated so the default `adminadmin` never lands in prod. Read out
+    // after first deploy:
+    //   aws secretsmanager get-secret-value --secret-id ytai/<stage>/admin-password
+    const adminPasswordSecret = new Secret(this, "AdminPassword", {
+      secretName: `ytai/${stage}/admin-password`,
+      generateSecretString: {
+        excludePunctuation: true,
+        passwordLength: 24,
+      },
+    });
+
     // === Image bucket =======================================================
 
     const imageBucket = new Bucket(this, "ImageBucket", {
@@ -155,6 +170,16 @@ export default class YoututoraiStack extends Stack {
     });
     imageBucket.grantReadWrite(taskDef.taskRole);
 
+    // SES permission for the email-OTP sign-in path. Harmless when
+    // YTAI_SES_FROM_EMAIL is unset (the route logs the OTP and skips SES).
+    taskDef.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["ses:SendEmail", "ses:SendRawEmail"],
+        resources: ["*"],
+      }),
+    );
+
     taskDef.addContainer("App", {
       image: ContainerImage.fromEcrRepository(appRepo, imageTag),
       // App ~300 MB + EasyOCR resident ~1.5 GB + Kokoro resident ~1 GB.
@@ -174,12 +199,20 @@ export default class YoututoraiStack extends Stack {
         YTAI_S3_BUCKET: imageBucket.bucketName,
         YTAI_AWS_REGION: this.region,
         YTAI_IMAGE_RETENTION_DAYS: String(imageRetentionDays),
+        // TTS audio cache lives in container ephemeral storage. The DB is
+        // the source of truth (tts_audio table) — the on-disk copy is just
+        // a CDN-style cache that's fine to lose on restart.
+        YTAI_AUDIO_DIR: "/tmp/ytai-audio",
+        YTAI_ADMIN_USERNAME: "admin",
+        ...(googleClientId ? { YTAI_GOOGLE_CLIENT_ID: googleClientId } : {}),
+        ...(sesFromEmail ? { YTAI_SES_FROM_EMAIL: sesFromEmail } : {}),
       },
       secrets: {
         YTAI_PG_USER: EcsSecret.fromSecretsManager(dbSecret, "username"),
         YTAI_PG_PASSWORD: EcsSecret.fromSecretsManager(dbSecret, "password"),
         YTAI_JWT_SECRET: EcsSecret.fromSecretsManager(jwtSecret),
         YTAI_OPENROUTER_API_KEY: EcsSecret.fromSecretsManager(openRouterSecret),
+        YTAI_ADMIN_PASSWORD: EcsSecret.fromSecretsManager(adminPasswordSecret),
       },
       // hostPort omitted → ECS assigns ephemeral host port; ALB target group
       // with TargetType.INSTANCE picks it up via dynamic mapping.
@@ -254,6 +287,9 @@ export default class YoututoraiStack extends Stack {
     new CfnOutput(this, "ImageBucketName", { value: imageBucket.bucketName });
     new CfnOutput(this, "JwtSecretArn", { value: jwtSecret.secretArn });
     new CfnOutput(this, "OpenRouterSecretArn", { value: openRouterSecret.secretArn });
+    new CfnOutput(this, "AdminPasswordSecretArn", {
+      value: adminPasswordSecret.secretArn,
+    });
     new CfnOutput(this, "ImageTag", { value: imageTag });
   }
 }

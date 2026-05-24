@@ -79,7 +79,9 @@ pnpm exec cdk deploy "$APP_STACK_NAME" \
   -c albHttpsListenerArn="$ALB_HTTPS_LISTENER_ARN" \
   -c albSgId="$ALB_SG_ID" \
   -c dbHost="$DB_HOST" \
-  -c dbSecretArn="$DB_SECRET_ARN"
+  -c dbSecretArn="$DB_SECRET_ARN" \
+  ${YTAI_GOOGLE_CLIENT_ID:+-c googleClientId="$YTAI_GOOGLE_CLIENT_ID"} \
+  ${YTAI_SES_FROM_EMAIL:+-c sesFromEmail="$YTAI_SES_FROM_EMAIL"}
 
 echo ""
 echo "==> Released. Tail logs with:"

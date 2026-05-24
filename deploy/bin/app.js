@@ -24,6 +24,18 @@ const imageRetentionDays = Number(
     process.env.YTAI_IMAGE_RETENTION_DAYS ??
     30,
 );
+// Optional — leave unset to disable Google SSO on prod. Public string from
+// the Google Cloud Console (OAuth 2.0 Web Client ID).
+const googleClientId =
+  app.node.tryGetContext("googleClientId") ??
+  process.env.YTAI_GOOGLE_CLIENT_ID ??
+  undefined;
+// Optional — leave unset to skip SES (OTP codes still land in DB / logs).
+// Must be a verified SES identity in the same region.
+const sesFromEmail =
+  app.node.tryGetContext("sesFromEmail") ??
+  process.env.YTAI_SES_FROM_EMAIL ??
+  undefined;
 
 // Imports from kpai-prod's CFN outputs. The release script populates these
 // via `aws cloudformation describe-stacks --stack-name kpai-${stage}` before
@@ -65,6 +77,8 @@ new YoututoraiStack(app, `ytai-${stage}`, {
   appRepoName,
   imageTag,
   imageRetentionDays,
+  googleClientId,
+  sesFromEmail,
   ...kpaiImports,
 });
 
