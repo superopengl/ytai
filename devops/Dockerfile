@@ -28,7 +28,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # installed PyTorch CPU build. The base image uses `uv`, not pip, so we
 # go via `uv pip install` with VIRTUAL_ENV pointing at the existing venv.
 # Versions track devops/ocr/requirements.txt.
+#
+# --extra-index-url + --index-strategy unsafe-best-match forces any torch
+# resolution to the CPU-only wheel set. Without it, uv pulls torch from
+# PyPI's default index, which serves the CUDA-enabled build (~2.5 GB of
+# nvidia-* shared libs we'll never use). Pinning torch >= what Kokoro
+# already has prevents an unnecessary upgrade.
 RUN VIRTUAL_ENV=/app/.venv uv pip install --no-cache \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+      --index-strategy unsafe-best-match \
       easyocr==1.7.2 \
       fastapi==0.115.0 \
       "uvicorn[standard]==0.30.6" \
