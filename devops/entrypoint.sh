@@ -17,7 +17,10 @@ set -eu
 # hard-coding host/port/database). The app and drizzle.config both read
 # YTAI_DATABASE_URL directly.
 if [ -n "${YTAI_PG_HOST:-}" ] && [ -z "${YTAI_DATABASE_URL:-}" ]; then
-  export YTAI_DATABASE_URL="postgres://${YTAI_PG_USER}:${YTAI_PG_PASSWORD}@${YTAI_PG_HOST}:${YTAI_PG_PORT:-5432}/${YTAI_PG_DATABASE:-ytai}"
+  # sslmode=require: Aurora's pg_hba.conf rejects unencrypted connections
+  # from inside the VPC. `require` negotiates TLS but doesn't verify the
+  # server cert (acceptable inside the VPC where MITM isn't a threat).
+  export YTAI_DATABASE_URL="postgres://${YTAI_PG_USER}:${YTAI_PG_PASSWORD}@${YTAI_PG_HOST}:${YTAI_PG_PORT:-5432}/${YTAI_PG_DATABASE:-ytai}?sslmode=require"
 fi
 
 # Run drizzle migrations on every task start. Idempotent — drizzle tracks
@@ -25,10 +28,10 @@ fi
 # (e.g., if you're rolling back and don't want the latest schema applied).
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   echo "==> Running ytai migrations"
-  # migrationsFolder in migrate.js is relative to cwd; running from dist/
-  # resolves it to /opt/ytai/dist/src/api/drizzle where build:prod placed
-  # the migration files.
-  cd /opt/ytai/dist && node src/api/db/migrate.js
+  # migrationsFolder in migrate.js is relative to cwd. dist/ contents land
+  # directly under /opt/ytai/ (kpai-style image layout), so the drizzle
+  # migration files are at /opt/ytai/src/api/drizzle.
+  cd /opt/ytai && node src/api/db/migrate.js
 fi
 
 # Forward SIGTERM to the background children so ECS task stop drains them
@@ -59,5 +62,5 @@ OCR_PID=$!
 # ytai app — foreground, becomes PID 1's child but receives SIGTERM via the
 # trap above when ECS stops the task. Same cwd as migrations so any future
 # relative-path lookups (e.g., drizzle, static-asset paths) match build time.
-cd /opt/ytai/dist
+cd /opt/ytai
 exec node src/api/server.js

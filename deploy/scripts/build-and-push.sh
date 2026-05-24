@@ -39,6 +39,9 @@ docker logout "$REGISTRY" >/dev/null 2>&1 || true
 aws ecr get-login-password --region "$REGION" | \
   docker login --username AWS --password-stdin "$REGISTRY"
 
+echo "==> Building production bundle"
+( cd "$(dirname "$0")/../.." && pnpm build:prod )
+
 echo "==> Building Docker image (this takes a while — ~3 GB image)"
 ( cd "$(dirname "$0")/../.." && \
   docker buildx build \

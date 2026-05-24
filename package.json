@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.15.0",
   "engines": {
     "node": ">=24"
   },
@@ -15,7 +16,7 @@
     "stop:local:tts": "docker compose -f docker-compose.dev.yml down",
     "start:local:ocr": "docker compose -f docker-compose.dev.yml up ocr",
     "stop:local:ocr": "docker compose -f docker-compose.dev.yml down",
-    "build:prod": "pnpm -F @techseeding/yoututorai-portal build && mkdir -p dist/src && cp -R src/api dist/src/api",
+    "build:prod": "rm -rf dist && pnpm -F @techseeding/yoututorai-portal build && mkdir -p dist/src && cp -R src/api dist/src/api && cp package.json pnpm-lock.yaml dist/ && printf 'only-built-dependencies[]=sharp\\nonly-built-dependencies[]=esbuild\\n' > dist/.npmrc",
     "start:prod": "NODE_ENV=production node --env-file=.env.production dist/src/api/server.js",
     "build:docker": "docker build -f devops/Dockerfile -t yoututorai .",
     "db:generate": "drizzle-kit generate --config=src/api/drizzle.config.js",

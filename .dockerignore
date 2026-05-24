@@ -1,0 +1,7 @@
+# Aggressive deny-list: only `dist/` and `devops/` are needed by the Dockerfile.
+# Build context stays tiny and we avoid pulling local node_modules into the
+# image (which would conflict with the deps installed inside).
+*
+!dist
+!devops
+!.dockerignore
