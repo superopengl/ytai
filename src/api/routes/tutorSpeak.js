@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import { ttsAudio, tutorSession } from '../db/schema.js';
 import persistAudio from '../lib/persistAudio.js';
 import synthesizeSpeech from '../lib/synthesizeSpeech.js';
+import { getObjectStream, objectExists } from '../lib/s3.js';
 
 const DEFAULT_MODEL = 'kokoro';
 const DEFAULT_VOICE = 'af_heart';
@@ -60,10 +61,13 @@ export default function tutorSpeak(fastify) {
     const abortController = new AbortController();
     request.raw.on('close', () => abortController.abort());
 
-    // Single transaction wraps session check → cache lookup → (on miss)
-    // synthesis + persist + insert. Synthesis holds the connection during
-    // the HTTP round-trip; acceptable because sentence audio is small and
-    // the cache hit-rate is high.
+    // Single transaction wraps session check → cache lookup → freshness
+    // probe → (on miss) synthesis + persist + upsert. Synthesis holds the
+    // connection during the HTTP round-trip; acceptable because sentence
+    // audio is small and the cache hit-rate is high. The freshness probe
+    // catches the case where a `tts_audio` row points at storage that's
+    // since vanished (file:// in /tmp after a container restart; s3://
+    // after a manual delete).
     let result;
     try {
       result = await withTx(async (tx) => {
@@ -84,7 +88,7 @@ export default function tutorSpeak(fastify) {
             )
           );
 
-        if (cached && cached.storageUrl.startsWith('file://')) {
+        if (cached && (await cacheBytesExist(cached.storageUrl))) {
           return { kind: 'cached', cached };
         }
 
@@ -107,7 +111,14 @@ export default function tutorSpeak(fastify) {
             storageUrl,
             bytes: synth.bytes.length
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [ttsAudio.textHash, ttsAudio.voice, ttsAudio.model],
+            set: {
+              storageUrl,
+              bytes: synth.bytes.length,
+              updatedAt: sql`now()`
+            }
+          });
 
         return { kind: 'fresh', synth };
       });
@@ -129,11 +140,7 @@ export default function tutorSpeak(fastify) {
         { sessionId, voice, model, textHash: textHash.slice(0, 12), bytes: cached.bytes },
         'tts cache hit'
       );
-      reply
-        .header('Content-Type', 'audio/mpeg')
-        .header('Cache-Control', 'private, max-age=86400')
-        .header('Content-Length', String(cached.bytes));
-      return reply.send(createReadStream(fileURLToPath(cached.storageUrl)));
+      return sendCachedAudio(reply, cached);
     }
 
     const { synth } = result;
@@ -147,4 +154,53 @@ export default function tutorSpeak(fastify) {
       .header('Content-Length', String(synth.bytes.length));
     return reply.send(synth.bytes);
   });
+}
+
+async function cacheBytesExist(storageUrl) {
+  if (typeof storageUrl !== 'string') return false;
+  if (storageUrl.startsWith('file://')) {
+    try {
+      return existsSync(fileURLToPath(storageUrl));
+    } catch {
+      return false;
+    }
+  }
+  if (storageUrl.startsWith('s3://')) {
+    try {
+      return await objectExists(storageUrl);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function sendCachedAudio(reply, cached) {
+  if (cached.storageUrl.startsWith('file://')) {
+    reply
+      .header('Content-Type', 'audio/mpeg')
+      .header('Cache-Control', 'private, max-age=86400')
+      .header('Content-Length', String(cached.bytes));
+    return reply.send(createReadStream(fileURLToPath(cached.storageUrl)));
+  }
+
+  if (cached.storageUrl.startsWith('s3://')) {
+    const obj = await getObjectStream(cached.storageUrl);
+    if (!obj) {
+      // Lost the race: object disappeared between the existence probe and
+      // the GET. Surfacing 502 lets the client retry, which will fall into
+      // the synth path on the next attempt.
+      reply.code(502);
+      return { error: 'TTS cache miss after probe' };
+    }
+    reply.header('Content-Type', obj.contentType || 'audio/mpeg').header(
+      'Cache-Control',
+      'private, max-age=86400'
+    );
+    if (obj.contentLength != null) reply.header('Content-Length', String(obj.contentLength));
+    return reply.send(obj.stream);
+  }
+
+  reply.code(501);
+  return { error: 'Unsupported storage scheme' };
 }

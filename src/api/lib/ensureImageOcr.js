@@ -19,6 +19,7 @@ import { eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { imageOcr } from '../db/schema.js';
 import runOcr from './runOcr.js';
+import { getObjectBytes } from './s3.js';
 
 const IN_FLIGHT = new Map(); // imageId -> Promise
 
@@ -114,10 +115,20 @@ export default function ensureImageOcr({ imageId, storageUrl, log }) {
 
 async function loadImageBytes(storageUrl) {
   if (typeof storageUrl !== 'string' || storageUrl.length === 0) return null;
-  if (!storageUrl.startsWith('file://')) return null; // s3 support: future
-  try {
-    return await readFile(fileURLToPath(storageUrl));
-  } catch {
-    return null;
+  if (storageUrl.startsWith('file://')) {
+    try {
+      return await readFile(fileURLToPath(storageUrl));
+    } catch {
+      return null;
+    }
   }
+  if (storageUrl.startsWith('s3://')) {
+    try {
+      const obj = await getObjectBytes(storageUrl);
+      return obj?.bytes ?? null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }

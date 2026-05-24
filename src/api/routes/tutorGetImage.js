@@ -4,6 +4,7 @@ import path from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import { sessionImage, tutorSession } from '../db/schema.js';
+import { getObjectStream } from '../lib/s3.js';
 
 // Serves the flattened canvas bytes (photo + student strokes) for a given
 // session_image row. Used by the chat UI to show the same image the student
@@ -30,16 +31,32 @@ export default function tutorGetImage(fastify) {
       return { error: 'Image not found' };
     }
 
-    if (!row.storageUrl.startsWith('file://')) {
-      reply.code(501);
-      return { error: 'Only file:// storage is supported in this build' };
+    if (row.storageUrl.startsWith('file://')) {
+      const filePath = fileURLToPath(row.storageUrl);
+      reply
+        .header('Content-Type', mimeFromPath(filePath))
+        .header('Cache-Control', 'private, max-age=86400');
+      return reply.send(createReadStream(filePath));
     }
 
-    const filePath = fileURLToPath(row.storageUrl);
-    reply
-      .header('Content-Type', mimeFromPath(filePath))
-      .header('Cache-Control', 'private, max-age=86400');
-    return reply.send(createReadStream(filePath));
+    if (row.storageUrl.startsWith('s3://')) {
+      const obj = await getObjectStream(row.storageUrl);
+      if (!obj) {
+        reply.code(404);
+        return { error: 'Image not found' };
+      }
+      reply
+        .header(
+          'Content-Type',
+          obj.contentType?.startsWith('image/') ? obj.contentType : mimeFromPath(row.storageUrl)
+        )
+        .header('Cache-Control', 'private, max-age=86400');
+      if (obj.contentLength != null) reply.header('Content-Length', String(obj.contentLength));
+      return reply.send(obj.stream);
+    }
+
+    reply.code(501);
+    return { error: 'Unsupported storage scheme' };
   });
 }
 
