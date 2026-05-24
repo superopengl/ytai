@@ -19,6 +19,7 @@
     "build:prod": "rm -rf dist && pnpm -F @techseeding/yoututorai-portal build && mkdir -p dist/src && cp -R src/api dist/src/api && cp package.json pnpm-lock.yaml dist/ && printf 'only-built-dependencies[]=sharp\\nonly-built-dependencies[]=esbuild\\n' > dist/.npmrc",
     "start:prod": "NODE_ENV=production node --env-file=.env.production dist/src/api/server.js",
     "build:docker": "docker build -f devops/Dockerfile -t yoututorai .",
+    "release": "./scripts/release.sh",
     "db:generate": "drizzle-kit generate --config=src/api/drizzle.config.js",
     "db:migrate": "node --env-file=.env src/api/db/migrate.js",
     "db:studio": "drizzle-kit studio --config=src/api/drizzle.config.js"
