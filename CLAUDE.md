@@ -57,7 +57,7 @@ Subjects are the fixed 4-enum (math / thinking / reading / writing), bound 1:1 t
 
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_request`, `login_otp`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` (`local` | `google` | `email`), `email`, `google_id`, `picture`, plus the admin-only `user_name` + `password_hash` (scrypt) pair; `email`, `google_id`, and `user_name` are unique. `login_otp` stores 6-digit email codes in plain text so an admin can read them back when SES delivery fails.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_otp`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` (`local` | `google` | `email`), `email`, `google_id`, `picture`, plus the admin-only `user_name` + `password_hash` (scrypt) pair; `email`, `google_id`, and `user_name` are unique. `login_otp` stores 6-digit email codes in plain text so an admin can read them back when SES delivery fails.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 

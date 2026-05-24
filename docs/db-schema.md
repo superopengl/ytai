@@ -28,17 +28,6 @@ Application users. One row per person. Roles: `student`, `parent`, `teacher`, `a
 
 Unique indexes on `email`, `google_id`, and `user_name`.
 
-### `login_request`
-A user's request to log in; admin must approve before the user can start a session. The login page polls status by `id`.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid | PK |
-| `user_id` | uuid | FK → `user.id` |
-| `status` | text | `pending` \| `approved` \| `rejected` |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
 ### `login_otp`
 Short-lived 6-digit email sign-in codes. Stored in plain text on purpose — an admin can read the code out of the DB / server logs when SES delivery is broken. Rows live ~10 minutes, are opportunistically swept on every new code request, and are burned on successful verify or after 5 wrong attempts.
 
@@ -190,7 +179,7 @@ Indexed by `(user_id, created_at DESC)` to keep the Reports page list scan tight
 ## Relationships
 
 ```
-user ──< login_request
+user ──< login_otp
 user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
      │                 │                   └──< vision_extraction
      │                 ├──< session_message ──┐

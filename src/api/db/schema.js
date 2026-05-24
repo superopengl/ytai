@@ -45,14 +45,6 @@ export const user = ytai.table(
   })
 );
 
-export const loginRequest = ytai.table('login_request', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => user.id),
-  status: text('status').notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-});
-
 // Short-lived 6-digit email sign-in codes. Stored in plain text on purpose —
 // admins can read codes out to a student whose email isn't reaching them.
 // Lifetime is bounded by expiresAt (10 minutes by default); rows are
