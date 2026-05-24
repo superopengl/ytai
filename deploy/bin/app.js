@@ -36,6 +36,16 @@ const sesFromEmail =
   app.node.tryGetContext("sesFromEmail") ??
   process.env.YTAI_SES_FROM_EMAIL ??
   undefined;
+// Optional model overrides. Unset = code-side defaults
+// (deepseek/deepseek-chat for Brain, qwen/qwen2.5-vl-7b-instruct for Eyes).
+const chatModel =
+  app.node.tryGetContext("chatModel") ??
+  process.env.YTAI_OPENROUTER_CHAT_MODEL ??
+  undefined;
+const visionModel =
+  app.node.tryGetContext("visionModel") ??
+  process.env.YTAI_OPENROUTER_VISION_MODEL ??
+  undefined;
 
 // Imports from kpai-prod's CFN outputs. The release script populates these
 // via `aws cloudformation describe-stacks --stack-name kpai-${stage}` before
@@ -79,6 +89,8 @@ new YoututoraiStack(app, `ytai-${stage}`, {
   imageRetentionDays,
   googleClientId,
   sesFromEmail,
+  chatModel,
+  visionModel,
   ...kpaiImports,
 });
 

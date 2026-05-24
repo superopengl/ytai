@@ -45,6 +45,8 @@ export default class YoututoraiStack extends Stack {
       imageRetentionDays,
       googleClientId,
       sesFromEmail,
+      chatModel,
+      visionModel,
       // Imported from kpai's deployed CFN outputs via the release script.
       vpcId,
       clusterName,
@@ -206,6 +208,8 @@ export default class YoututoraiStack extends Stack {
         YTAI_ADMIN_USERNAME: "admin",
         ...(googleClientId ? { YTAI_GOOGLE_CLIENT_ID: googleClientId } : {}),
         ...(sesFromEmail ? { YTAI_SES_FROM_EMAIL: sesFromEmail } : {}),
+        ...(chatModel ? { YTAI_OPENROUTER_CHAT_MODEL: chatModel } : {}),
+        ...(visionModel ? { YTAI_OPENROUTER_VISION_MODEL: visionModel } : {}),
       },
       secrets: {
         YTAI_PG_USER: EcsSecret.fromSecretsManager(dbSecret, "username"),

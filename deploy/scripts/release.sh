@@ -81,7 +81,9 @@ pnpm exec cdk deploy "$APP_STACK_NAME" \
   -c dbHost="$DB_HOST" \
   -c dbSecretArn="$DB_SECRET_ARN" \
   ${YTAI_GOOGLE_CLIENT_ID:+-c googleClientId="$YTAI_GOOGLE_CLIENT_ID"} \
-  ${YTAI_SES_FROM_EMAIL:+-c sesFromEmail="$YTAI_SES_FROM_EMAIL"}
+  ${YTAI_SES_FROM_EMAIL:+-c sesFromEmail="$YTAI_SES_FROM_EMAIL"} \
+  ${YTAI_OPENROUTER_CHAT_MODEL:+-c chatModel="$YTAI_OPENROUTER_CHAT_MODEL"} \
+  ${YTAI_OPENROUTER_VISION_MODEL:+-c visionModel="$YTAI_OPENROUTER_VISION_MODEL"}
 
 echo ""
 echo "==> Released. Tail logs with:"
