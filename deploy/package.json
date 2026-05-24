@@ -6,8 +6,11 @@
   "scripts": {
     "synth": "cdk synth",
     "diff": "cdk diff",
-    "deploy": "cdk deploy",
-    "migrate": "node bin/migrate.js"
+    "deploy": "cdk deploy --require-approval never",
+    "release": "./scripts/release.sh",
+    "build-and-push": "./scripts/build-and-push.sh",
+    "bootstrap-db": "./scripts/bootstrap-db.sh",
+    "migrate": "./scripts/run-migration.sh"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.150.0",
