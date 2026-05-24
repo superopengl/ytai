@@ -20,6 +20,17 @@ if [ -n "${YTAI_PG_HOST:-}" ] && [ -z "${YTAI_DATABASE_URL:-}" ]; then
   export YTAI_DATABASE_URL="postgres://${YTAI_PG_USER}:${YTAI_PG_PASSWORD}@${YTAI_PG_HOST}:${YTAI_PG_PORT:-5432}/${YTAI_PG_DATABASE:-ytai}"
 fi
 
+# Run drizzle migrations on every task start. Idempotent — drizzle tracks
+# applied migrations in __drizzle_migrations. Skip with RUN_MIGRATIONS=false
+# (e.g., if you're rolling back and don't want the latest schema applied).
+if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+  echo "==> Running ytai migrations"
+  # migrationsFolder in migrate.js is relative to cwd; running from dist/
+  # resolves it to /opt/ytai/dist/src/api/drizzle where build:prod placed
+  # the migration files.
+  cd /opt/ytai/dist && node src/api/db/migrate.js
+fi
+
 # Forward SIGTERM to the background children so ECS task stop drains them
 # rather than waiting for the grace-period SIGKILL.
 shutdown() {
@@ -46,6 +57,7 @@ TTS_PID=$!
 OCR_PID=$!
 
 # ytai app — foreground, becomes PID 1's child but receives SIGTERM via the
-# trap above when ECS stops the task.
-cd /opt/ytai
-exec node dist/src/api/server.js
+# trap above when ECS stops the task. Same cwd as migrations so any future
+# relative-path lookups (e.g., drizzle, static-asset paths) match build time.
+cd /opt/ytai/dist
+exec node src/api/server.js
