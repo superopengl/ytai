@@ -201,6 +201,34 @@ Start a new tutoring session. (Currently dev-mode: bootstraps a `dev` user autom
 
 **Returns**: `{ sessionId: string }`
 
+### `PATCH /api/tutor/:sessionId`
+Update mutable fields on an existing session. Each field is optional — send any subset and the rest stay untouched — but at least one must be present. Used by the Tutor page to switch guidance levels, change subject, or set the active doc.
+
+**Body** (any combination, at least one required):
+```json
+{
+  "guidanceLevel": "<one of GUIDANCE_LEVELS>",
+  "subject": "math" | "thinking" | "reading" | "writing",
+  "currentDocId": "<doc uuid owned by this session>" | null
+}
+```
+`currentDocId: null` clears the active doc. When a UUID is provided, the route verifies the doc belongs to this session — passing another session's doc returns `404`.
+
+**Returns**:
+```json
+{
+  "sessionId": "uuid",
+  "guidanceLevel": "...",
+  "subject": "...",
+  "currentDocId": "uuid | null"
+}
+```
+
+**Errors**:
+- `400` — none of the patchable fields present, or an invalid enum / id shape
+- `404` — session not found for this user, or `currentDocId` doesn't belong to this session
+- `401` — missing / invalid JWT
+
 ### `GET /api/tutor/:sessionId/messages`
 Fetch the full transcript for a session, ordered by `created_at`.
 
