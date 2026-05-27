@@ -89,16 +89,6 @@
     3px 3px 8px var(--neu-shadow-dark-strong);
 }
 
-/* ---- Inset (pressed-in) surface ----------------------------------------- */
-
-.neu-inset {
-  background: var(--neu-bg);
-  border-radius: 16px;
-  box-shadow:
-    inset -4px -4px 10px var(--neu-shadow-light),
-    inset 4px 4px 10px var(--neu-shadow-dark);
-}
-
 /* ---- Press-only (no shadow restyling, just tactile feedback) ------------ */
 
 .sticker-press {

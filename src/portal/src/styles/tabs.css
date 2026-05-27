@@ -1,39 +1,3 @@
-/* Make AntD Tabs propagate height through its inner DOM so children with
-   height: 100% can resolve. Without this, .ant-tabs-tabpane collapses to 0
-   and panels like ChatPanel render empty inside the tab. */
-.ytai-fill-tabs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-.ytai-fill-tabs > .ant-tabs-content-holder {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  /* AntD's Tabs lay every tabpane out side-by-side and clip horizontally
-     so only the active one is visible. Our flex override dropped that
-     clipping, which let the inactive pane widen the parent splitter and
-     a stray horizontal scrollbar appear. Restore the clip explicitly. */
-  overflow: hidden;
-}
-.ytai-fill-tabs > .ant-tabs-content-holder > .ant-tabs-content {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-}
-/* Only the active pane should flex — AntD hides inactive panes with
-   display: none, and overriding that on .ant-tabs-tabpane would render
-   both panels at once. */
-.ytai-fill-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 /* Vertical "tab bar only" mode — used on the Reports page where the
    tab strip lives in the left Splitter panel and the active panel's
    real content is rendered separately in the right Splitter panel.
