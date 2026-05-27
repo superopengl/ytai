@@ -363,7 +363,6 @@ function UsersPanel() {
           // llm_usage, which can carry rows for any user. Clear data is
           // student-only because the backend's 409 guard restricts the
           // wipe to role='student' accounts.
-          const isStudent = row.role === 'student';
           const items = [
             {
               key: 'token-usage',
@@ -376,7 +375,6 @@ function UsersPanel() {
               danger: true,
               icon: <DeleteOutlined />,
               label: 'Clear data',
-              disabled: !isStudent
             }
           ];
           return (

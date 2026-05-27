@@ -18,13 +18,9 @@ export default function listAdminUsers(fastify) {
       .select({
         id: user.id,
         name: user.name,
-        role: user.role,
-        authProvider: user.authProvider,
         email: user.email,
         picture: user.picture,
-        userName: user.userName,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        createdAt: user.createdAt
       })
       .from(user)
       .where(
