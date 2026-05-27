@@ -4,25 +4,32 @@ import {
   Alert,
   Avatar,
   Button,
+  Col,
   Dropdown,
+  Empty,
   Form,
   Input,
   Modal,
+  Row,
+  Segmented,
   Space,
+  Spin,
+  Statistic,
   Table,
   Tabs,
   Tag,
-  Tooltip,
   Typography,
   message
 } from 'antd';
 import {
+  BarChartOutlined,
   DeleteOutlined,
   LockOutlined,
   LogoutOutlined,
   MoreOutlined,
   UserOutlined
 } from '@ant-design/icons';
+import { Column } from '@ant-design/plots';
 import Logo from '../components/Logo.jsx';
 import apiFetch from '../lib/apiFetch.js';
 import authSession from '../lib/authSession.js';
@@ -74,10 +81,167 @@ function roleColor(role) {
   return 'green';
 }
 
+function TokenUsageModal({ target, onClose }) {
+  const [days, setDays] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [splitBy, setSplitBy] = useState('purpose');
+  const [metric, setMetric] = useState('totalTokens');
+
+  useEffect(() => {
+    if (!target) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setDays([]);
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/admin/user/${target.id}/token-usage`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+        if (!cancelled) setDays(json.days || []);
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Failed to load token usage');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
+
+  // Aggregate the (date, purpose, model) rows from the API into the shape
+  // AntD Plots wants: one row per (date, splitDimension) with `value` for
+  // the currently-selected metric. Total / cost summary stays the same
+  // regardless of split.
+  const { chartData, summary } = useMemo(() => {
+    const totals = { totalTokens: 0, costUsd: 0, calls: 0 };
+    const bucket = new Map();
+    for (const d of days) {
+      const groupKey = splitBy === 'model' ? d.model || '(unknown)' : d.purpose || '(unknown)';
+      const key = `${d.date}|${groupKey}`;
+      const prior = bucket.get(key) || { date: d.date, group: groupKey, value: 0 };
+      const raw = metric === 'costUsd' ? Number(d.costUsd) || 0 : d[metric] || 0;
+      prior.value += raw;
+      bucket.set(key, prior);
+      totals.totalTokens += d.totalTokens || 0;
+      totals.costUsd += Number(d.costUsd) || 0;
+      totals.calls += d.calls || 0;
+    }
+    return { chartData: Array.from(bucket.values()), summary: totals };
+  }, [days, splitBy, metric]);
+
+  const open = Boolean(target);
+  const isCost = metric === 'costUsd';
+
+  return (
+    <Modal
+      open={open}
+      title={target ? `Token usage · ${target.name || '—'}` : 'Token usage'}
+      centered
+      width={920}
+      onCancel={onClose}
+      footer={[
+        <Button key="close" onClick={onClose}>
+          Close
+        </Button>
+      ]}
+      destroyOnClose
+    >
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Row gutter={16}>
+          <Col span={8}>
+            <Statistic
+              title="Total tokens"
+              value={summary.totalTokens}
+              formatter={(v) => Number(v).toLocaleString()}
+            />
+          </Col>
+          <Col span={8}>
+            <Statistic
+              title="Total cost (USD)"
+              value={summary.costUsd}
+              precision={4}
+              prefix="$"
+            />
+          </Col>
+          <Col span={8}>
+            <Statistic title="Upstream calls" value={summary.calls} />
+          </Col>
+        </Row>
+
+        <Space wrap size={12}>
+          <span style={{ color: palette.textMuted, fontSize: 13 }}>Split by</span>
+          <Segmented
+            value={splitBy}
+            onChange={setSplitBy}
+            options={[
+              { label: 'Purpose', value: 'purpose' },
+              { label: 'Model', value: 'model' }
+            ]}
+          />
+          <span style={{ color: palette.textMuted, fontSize: 13, marginLeft: 12 }}>Metric</span>
+          <Segmented
+            value={metric}
+            onChange={setMetric}
+            options={[
+              { label: 'Total tokens', value: 'totalTokens' },
+              { label: 'Input', value: 'inputTokens' },
+              { label: 'Output', value: 'outputTokens' },
+              { label: 'Cost (USD)', value: 'costUsd' }
+            ]}
+          />
+        </Space>
+
+        {error && <Alert type="error" showIcon message={error} />}
+
+        <div style={{ minHeight: 340 }}>
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+              <Spin />
+            </div>
+          ) : chartData.length === 0 ? (
+            <Empty description="No token usage on record for this user yet." style={{ padding: 40 }} />
+          ) : (
+            <Column
+              data={chartData}
+              xField="date"
+              yField="value"
+              colorField="group"
+              stack
+              height={340}
+              axis={{
+                y: {
+                  labelFormatter: (v) =>
+                    isCost ? `$${Number(v).toFixed(2)}` : Number(v).toLocaleString()
+                }
+              }}
+              tooltip={{
+                title: 'date',
+                items: [
+                  {
+                    name: 'group',
+                    field: 'value',
+                    valueFormatter: (v) =>
+                      isCost ? `$${Number(v).toFixed(4)}` : Number(v).toLocaleString()
+                  }
+                ]
+              }}
+              legend={{ color: { position: 'top' } }}
+            />
+          )}
+        </div>
+      </Space>
+    </Modal>
+  );
+}
+
 function UsersPanel() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [tokenUsageTarget, setTokenUsageTarget] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,9 +327,6 @@ function UsersPanel() {
               <span style={{ color: palette.text, fontWeight: 600 }}>
                 {row.name || '—'}
               </span>
-              <Tag color={roleColor(row.role)} style={{ marginTop: 2, alignSelf: 'flex-start' }}>
-                {row.role}
-              </Tag>
             </div>
           </div>
         )
@@ -198,8 +359,18 @@ function UsersPanel() {
         width: 56,
         align: 'center',
         render: (_, row) => {
+          // Token usage is available for every role — the chart reads from
+          // llm_usage, which can carry rows for any user. Clear data is
+          // student-only because the backend's 409 guard restricts the
+          // wipe to role='student' accounts.
           const isStudent = row.role === 'student';
           const items = [
+            {
+              key: 'token-usage',
+              icon: <BarChartOutlined />,
+              label: 'Token usage'
+            },
+            { type: 'divider' },
             {
               key: 'clear-data',
               danger: true,
@@ -208,29 +379,23 @@ function UsersPanel() {
               disabled: !isStudent
             }
           ];
-          const trigger = (
-            <Button
-              type="text"
-              icon={<MoreOutlined />}
-              aria-label="Row actions"
-              onClick={(e) => e.stopPropagation()}
-            />
-          );
           return (
             <Dropdown
               trigger={['click']}
               menu={{
                 items,
                 onClick: ({ key }) => {
+                  if (key === 'token-usage') setTokenUsageTarget(row);
                   if (key === 'clear-data' && isStudent) handleClearData(row);
                 }
               }}
             >
-              {isStudent ? (
-                trigger
-              ) : (
-                <Tooltip title="Only available for students">{trigger}</Tooltip>
-              )}
+              <Button
+                type="text"
+                icon={<MoreOutlined />}
+                aria-label="Row actions"
+                onClick={(e) => e.stopPropagation()}
+              />
             </Dropdown>
           );
         }
@@ -260,6 +425,10 @@ function UsersPanel() {
         columns={columns}
         dataSource={users}
         pagination={{ pageSize: 20, showSizeChanger: false }}
+      />
+      <TokenUsageModal
+        target={tokenUsageTarget}
+        onClose={() => setTokenUsageTarget(null)}
       />
     </div>
   );

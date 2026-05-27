@@ -14,6 +14,7 @@ import changeAdminPassword from './routes/changeAdminPassword.js';
 import createAnalysisReport from './routes/createAnalysisReport.js';
 import deleteAdminUserData from './routes/deleteAdminUserData.js';
 import deleteAnalysisReport from './routes/deleteAnalysisReport.js';
+import getAdminUserTokenUsage from './routes/getAdminUserTokenUsage.js';
 import healthcheck from './routes/healthcheck.js';
 import listAdminUsers from './routes/listAdminUsers.js';
 import listAnalysisReports from './routes/listAnalysisReports.js';
@@ -80,6 +81,7 @@ export default async function server() {
   createAnalysisReport(app);
   deleteAdminUserData(app);
   deleteAnalysisReport(app);
+  getAdminUserTokenUsage(app);
   listAdminUsers(app);
   listAnalysisReports(app);
   tutorCreateDoc(app);
