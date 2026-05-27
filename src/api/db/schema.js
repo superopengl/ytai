@@ -340,14 +340,21 @@ export const subjectReport = ytai.table(
 // `usageRaw` snapshots the entire provider `usage` object so any field we
 // haven't promoted to a column yet (reasoning tokens, audio tokens, future
 // breakdowns) is still recoverable for back-billing.
+//
+// The id columns are intentionally unconstrained — no FKs back at the
+// referenced tables. Billing rows must survive deletion of the things they
+// describe (a user deleting an analysis report, the admin wipe nuking a
+// student's sessions, etc.), so this table is a pure append-only audit log.
+// Joins against the referenced tables still work; they just may not find a
+// matching row, which is the correct behaviour for a historical ledger.
 export const llmUsage = ytai.table('llm_usage', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => user.id),
-  sessionId: uuid('session_id').references(() => tutorSession.id),
-  messageId: uuid('message_id').references(() => sessionMessage.id),
-  imageId: uuid('image_id').references(() => sessionImage.id),
-  sessionReportId: uuid('session_report_id').references(() => sessionReport.sessionId),
-  subjectReportId: uuid('subject_report_id').references(() => subjectReport.id),
+  userId: uuid('user_id'),
+  sessionId: uuid('session_id'),
+  messageId: uuid('message_id'),
+  imageId: uuid('image_id'),
+  sessionReportId: uuid('session_report_id'),
+  subjectReportId: uuid('subject_report_id'),
   purpose: text('purpose').notNull(),
   provider: text('provider').notNull().default('openrouter'),
   model: text('model').notNull(),
