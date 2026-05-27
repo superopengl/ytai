@@ -234,7 +234,7 @@ export default function TutorPage() {
         placement="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={280}
+        size={280}
         title="YouTutorAI"
         styles={{
           body: { padding: 0, display: 'flex', flexDirection: 'column' },
