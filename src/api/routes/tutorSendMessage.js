@@ -9,7 +9,7 @@ import {
 import brainTools from '../lib/brainTools.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
 import makeTutorTools from '../lib/makeTutorTools.js';
-import recordLlmUsage, { normaliseUsage, sumUsage } from '../lib/recordLlmUsage.js';
+import { normaliseUsage, recordLlmUsageBatch, sumUsage } from '../lib/recordLlmUsage.js';
 import runBrainTurn from '../lib/runBrainTurn.js';
 import tutorPrompt from '../lib/tutorPrompt.js';
 
@@ -391,23 +391,21 @@ export default function tutorSendMessage(fastify) {
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
-      // Best-effort audit log. Records every actual upstream call — one
-      // per Brain round + one per Eyes lookup that hit the network. Cache
-      // hits don't write rows because they didn't cost anything.
-      for (const rec of usageRecords ?? []) {
-        recordLlmUsage({
+      // Best-effort audit log. One row per actual upstream call — Brain
+      // rounds + Eyes lookups that hit the network. Cache hits aren't
+      // recorded because they didn't cost anything. Batched into a single
+      // INSERT so a turn with N Eyes lookups is one DB round-trip, not N+1.
+      const auditRecords = [
+        ...(usageRecords ?? []).map((rec) => ({
           userId,
           sessionId,
           messageId: assistantRow.id,
           purpose: 'brain_chat',
           model: modelId,
           modelVersion: rec.modelVersion,
-          usage: rec.usage,
-          log: request.log
-        }).catch(() => {});
-      }
-      for (const rec of visionUsageCollector) {
-        recordLlmUsage({
+          usage: rec.usage
+        })),
+        ...visionUsageCollector.map((rec) => ({
           userId,
           sessionId,
           messageId: assistantRow.id,
@@ -415,10 +413,10 @@ export default function tutorSendMessage(fastify) {
           purpose: 'vision_lookup',
           model: rec.model,
           modelVersion: rec.modelVersion,
-          usage: rec.usage,
-          log: request.log
-        }).catch(() => {});
-      }
+          usage: rec.usage
+        }))
+      ];
+      recordLlmUsageBatch(auditRecords, request.log).catch(() => {});
 
       if (turnError) {
         sse('error', {

@@ -94,14 +94,11 @@ export function sumUsage(normalised) {
   return totals;
 }
 
-// Insert one row into llm_usage. Best-effort: a billing record is nice to
-// have, but the user-facing turn has already happened by the time we get
-// here — never crash the request just because the audit insert failed.
-//
-// `purpose` is one of: brain_chat | vision_lookup | session_report |
-// subject_report | subject_report_title. The FK fields are mutually
-// optional — set whichever ones identify the originating entity.
-export default async function recordLlmUsage({
+// Build an insertable llm_usage row from the same param shape recordLlmUsage
+// accepts. Returns null when the upstream gave us nothing to record — the
+// caller should drop these before inserting so an empty row doesn't distort
+// billing aggregates.
+function buildUsageRow({
   userId = null,
   sessionId = null,
   messageId = null,
@@ -112,41 +109,87 @@ export default async function recordLlmUsage({
   provider = 'openrouter',
   model,
   modelVersion = null,
-  usage,
-  log
+  usage
 }) {
   const normalised = normaliseUsage(usage);
   if (!normalised) return null;
+  return {
+    userId,
+    sessionId,
+    messageId,
+    imageId,
+    sessionReportId,
+    subjectReportId,
+    purpose,
+    provider,
+    model,
+    modelVersion,
+    inputTokens: normalised.inputTokens,
+    outputTokens: normalised.outputTokens,
+    reasoningTokens: normalised.reasoningTokens,
+    cacheReadTokens: normalised.cacheReadTokens,
+    cacheWriteTokens: normalised.cacheWriteTokens,
+    totalTokens: normalised.totalTokens,
+    costUsd: normalised.costUsd,
+    usageRaw: usage ?? null
+  };
+}
+
+// Insert one row into llm_usage. Best-effort: a billing record is nice to
+// have, but the user-facing turn has already happened by the time we get
+// here — never crash the request just because the audit insert failed.
+//
+// `purpose` is one of: brain_chat | vision_lookup | session_report |
+// subject_report | subject_report_title. The FK fields are mutually
+// optional — set whichever ones identify the originating entity.
+export default async function recordLlmUsage(params) {
+  const row = buildUsageRow(params);
+  if (!row) return null;
   try {
-    const [row] = await db()
+    const [inserted] = await db()
       .insert(llmUsage)
-      .values({
-        userId,
-        sessionId,
-        messageId,
-        imageId,
-        sessionReportId,
-        subjectReportId,
-        purpose,
-        provider,
-        model,
-        modelVersion,
-        inputTokens: normalised.inputTokens,
-        outputTokens: normalised.outputTokens,
-        reasoningTokens: normalised.reasoningTokens,
-        cacheReadTokens: normalised.cacheReadTokens,
-        cacheWriteTokens: normalised.cacheWriteTokens,
-        totalTokens: normalised.totalTokens,
-        costUsd: normalised.costUsd,
-        usageRaw: usage ?? null
-      })
+      .values(row)
       .returning({ id: llmUsage.id });
-    return { id: row.id, ...normalised };
+    return {
+      id: inserted.id,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      reasoningTokens: row.reasoningTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      totalTokens: row.totalTokens,
+      costUsd: row.costUsd
+    };
   } catch (err) {
-    log?.warn(
-      { err: err.message, purpose, model, userId, sessionId, messageId },
+    params.log?.warn(
+      {
+        err: err.message,
+        purpose: params.purpose,
+        model: params.model,
+        userId: params.userId,
+        sessionId: params.sessionId,
+        messageId: params.messageId
+      },
       'recordLlmUsage: insert failed'
     );
     return null;
+  }
+}
+
+// Batch counterpart for callers that produce many usage records per
+// transaction (e.g. one Brain round + N Eyes lookups for a single chat
+// turn). Folds them into one INSERT instead of N round-trips. Records with
+// no billable usage are silently dropped.
+export async function recordLlmUsageBatch(records, log) {
+  if (!Array.isArray(records) || records.length === 0) return;
+  const rows = records.map(buildUsageRow).filter(Boolean);
+  if (rows.length === 0) return;
+  try {
+    await db().insert(llmUsage).values(rows);
+  } catch (err) {
+    log?.warn(
+      { err: err.message, count: rows.length },
+      'recordLlmUsage: batch insert failed'
+    );
   }
 }
