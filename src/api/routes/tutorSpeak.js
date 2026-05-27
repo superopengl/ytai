@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
@@ -58,8 +58,23 @@ export default function tutorSpeak(fastify) {
     const voice = requestedVoice || defaultVoice;
     const textHash = hashKey({ text, voice, model });
 
+    // Abort the upstream TTS fetch only when the client *socket* drops
+    // mid-request. `request.raw.on('close', ...)` looked right but isn't:
+    // in Node 16+, IncomingMessage emits 'close' as soon as the request
+    // stream finishes being consumed (right after Fastify parses the
+    // body), so the abort fired on every request and synthesizeSpeech
+    // threw AbortError before producing any bytes — Fastify then sent
+    // 200 + empty body, which trips the browser's <audio> Range fetch
+    // and surfaces as ERR_REQUEST_RANGE_NOT_SATISFIABLE.
+    //
+    // `reply.raw.on('close')` fires both on clean completion and on
+    // premature termination; we gate on `writableEnded` (true iff the
+    // response finished cleanly) so only real disconnects abort.
     const abortController = new AbortController();
-    request.raw.on('close', () => abortController.abort());
+    reply.raw.on('close', () => {
+      if (reply.raw.writableEnded) return;
+      abortController.abort();
+    });
 
     // Single transaction wraps session check → cache lookup → freshness
     // probe → (on miss) synthesis + persist + upsert. Synthesis holds the
@@ -100,6 +115,15 @@ export default function tutorSpeak(fastify) {
           voice,
           signal: abortController.signal
         });
+
+        // Treat an empty synth result as a hard failure — never persist a
+        // 0-byte file. Falling through to `reply.send(empty)` here is what
+        // produced the silent ERR_REQUEST_RANGE_NOT_SATISFIABLE in the
+        // browser <audio> element. Failing fast with 502 makes the
+        // frontend toast surface the issue instead.
+        if (!synth?.bytes || synth.bytes.length === 0) {
+          throw new Error('TTS provider returned 0 bytes');
+        }
 
         const { storageUrl } = await persistAudio({ bytes: synth.bytes, contentHash: textHash });
         await tx
@@ -156,11 +180,18 @@ export default function tutorSpeak(fastify) {
   });
 }
 
+// "Bytes exist" means an object is there AND it carries a usable body.
+// A 0-byte file masquerading as a cache hit is a real failure mode: an
+// earlier crashed synth left an empty .mp3 on disk, and serving it makes
+// the browser's <audio> element issue a Range request the empty body
+// can't satisfy (ERR_REQUEST_RANGE_NOT_SATISFIABLE), so the user just
+// hears silence. Treating an empty object as a miss forces a re-synth.
 async function cacheBytesExist(storageUrl) {
   if (typeof storageUrl !== 'string') return false;
   if (storageUrl.startsWith('file://')) {
     try {
-      return existsSync(fileURLToPath(storageUrl));
+      const stat = statSync(fileURLToPath(storageUrl));
+      return stat.isFile() && stat.size > 0;
     } catch {
       return false;
     }
@@ -177,11 +208,28 @@ async function cacheBytesExist(storageUrl) {
 
 async function sendCachedAudio(reply, cached) {
   if (cached.storageUrl.startsWith('file://')) {
+    // Use the file's *actual* size, not the DB-recorded `cached.bytes`. If
+    // an earlier run wrote a stub and crashed before flushing, the row says
+    // "24620 bytes" but the file is 0 — sending Content-Length: 24620 with
+    // a 0-byte body trips the browser's Range fetch (416). Skip the
+    // header entirely when the file's been truncated so the next request
+    // re-synthesises.
+    const filePath = fileURLToPath(cached.storageUrl);
+    let actualSize = 0;
+    try {
+      actualSize = statSync(filePath).size;
+    } catch {
+      actualSize = 0;
+    }
+    if (actualSize === 0) {
+      reply.code(502);
+      return { error: 'TTS cache file is empty' };
+    }
     reply
       .header('Content-Type', 'audio/mpeg')
       .header('Cache-Control', 'private, max-age=86400')
-      .header('Content-Length', String(cached.bytes));
-    return reply.send(createReadStream(fileURLToPath(cached.storageUrl)));
+      .header('Content-Length', String(actualSize));
+    return reply.send(createReadStream(filePath));
   }
 
   if (cached.storageUrl.startsWith('s3://')) {

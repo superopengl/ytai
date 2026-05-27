@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { message } from 'antd';
 import apiFetch from '../lib/apiFetch.js';
 import normalizeForSpeech from '../lib/normalizeForSpeech.js';
 import splitSentences from '../lib/splitSentences.js';
@@ -24,6 +25,13 @@ const STORAGE_KEY = 'ytai.voice.enabled';
 // Mirror the route's safety cap so we don't even bother POSTing a wall of
 // text — splitSentences should have broken it up; if it didn't, drop it.
 const MAX_SENTENCE_CHARS = 1500;
+
+// One toast at a time for /speak failures. A failing turn enqueues many
+// sentences in parallel; without the shared key we'd stack a dozen
+// identical error toasts on top of each other.
+function toastVoiceError(content) {
+  message.error({ key: 'tutor-voice-error', content });
+}
 
 function readPreference() {
   if (typeof localStorage === 'undefined') return false;
@@ -199,14 +207,29 @@ export default function useTutorVoice(sessionId) {
             // Server has no TTS configured — disable the feature for the
             // rest of the session so we don't keep firing pointless POSTs.
             setSupported(false);
+            toastVoiceError('Voice is not configured on the server (YTAI_TTS_BASE_URL unset).');
             return null;
           }
-          if (!res.ok) return null;
+          if (!res.ok) {
+            // Surface backend failures (502 from synthesis error, 404 from
+            // a foreign sessionId, …) so the user isn't left wondering why
+            // nothing's coming out of their speakers.
+            const detail = await res
+              .json()
+              .then((j) => j?.error)
+              .catch(() => null);
+            const summary = detail || `HTTP ${res.status}`;
+            console.warn('[tutor-voice] /speak failed:', summary);
+            toastVoiceError(`Couldn't read this aloud: ${summary}`);
+            return null;
+          }
           const blob = await res.blob();
           return URL.createObjectURL(blob);
         })
         .catch((err) => {
           if (err?.name === 'AbortError') return null;
+          console.warn('[tutor-voice] /speak threw:', err);
+          toastVoiceError(`Couldn't read this aloud: ${err?.message || 'network error'}`);
           return null;
         });
 
