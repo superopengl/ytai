@@ -78,7 +78,7 @@ export default function authOtp(fastify) {
 
     const { matchedUser } = result;
     const token = await reply.jwtSign(
-      { sub: matchedUser.id, role: matchedUser.role, status: matchedUser.status },
+      { sub: matchedUser.id, role: matchedUser.role },
       { expiresIn: '30d' }
     );
 
@@ -88,7 +88,6 @@ export default function authOtp(fastify) {
         id: matchedUser.id,
         name: matchedUser.name,
         role: matchedUser.role,
-        status: matchedUser.status,
         email: matchedUser.email,
         picture: matchedUser.picture
       }

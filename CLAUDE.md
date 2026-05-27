@@ -16,18 +16,18 @@ Students aged 8-14, plus the parents and teachers who help them. Three personas 
 Multi-page app with these views:
 
 1. **Homepage** (`/`) — Public landing page with feature highlights and a "Sign in with Google" entry point. Inline buttons also link to the full `/login` page for the email-OTP and admin-password paths.
-2. **Login** (`/login`) — Three sign-in paths in one card: Google SSO (preferred, one-tap), email OTP (6-digit code sent via SES; auto-creates a `pending` student on first sign-in), and an Admin tab with username + password (only role=admin users can log in here).
+2. **Login** (`/login`) — Three sign-in paths in one card: Google SSO (preferred, one-tap), email OTP (6-digit code sent via SES; auto-creates a student on first sign-in), and an Admin tab with username + password (only role=admin users can log in here).
 3. **Tutor** (`/tutor/:sessionId`) — Split-panel layout:
    - **Left**: photo capture / upload screen → switches to annotated image canvas (Konva.js) where the user can circle, highlight, and draw on top of the photo
    - **Right**: chat panel showing AI tutor messages, with a "Stop" button to interrupt streaming
 4. **Analysis Reports** (`/reports`) — AntDesign Splitter layout: left panel lists every generated report (tagged with subject + LLM-generated title + timestamp) as a scrollable history; right panel shows the selected report viewer, or — when nothing is selected — a "Generate a new report" pane: pick a subject, optionally prefill from a prompt template, edit, and hit Generate. Every generation inserts a new immutable `subject_report` row.
-5. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, token usage, and approve/reject actions
+5. **Admin** (`/admin`) — Dashboard listing users, sessions, image uploads, and token usage
 
 Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sheet).
 
 ## How It Works
 
-1. User visits the homepage and signs in via one of: Google SSO (one-tap), email OTP (`/login`, 6-digit code), or — admins only — username + password (`/login` → Admin tab). Non-admin sign-ins create a `pending` user that an admin must approve.
+1. User visits the homepage and signs in via one of: Google SSO (one-tap), email OTP (`/login`, 6-digit code), or — admins only — username + password (`/login` → Admin tab).
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
 3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Bytes are deduped by sha256 and persisted; the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
 4. **deepseek-v4-flash ("Brain")** runs on every turn. Two image tools, used in order of cheapness:
@@ -69,11 +69,10 @@ Fastify HTTP API. All routes prefixed with `/api` except `/healthcheck`. Auth vi
 
 Summary:
 - `GET /healthcheck` — public
-- `POST /api/auth/google` — verify a Google Identity Services ID token, upsert the user (linking by `google_id` then `email`), return a YTAI JWT (`{ token, user }`). New users land in `status: 'pending'`. Returns 503 if `YTAI_GOOGLE_CLIENT_ID` is unset.
-- `POST /api/auth/email` — issue a 6-digit OTP for an email, store it plain text in `login_otp` (admin can read it out if SES delivery fails), and best-effort send via AWS SES. Auto-creates a `pending` user on first request.
+- `POST /api/auth/google` — verify a Google Identity Services ID token, upsert the user (linking by `google_id` then `email`), return a YTAI JWT (`{ token, user }`). Returns 503 if `YTAI_GOOGLE_CLIENT_ID` is unset.
+- `POST /api/auth/email` — issue a 6-digit OTP for an email, store it plain text in `login_otp` (admin can read it out if SES delivery fails), and best-effort send via AWS SES. Auto-creates a user on first request.
 - `POST /api/auth/otp` — verify a 6-digit code, burn the row, return the same `{ token, user }` shape as Google. 5-wrong-attempts and 10-minute TTL guard against brute force.
 - `POST /api/auth/password` — admin-only username + password sign-in. Verifies the scrypt hash; only `role='admin'` users can sign in here. Every failure returns the same generic 401. Bootstrapped via `YTAI_ADMIN_USERNAME` / `YTAI_ADMIN_PASSWORD`, defaulting to `admin` / `adminadmin` so a fresh checkout has a working admin.
-- `POST /api/admin/user` — create a user (admin) *(planned)*
 - `POST /api/tutor/session` — start a tutoring session
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
 - `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain hits `find_text_on_image` (EasyOCR cache) first and `lookup_on_image` (Qwen2.5-VL) for anything OCR can't answer. Vision results cached in `vision_extraction` per `(image_id, sha256(question))`; OCR results cached in `image_ocr` per `image_id`.

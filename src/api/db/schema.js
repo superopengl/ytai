@@ -18,7 +18,6 @@ export const user = ytai.table(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     role: text('role').notNull(),
-    status: text('status').notNull().default('pending'),
     // 'local' for name/role-only signups (legacy & dev bootstrap user), 'google'
     // for users who came in through Google Identity Services, 'email' for
     // OTP-only signups. Determines which fields are populated below — Google

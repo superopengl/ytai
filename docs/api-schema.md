@@ -28,7 +28,7 @@ Three sign-in paths, all returning the same `{ token, user }` shape:
 All four endpoints sit under `/api/auth/*` so the global JWT hook lets them through unauthenticated.
 
 ### `POST /api/auth/google`
-Verify a Google Identity Services ID token (`credential`), upsert the `user` row, and return a YTAI JWT. The token is verified via Google's `https://oauth2.googleapis.com/tokeninfo` endpoint — issuer, audience, and email-verification claims are all checked. Existing local accounts are linked when the email matches; otherwise a new row is inserted with `auth_provider='google'` and `status='pending'` (admin approval still required).
+Verify a Google Identity Services ID token (`credential`), upsert the `user` row, and return a YTAI JWT. The token is verified via Google's `https://oauth2.googleapis.com/tokeninfo` endpoint — issuer, audience, and email-verification claims are all checked. Existing local accounts are linked when the email matches; otherwise a new row is inserted with `auth_provider='google'`.
 
 **Body**:
 ```json
@@ -47,7 +47,6 @@ Verify a Google Identity Services ID token (`credential`), upsert the `user` row
     "id": "uuid",
     "name": "string",
     "role": "student" | "parent" | "teacher" | "admin",
-    "status": "pending" | "approved" | "rejected",
     "email": "string | null",
     "picture": "string | null"
   }
@@ -60,7 +59,7 @@ Verify a Google Identity Services ID token (`credential`), upsert the `user` row
 - `503` — `YTAI_GOOGLE_CLIENT_ID` is unset on the server
 
 ### `POST /api/auth/email`
-Issue a 6-digit OTP for the given email and (best-effort) send it via AWS SES. The OTP row is stored in plain text so an operator can read it back when email delivery is broken (logs always carry the code). If the email is unknown, a new `pending` user is auto-created with `auth_provider='email'`. Resending within a 30 s window reuses the live row so a kid mashing the button doesn't fan out into a dozen valid codes.
+Issue a 6-digit OTP for the given email and (best-effort) send it via AWS SES. The OTP row is stored in plain text so an operator can read it back when email delivery is broken (logs always carry the code). If the email is unknown, a new user is auto-created with `auth_provider='email'`. Resending within a 30 s window reuses the live row so a kid mashing the button doesn't fan out into a dozen valid codes.
 
 **Body**: `{ "email": "string" }`
 

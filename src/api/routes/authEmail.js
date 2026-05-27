@@ -22,8 +22,8 @@ function deriveDisplayName(email) {
 //
 // Issue a 6-digit OTP for the given email and (best-effort) send it via
 // SES. The OTP row is stored in plain text so admins can read it back when
-// email delivery fails. Auto-creates a `pending` user on the first request
-// for an unknown email so admin approval can still gate access.
+// email delivery fails. Auto-creates a user on the first request for an
+// unknown email.
 //
 // Resending within RESEND_COOLDOWN_MS short-circuits and reuses the live
 // row — keeps a kid mashing the button from fanning out into a dozen valid
@@ -53,7 +53,6 @@ export default function authEmail(fastify) {
           .values({
             name: deriveDisplayName(email),
             role: 'student',
-            status: 'pending',
             authProvider: 'email',
             email
           })

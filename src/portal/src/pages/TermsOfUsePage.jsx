@@ -31,8 +31,7 @@ export default function TermsOfUsePage() {
         <Title level={3}>Who can use YouTutorAI</Title>
         <Paragraph>
           YouTutorAI is built for students aged 8–14, and the parents and teachers who help them.
-          Users under 13 must have a parent or teacher request access on their behalf. Accounts
-          are subject to admin approval during the MVP.
+          Users under 13 must have a parent or teacher request access on their behalf.
         </Paragraph>
 
         <Title level={3}>Acceptable use</Title>

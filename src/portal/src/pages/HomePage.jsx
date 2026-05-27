@@ -155,7 +155,7 @@ const features = [
     color: LAVENDER,
     title: 'One-tap Sign-in',
     description:
-      'Skip the password. Sign in with Google to create a parent, teacher, or student profile — admin approval keeps young learners safe.'
+      'Skip the password. Sign in with Google to create a parent, teacher, or student profile in seconds.'
   }
 ];
 

@@ -38,7 +38,7 @@ export default function authPassword(fastify) {
     }
 
     const token = await reply.jwtSign(
-      { sub: matched.id, role: matched.role, status: matched.status },
+      { sub: matched.id, role: matched.role },
       { expiresIn: '30d' }
     );
 
@@ -48,7 +48,6 @@ export default function authPassword(fastify) {
         id: matched.id,
         name: matched.name,
         role: matched.role,
-        status: matched.status,
         email: matched.email,
         picture: matched.picture
       }

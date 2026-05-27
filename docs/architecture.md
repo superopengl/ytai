@@ -122,7 +122,6 @@ The Reports portal page (`/reports`) shows a `subjects × builtin types` grid pl
 - **No PII in prompts**: don't pass student names into the LLM; refer to them as "the student"
 - **Image privacy**: uploaded photos stored in S3 with private ACL; signed URLs only; auto-delete after N days (configurable)
 - **Auth**: JWT-based
-- **Admin approval gate**: all new users require admin approval before they can use the tutor (MVP — replace with email verification later)
 
 ## Key Files
 

@@ -38,7 +38,6 @@ export default async function bootstrapAdmin(log) {
         name: userName,
         userName,
         role: 'admin',
-        status: 'approved',
         authProvider: 'local',
         passwordHash
       });
@@ -47,14 +46,13 @@ export default async function bootstrapAdmin(log) {
   }
 
   const passwordOk = existing.passwordHash && (await verifyPasswordHash(password, existing.passwordHash));
-  if (existing.role === 'admin' && existing.status === 'approved' && passwordOk) return;
+  if (existing.role === 'admin' && passwordOk) return;
 
   const passwordHash = passwordOk ? existing.passwordHash : await hashPassword(password);
   await db()
     .update(user)
     .set({
       role: 'admin',
-      status: 'approved',
       passwordHash,
       userName: existing.userName || userName,
       updatedAt: new Date()

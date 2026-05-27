@@ -16,7 +16,6 @@ Application users. One row per person. Roles: `student`, `parent`, `teacher`, `a
 | `id` | uuid | PK |
 | `name` | text | display name |
 | `role` | text | `student` \| `parent` \| `teacher` \| `admin` |
-| `status` | text | `pending` \| `approved` \| `rejected` |
 | `auth_provider` | text | `local` \| `google` \| `email` |
 | `email` | text | nullable; unique when present |
 | `google_id` | text | Google `sub` claim; nullable; unique when present |

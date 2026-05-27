@@ -18,8 +18,7 @@ const DEFAULT_ROLE = 'student';
 //     styled button instead of GIS's personalized "Sign in as X" variant.
 //
 // Both paths resolve to the same claims shape (sub/email/name/picture) and
-// drive the same upsert. New users land in `status: 'pending'` — admin
-// approval is still required.
+// drive the same upsert.
 export default function authGoogle(fastify) {
   fastify.post('/api/auth/google', async (request, reply) => {
     const { credential, accessToken, role: requestedRole } = request.body || {};
@@ -76,7 +75,6 @@ export default function authGoogle(fastify) {
         .values({
           name: claims.name,
           role: desiredRole,
-          status: 'pending',
           authProvider: 'google',
           email: claims.email,
           googleId: claims.sub,
@@ -87,7 +85,7 @@ export default function authGoogle(fastify) {
     });
 
     const token = await reply.jwtSign(
-      { sub: record.id, role: record.role, status: record.status },
+      { sub: record.id, role: record.role },
       { expiresIn: '30d' }
     );
 
@@ -97,7 +95,6 @@ export default function authGoogle(fastify) {
         id: record.id,
         name: record.name,
         role: record.role,
-        status: record.status,
         email: record.email,
         picture: record.picture
       }
