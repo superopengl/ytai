@@ -49,16 +49,27 @@ export const user = ytai.table(
 // Lifetime is bounded by expiresAt (10 minutes by default); rows are
 // opportunistically swept on every new code request, and burned on
 // successful verification or after too many wrong attempts.
-export const loginOtp = ytai.table('login_otp', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => user.id),
-  email: text('email').notNull(),
-  code: text('code').notNull(),
-  attempts: integer('attempts').notNull().default(0),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-});
+//
+// Unique on `user_id`: each user has at most one live OTP at a time.
+// Requesting a fresh code upserts on this constraint, replacing the prior
+// code + expiry + attempt counter, so a kid mashing the resend button
+// can't accumulate a fan-out of simultaneously-valid codes.
+export const loginOtp = ytai.table(
+  'login_otp',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => user.id),
+    email: text('email').notNull(),
+    code: text('code').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => ({
+    loginOtpUserIdUnique: uniqueIndex('login_otp_user_id_uq').on(t.userId)
+  })
+);
 
 export const tutorSession = ytai.table('tutor_session', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -33,7 +33,7 @@ Short-lived 6-digit email sign-in codes. Stored in plain text on purpose — an 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK |
-| `user_id` | uuid | FK → `user.id` |
+| `user_id` | uuid | FK → `user.id`; **unique** — at most one live OTP per user |
 | `email` | text | denormalized for fast lookup; lowercase |
 | `code` | text | the 6-digit code, plain text |
 | `attempts` | int | wrong-attempt counter; row burns at 5 |
@@ -41,7 +41,7 @@ Short-lived 6-digit email sign-in codes. Stored in plain text on purpose — an 
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
-Indexes on `email` (for verification lookup) and `expires_at` (for the opportunistic sweep).
+Unique index on `user_id` — `POST /api/auth/email` upserts on this column, replacing the code, expiry, and attempt counter on every resend (outside the 30 s cooldown). Auxiliary indexes: `email` (verification lookup) and `expires_at` (opportunistic sweep).
 
 ### `tutor_session`
 One row per tutoring sitting. A user starts a new session each time they begin tutoring; the session holds the chat transcript and the uploaded image(s).

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, lte, sql } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import { user, loginOtp } from '../db/schema.js';
 import generateOtp from '../lib/generateOtp.js';
@@ -60,6 +60,10 @@ export default function authEmail(fastify) {
         matched = created;
       }
 
+      // login_otp is unique on user_id, so each user has at most one live
+      // OTP. Within the resend cooldown we hand back the existing row
+      // unchanged; otherwise we upsert — replacing the code, expiry, and
+      // attempt counter — so resends never accumulate parallel codes.
       const cutoff = new Date(Date.now() - RESEND_COOLDOWN_MS);
       const [recent] = await tx
         .select()
@@ -71,7 +75,6 @@ export default function authEmail(fastify) {
             sql`${loginOtp.expiresAt} > now()`
           )
         )
-        .orderBy(desc(loginOtp.createdAt))
         .limit(1);
 
       let row = recent;
@@ -81,6 +84,16 @@ export default function authEmail(fastify) {
         [row] = await tx
           .insert(loginOtp)
           .values({ userId: matched.id, email, code, expiresAt })
+          .onConflictDoUpdate({
+            target: loginOtp.userId,
+            set: {
+              email,
+              code,
+              expiresAt,
+              attempts: 0,
+              updatedAt: new Date()
+            }
+          })
           .returning();
       }
 
