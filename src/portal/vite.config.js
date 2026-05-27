@@ -48,7 +48,31 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: '../../dist/public',
-      emptyOutDir: true
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          // Pin shared deps to stable vendor chunks. Two goals:
+          //   1. The main entry (HomePage path) only carries react + antd
+          //      core + the icons HomePage actually uses; everything else
+          //      ships as separate files that load in parallel.
+          //   2. Lazy chunks (GoogleSignInButton, HeroBackdrop, route
+          //      pages) dedup against these instead of duplicating antd
+          //      and friends into themselves.
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return;
+            if (id.includes('react-router')) return 'vendor-router';
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/scheduler/')
+            ) {
+              return 'vendor-react';
+            }
+            if (id.includes('@ant-design/icons')) return 'vendor-antd-icons';
+            if (id.includes('/antd/') || id.includes('/rc-')) return 'vendor-antd';
+          }
+        }
+      }
     }
   };
 });

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Typography, Row, Col, message } from 'antd';
 import {
@@ -17,11 +18,30 @@ import {
   GlobalOutlined,
   RocketOutlined
 } from '@ant-design/icons';
-import { palette, stickerShadow } from '../theme.js';
-import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
+import { palette, stickerShadow, radius } from '../theme.js';
 import Logo from '../components/Logo.jsx';
-import HeroBackdrop from '../components/HeroBackdrop.jsx';
 import authSession from '../lib/authSession.js';
+
+// Lazy so neither the GIS-dependent button code nor the decorative icon
+// shower lands in the LCP chunk. Both render below or behind the headline
+// — they paint after hydration with no visible shift.
+const GoogleSignInButton = lazy(() => import('../components/GoogleSignInButton.jsx'));
+const HeroBackdrop = lazy(() => import('../components/HeroBackdrop.jsx'));
+
+// Skeleton matches the AntD `Button size="large"` footprint so layout
+// doesn't jump when the lazy chunk lands.
+function SignInButtonSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        height: 48,
+        borderRadius: radius.md,
+        background: 'rgba(0,0,0,0.06)'
+      }}
+    />
+  );
+}
 
 const { Title, Paragraph, Text, Link } = Typography;
 
@@ -319,7 +339,9 @@ export default function HomePage() {
           `
         }}
       >
-        <HeroBackdrop />
+        <Suspense fallback={null}>
+          <HeroBackdrop />
+        </Suspense>
 
         <div
           style={{
@@ -381,11 +403,13 @@ export default function HomePage() {
                 minWidth: 320
               }}
             >
-              <GoogleSignInButton
-                role="student"
-                size="large"
-                onSuccess={handleGoogleSuccess}
-              />
+              <Suspense fallback={<SignInButtonSkeleton />}>
+                <GoogleSignInButton
+                  role="student"
+                  size="large"
+                  onSuccess={handleGoogleSuccess}
+                />
+              </Suspense>
               <button
                 type="button"
                 onClick={goToLogin}
@@ -787,11 +811,13 @@ export default function HomePage() {
               minWidth: 320
             }}
           >
-            <GoogleSignInButton
-              role="student"
-              size="large"
-              onSuccess={handleGoogleSuccess}
-            />
+            <Suspense fallback={<SignInButtonSkeleton />}>
+              <GoogleSignInButton
+                role="student"
+                size="large"
+                onSuccess={handleGoogleSuccess}
+              />
+            </Suspense>
             <button
               type="button"
               onClick={goToLogin}

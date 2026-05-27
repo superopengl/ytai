@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Typography } from 'antd';
 import { GoogleOutlined } from '@ant-design/icons';
 import authSession from '../lib/authSession.js';
+import loadGoogleSdk from '../lib/loadGoogleSdk.js';
 import { radius } from '../theme.js';
 
 const { Text } = Typography;
@@ -10,19 +11,6 @@ const { Text } = Typography;
 // string so the button can render a clear "not configured" hint in dev.
 // eslint-disable-next-line no-undef
 const CLIENT_ID = typeof __YTAI_GOOGLE_CLIENT_ID__ !== 'undefined' ? __YTAI_GOOGLE_CLIENT_ID__ : '';
-
-function waitForGoogle(timeoutMs = 4000) {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) return resolve(window.google);
-    const start = Date.now();
-    const tick = () => {
-      if (window.google?.accounts?.oauth2) return resolve(window.google);
-      if (Date.now() - start > timeoutMs) return reject(new Error('Google SDK failed to load'));
-      setTimeout(tick, 80);
-    };
-    tick();
-  });
-}
 
 // AntD "Continue with Google" button backed by the OAuth 2.0 implicit flow
 // (oauth2.initTokenClient). We previously tried id.renderButton, but GIS
@@ -46,7 +34,7 @@ export default function GoogleSignInButton({
   useEffect(() => {
     if (!CLIENT_ID) return;
     let cancelled = false;
-    waitForGoogle()
+    loadGoogleSdk()
       .then(() => {
         if (!cancelled) setReady(true);
       })
