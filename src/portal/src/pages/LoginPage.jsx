@@ -157,23 +157,16 @@ function EmailOtpTab() {
             autoFocus
           />
         </div>
-        <Button
-          type="primary"
-          size="large"
-          block
-          loading={verifying}
-          onClick={() => verifyOtp()}
-          disabled={!CODE_RE.test(code) || expired}
-          style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
-        >
-          {expired ? 'Code expired' : 'Sign in'}
-        </Button>
         {codeError && <Alert type="error" showIcon message={codeError} />}
-        {!codeError && expiresAt && (
+        {!codeError && (
           <Text style={{ display: 'block', textAlign: 'center', color: palette.textMuted, fontSize: 13 }}>
-            {expired
-              ? 'This code has expired. Tap Resend to get a fresh one.'
-              : `Code expires in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}
+            {verifying
+              ? 'Verifying…'
+              : expired
+                ? 'This code has expired. Tap Resend to get a fresh one.'
+                : expiresAt
+                  ? `Code expires in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`
+                  : null}
           </Text>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
