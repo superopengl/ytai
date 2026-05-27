@@ -24,7 +24,7 @@ function waitForGoogle(timeoutMs = 4000) {
   });
 }
 
-// AntD "Sign in with Google" button backed by the OAuth 2.0 implicit flow
+// AntD "Continue with Google" button backed by the OAuth 2.0 implicit flow
 // (oauth2.initTokenClient). We previously tried id.renderButton, but GIS
 // auto-personalizes that variant to "Sign in as <name>" the moment the
 // visitor has a Google session — and the rendered button doesn't expose
@@ -149,7 +149,7 @@ export default function GoogleSignInButton({
         block={block}
         style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
       >
-        Sign in with Google
+        Continue with Google
       </Button>
       {error && (
         <Alert
