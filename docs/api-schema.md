@@ -285,6 +285,9 @@ data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "inter
 ### `GET /api/analysis-reports`
 List every analysis report (any status) for the current user, newest `created_at` first. Drives the Reports page — a scrollable history of every report the user has generated. Pending and failed rows are included so the UI can render in-progress and error states without a separate endpoint.
 
+**Query**:
+- `ids` (optional) — comma-separated list of report UUIDs (max 100). When provided, only those rows are returned (still scoped to the current user). The Reports page uses this to poll status flips on just the `pending` rows it already knows about, instead of refetching the entire history every tick.
+
 **Returns**:
 ```json
 {

@@ -32,7 +32,7 @@ import currentSubject from '../lib/currentSubject.js';
 import { palette } from '../theme.js';
 import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
-const POLL_INTERVAL_MS = 2500;
+const POLL_INTERVAL_MS = 10000;
 
 // Prompt templates — UI-only sugar. The Select on the Generate panel
 // uses these to prefill the textarea; the backend never sees the key,
@@ -269,17 +269,39 @@ export default function ReportsPage() {
     [reports, selectedId]
   );
 
-  // While any row is still 'pending' on the server, poll the list so the
-  // card flips to 'ready' (or 'failed') without the user clicking refresh.
-  const hasPendingReport = useMemo(
-    () => reports.some((r) => r.status === 'pending'),
-    [reports]
-  );
+  // Pending ids live in a ref so the polling effect can read the latest set
+  // without re-binding the interval every time a status flips.
+  const pendingIdsRef = useRef([]);
+  pendingIdsRef.current = reports.filter((r) => r.status === 'pending').map((r) => r.id);
+
+  // While any row is still 'pending' on the server, poll *just those rows*
+  // (via `?ids=`) so the card flips to 'ready' / 'failed' without the user
+  // clicking refresh. Refetching the full history every 2.5s would pull
+  // every already-ready row back over the wire for nothing.
+  const hasPendingReport = pendingIdsRef.current.length > 0;
   useEffect(() => {
     if (!hasPendingReport) return undefined;
-    const id = setInterval(loadReports, POLL_INTERVAL_MS);
+    const tick = async () => {
+      const ids = pendingIdsRef.current;
+      if (ids.length === 0) return;
+      try {
+        const res = await apiFetch(`/api/analysis-reports?ids=${encodeURIComponent(ids.join(','))}`);
+        if (!res.ok) return;
+        const body = await res.json();
+        const fresh = body.reports || [];
+        if (fresh.length === 0) return;
+        setReports((prev) => {
+          const byId = new Map(fresh.map((r) => [r.id, r]));
+          return prev.map((r) => byId.get(r.id) ?? r);
+        });
+      } catch {
+        // Best-effort: a transient network blip just means the user waits
+        // one more tick. No need to surface this to the UI.
+      }
+    };
+    const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [hasPendingReport, loadReports]);
+  }, [hasPendingReport]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = customPrompt.trim();
