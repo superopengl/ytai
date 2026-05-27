@@ -14,7 +14,6 @@ import {
   TeamOutlined,
   GoogleOutlined,
   HeartFilled,
-  ArrowRightOutlined,
   GlobalOutlined,
   RocketOutlined
 } from '@ant-design/icons';
@@ -630,27 +629,10 @@ export default function HomePage() {
                   >
                     {s.description}
                   </Text>
-                  {idx < steps.length - 1 && (
-                    <ArrowRightOutlined
-                      style={{
-                        position: 'absolute',
-                        right: -18,
-                        top: '40%',
-                        color: INK_HINT,
-                        fontSize: 22
-                      }}
-                      className="step-arrow"
-                    />
-                  )}
                 </div>
               </Col>
             ))}
           </Row>
-          <style>{`
-            @media (max-width: 768px) {
-              .step-arrow { display: none; }
-            }
-          `}</style>
         </div>
       </section>
 
