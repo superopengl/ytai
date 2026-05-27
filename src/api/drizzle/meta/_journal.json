@@ -148,6 +148,13 @@
       "when": 1781500000000,
       "tag": "0020_login_otp_unique_user",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0021_user_local_login_user_name",
+      "breakpoints": true
     }
   ]
 }

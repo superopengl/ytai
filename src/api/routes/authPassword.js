@@ -24,7 +24,7 @@ export default function authPassword(fastify) {
     const [matched] = await db()
       .select()
       .from(user)
-      .where(sql`lower(${user.userName}) = lower(${userName.trim()})`)
+      .where(sql`lower(${user.localLoginUserName}) = lower(${userName.trim()})`)
       .limit(1);
 
     const ok =

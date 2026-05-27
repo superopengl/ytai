@@ -12,7 +12,7 @@ Liveness probe. Returns `200 { ok: true }`. No auth.
 Every `/api/admin/*` route requires a YTAI JWT whose `role` claim is `admin`. The global `onRequest` hook in `server.js` rejects everything else with `403 Forbidden` before the handler runs, so individual admin routes never need to re-check the role.
 
 ### `GET /api/admin/users`
-List every real user — Google sign-ups, email OTP sign-ups, and any other admins — newest `created_at` first. The bootstrap admin (`auth_provider='local'` with a `user_name` set) is filtered out so the dashboard isn't cluttered with the machine-managed login handle.
+List every real user — Google sign-ups, email OTP sign-ups, and any other admins — newest `created_at` first. The bootstrap admin (`auth_provider='local'` with a `local_login_user_name` set) is filtered out so the dashboard isn't cluttered with the machine-managed login handle.
 
 **Returns**:
 ```json
@@ -80,6 +80,39 @@ The whole wipe runs in a single transaction so partial deletes can't leave dangl
 - `403` — JWT's `role` claim is not `admin`
 - `404` — no user with that id
 - `409` — user exists but `role != 'student'`
+
+### `GET /api/admin/user/:id/token-usage`
+Per-day token + cost aggregates pulled from `llm_usage` for one user. The response is the raw `(date, purpose, model)` grid — the frontend reshapes it into a stacked column chart split by either `purpose` or `model` without re-querying. Uses `llm_usage` directly (the per-call source of truth) rather than the convenience caches on `session_message` / `vision_extraction`, so totals match billing.
+
+**Returns**:
+```json
+{
+  "user": { "id": "uuid", "name": "string", "role": "student" | "parent" | "teacher" | "admin" },
+  "days": [
+    {
+      "date": "2026-05-27",
+      "purpose": "brain_chat" | "vision_lookup" | "session_report" | "subject_report" | "subject_report_title",
+      "model": "deepseek/deepseek-v4-flash",
+      "inputTokens": 1234,
+      "outputTokens": 567,
+      "reasoningTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 1801,
+      "costUsd": 0.0123,
+      "calls": 3
+    }
+  ]
+}
+```
+
+`days` is empty when the user has no recorded calls. Dates are UTC-day-bucketed via `date_trunc('day', created_at)`.
+
+**Errors**:
+- `400` — missing `:id`
+- `401` — missing / invalid JWT
+- `403` — JWT's `role` claim is not `admin`
+- `404` — no user with that id
 
 ## Auth
 

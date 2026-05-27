@@ -29,7 +29,7 @@ export const user = ytai.table(
     // Lowercase login handle used by the admin password sign-in path. Only
     // set on accounts that can authenticate with a password (i.e. admins
     // bootstrapped from env vars). Optional everywhere else.
-    userName: text('user_name'),
+    localLoginUserName: text('local_login_user_name'),
     // scrypt-derived password hash, format: `scrypt$<saltHex>$<keyHex>`.
     // Only set on accounts with `role='admin'` that authenticate via the
     // username/password path. Plain-text passwords are never stored.
@@ -40,7 +40,7 @@ export const user = ytai.table(
   (t) => ({
     userEmailUnique: uniqueIndex('user_email_uq').on(t.email),
     userGoogleIdUnique: uniqueIndex('user_google_id_uq').on(t.googleId),
-    userUserNameUnique: uniqueIndex('user_user_name_uq').on(t.userName)
+    userLocalLoginUserNameUnique: uniqueIndex('user_local_login_user_name_uq').on(t.localLoginUserName)
   })
 );
 

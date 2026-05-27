@@ -27,7 +27,7 @@ export default async function bootstrapAdmin(log) {
   const [existing] = await db()
     .select()
     .from(user)
-    .where(sql`lower(${user.userName}) = ${userName}`)
+    .where(sql`lower(${user.localLoginUserName}) = ${userName}`)
     .limit(1);
 
   if (!existing) {
@@ -36,7 +36,7 @@ export default async function bootstrapAdmin(log) {
       .insert(user)
       .values({
         name: userName,
-        userName,
+        localLoginUserName: userName,
         role: 'admin',
         authProvider: 'local',
         passwordHash
@@ -54,7 +54,7 @@ export default async function bootstrapAdmin(log) {
     .set({
       role: 'admin',
       passwordHash,
-      userName: existing.userName || userName,
+      localLoginUserName: existing.localLoginUserName || userName,
       updatedAt: new Date()
     })
     .where(eq(user.id, existing.id));

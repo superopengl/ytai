@@ -6,7 +6,7 @@ import { user } from '../db/schema.js';
 //
 // Admin dashboard user list. Returns every real user — Google sign-ups,
 // email OTP sign-ups, plus any other admins — newest first. The
-// bootstrap admin (auth_provider='local' + user_name set) is filtered
+// bootstrap admin (auth_provider='local' + local_login_user_name set) is filtered
 // out: it's a machine-managed login handle, not a person, and surfacing
 // it would just add noise to the admin's own management view.
 //
@@ -28,7 +28,7 @@ export default function listAdminUsers(fastify) {
       })
       .from(user)
       .where(
-        or(ne(user.authProvider, 'local'), isNull(user.userName))
+        or(ne(user.authProvider, 'local'), isNull(user.localLoginUserName))
       )
       .orderBy(desc(user.createdAt));
 

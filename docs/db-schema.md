@@ -7,9 +7,9 @@ Schema defined in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 ## Tables
 
 ### `user`
-Application users. One row per person. Roles: `student`, `parent`, `teacher`, `admin`. `auth_provider` records how the row got created — `local` (legacy / bootstrapped admins), `google` (one-tap GIS), or `email` (auto-created on first OTP request). Sign-in resolution always tries `google_id` → `email` → `user_name` before inserting.
+Application users. One row per person. Roles: `student`, `parent`, `teacher`, `admin`. `auth_provider` records how the row got created — `local` (legacy / bootstrapped admins), `google` (one-tap GIS), or `email` (auto-created on first OTP request). Sign-in resolution always tries `google_id` → `email` → `local_login_user_name` before inserting.
 
-`user_name` and `password_hash` are only populated on accounts that can authenticate via the username/password path — in practice that's just `role='admin'` users bootstrapped from env vars (or the hardcoded default `admin` / `adminadmin` in dev). Passwords are stored as scrypt-derived hashes (`scrypt$<saltHex>$<keyHex>`); plain text is never persisted.
+`local_login_user_name` and `password_hash` are only populated on accounts that can authenticate via the username/password path — in practice that's just `role='admin'` users bootstrapped from env vars (or the hardcoded default `admin` / `adminadmin` in dev). Passwords are stored as scrypt-derived hashes (`scrypt$<saltHex>$<keyHex>`); plain text is never persisted.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -20,12 +20,12 @@ Application users. One row per person. Roles: `student`, `parent`, `teacher`, `a
 | `email` | text | nullable; unique when present |
 | `google_id` | text | Google `sub` claim; nullable; unique when present |
 | `picture` | text | profile image URL from Google; nullable |
-| `user_name` | text | nullable; unique when present; lowercase login handle for the admin password path |
+| `local_login_user_name` | text | nullable; unique when present; lowercase login handle for the admin password path |
 | `password_hash` | text | nullable; `scrypt$<saltHex>$<keyHex>` format |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
-Unique indexes on `email`, `google_id`, and `user_name`.
+Unique indexes on `email`, `google_id`, and `local_login_user_name`.
 
 ### `login_otp`
 Short-lived 6-digit email sign-in codes. Stored in plain text on purpose — an admin can read the code out of the DB / server logs when SES delivery is broken. Rows live ~10 minutes, are opportunistically swept on every new code request, and are burned on successful verify or after 5 wrong attempts.
