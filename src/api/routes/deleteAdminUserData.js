@@ -1,8 +1,7 @@
-import { eq, inArray, or } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import {
   imageOcr,
-  llmUsage,
   sessionDoc,
   sessionImage,
   sessionMessage,
@@ -16,10 +15,17 @@ import {
 // DELETE /api/admin/user/:id/data
 //
 // Wipe every content row tied to a student account — sessions, docs,
-// images, OCR, vision extractions, messages, session/subject reports,
-// and the per-call llm_usage audit log. The `user` row itself stays
-// (and login_otp + tts_audio are deliberately left alone — tts_audio
-// is a cross-user cache, login_otp is short-lived auth state).
+// images, OCR, vision extractions, messages, session/subject reports.
+// The `user` row itself stays (and login_otp + tts_audio are
+// deliberately left alone — tts_audio is a cross-user cache, login_otp
+// is short-lived auth state).
+//
+// `llm_usage` is explicitly NOT wiped: it's the per-call billing audit
+// log and must be preserved for accounting / chargeback. Its FK columns
+// are plain UUIDs (no DB-level FK constraint), so the rows happily
+// outlive the entities they reference. Token-usage aggregates still
+// resolve correctly because they filter on user_id (which is preserved)
+// and group on (date, purpose, model).
 //
 // Restricted to `role='student'` accounts: admins and parents/teachers
 // don't have tutoring content in the same shape, and refusing the call
@@ -66,18 +72,6 @@ export default function deleteAdminUserData(fastify) {
           .where(inArray(sessionImage.sessionId, sessionIds));
         imageIds = images.map((i) => i.id);
       }
-
-      // llm_usage rows fan in from every direction (user_id, session_id,
-      // subject_report_id, message_id, image_id, session_report_id). Sweep
-      // all of them in one statement before touching the FK targets, so
-      // we don't have to worry about ordering against the message / image
-      // / report deletes below.
-      const llmUsageConditions = [eq(llmUsage.userId, targetUserId)];
-      if (sessionIds.length > 0) llmUsageConditions.push(inArray(llmUsage.sessionId, sessionIds));
-      if (subjectReportIds.length > 0) {
-        llmUsageConditions.push(inArray(llmUsage.subjectReportId, subjectReportIds));
-      }
-      await tx.delete(llmUsage).where(or(...llmUsageConditions));
 
       if (sessionIds.length > 0) {
         if (imageIds.length > 0) {
