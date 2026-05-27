@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
+import pinoPretty from 'pino-pretty';
 import authEmail from './routes/authEmail.js';
 import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
@@ -25,15 +26,14 @@ import tutorUpdateSession from './routes/tutorUpdateSession.js';
 
 export default async function server() {
   const isProd = process.env.NODE_ENV === 'production';
+  // In dev, pipe through pino-pretty as a direct stream instead of using
+  // the transport: worker option. The worker-thread transport (thread-stream)
+  // races with `node --watch` on restart and crashes with
+  // "this should not happen: undefined".
   const app = Fastify({
     logger: isProd
       ? true
-      : {
-          transport: {
-            target: 'pino-pretty',
-            options: { colorize: true, translateTime: 'SYS:HH:MM:ss.l' }
-          }
-        },
+      : { stream: pinoPretty({ colorize: true, translateTime: 'SYS:HH:MM:ss.l' }) },
     bodyLimit: 20 * 1024 * 1024
   });
 
