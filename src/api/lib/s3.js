@@ -25,14 +25,14 @@ export function isS3Enabled() {
   return Boolean(process.env.YTAI_S3_BUCKET);
 }
 
-export function bucketName() {
+function bucketName() {
   return process.env.YTAI_S3_BUCKET || '';
 }
 
 // Per-environment key namespace ("prod", "dev", or any custom stage name).
 // CDK sets this to the deployed stage; local dev defaults to "dev" so a
 // misconfigured laptop can't accidentally drop bytes into prod's keyspace.
-export function s3Prefix() {
+function s3Prefix() {
   return process.env.YTAI_S3_PREFIX || 'dev';
 }
 
@@ -44,11 +44,11 @@ export function buildKey(rest) {
   return prefix ? `${prefix}/${trimmed}` : trimmed;
 }
 
-export function buildS3Url(key) {
+function buildS3Url(key) {
   return `s3://${bucketName()}/${key}`;
 }
 
-export function parseS3Url(url) {
+function parseS3Url(url) {
   if (typeof url !== 'string' || !url.startsWith('s3://')) return null;
   const rest = url.slice('s3://'.length);
   const slash = rest.indexOf('/');

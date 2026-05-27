@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gte } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
   sessionMessage,
@@ -14,6 +14,21 @@ const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export const VALID_SUBJECTS = new Set(['math', 'thinking', 'reading', 'writing']);
 
+// Time windows the Reports page offers the user. The set is kept here so
+// the route validator and the manifest query both speak the same language;
+// any other value (including 0 or negative) is rejected upstream.
+export const VALID_TIMESPAN_DAYS = new Set([7, 14, 30, 91, 183]);
+
+function timespanLabel(days) {
+  if (days === null || days === undefined) return 'all sessions';
+  if (days === 7) return 'the last 1 week';
+  if (days === 14) return 'the last 2 weeks';
+  if (days === 30) return 'the last 1 month';
+  if (days === 91) return 'the last 3 months';
+  if (days === 183) return 'the last 6 months';
+  return `the last ${days} days`;
+}
+
 function reporterConfig() {
   return {
     baseUrl: process.env.YTAI_OPENROUTER_BASE_URL || DEFAULT_OPENROUTER_BASE_URL,
@@ -28,14 +43,21 @@ export function normalizePrompt(prompt) {
 
 // Returns the per-user-per-subject session manifest:
 //   [{ sessionId, latestMessageId, latestMessageAt, hasReport, reportCursorMessageId }]
-async function loadSessionManifest({ userId, subject }) {
+// `timespanDays` (when set) drops sessions that started before
+// `now - timespanDays` so the report only sees the window the user asked for.
+async function loadSessionManifest({ userId, subject, timespanDays }) {
+  const filters = [eq(tutorSession.userId, userId), eq(tutorSession.subject, subject)];
+  if (typeof timespanDays === 'number' && timespanDays > 0) {
+    const cutoff = new Date(Date.now() - timespanDays * 24 * 60 * 60 * 1000);
+    filters.push(gte(tutorSession.startedAt, cutoff));
+  }
   const sessions = await db()
     .select({
       id: tutorSession.id,
       startedAt: tutorSession.startedAt
     })
     .from(tutorSession)
-    .where(and(eq(tutorSession.userId, userId), eq(tutorSession.subject, subject)))
+    .where(and(...filters))
     .orderBy(asc(tutorSession.startedAt));
 
   if (sessions.length === 0) return [];
@@ -199,11 +221,12 @@ function subjectLabelOf(subject) {
   return { math: 'Math', thinking: 'Thinking Skills', reading: 'Reading', writing: 'Writing' }[subject] || subject;
 }
 
-async function generateReportTitle({ prompt, subject, log }) {
+async function generateReportTitle({ prompt, subject, timespanDays, log }) {
   const subjectLabel = subjectLabelOf(subject);
+  const window = timespanLabel(timespanDays);
   const system =
     `You generate short report names for an AI tutoring analytics tool. ` +
-    `Read the user's prompt about a student's ${subjectLabel} work and return a 3 to 7 word ` +
+    `Read the user's prompt about a student's ${subjectLabel} work over ${window} and return a 3 to 7 word ` +
     `Title Case name — no quotes, no trailing punctuation. ` +
     `Call submit_report_title exactly once and write no other text.`;
   const { baseUrl, apiKey, model } = reporterConfig();
@@ -226,10 +249,12 @@ async function generateReportTitle({ prompt, subject, log }) {
   }
 }
 
-function buildSystemPrompt(subject) {
+function buildSystemPrompt(subject, timespanDays) {
   const subjectLabel = subjectLabelOf(subject);
+  const window = timespanLabel(timespanDays);
   return (
     `You are generating a cross-session ${subjectLabel} report for a parent/teacher reviewing a student on YouTutorAI. ` +
+    `The session data covers ${window}. ` +
     'The input is a JSON array of session reports — every session has the worksheet questions, the student\'s answer, the correct answer, the mistake type, and a curriculum outcome tag. ' +
     'Be specific and honest. Cite evidence from the sessions, not generalities. Do not invent skills the student never demonstrated. ' +
     'Call submit_report exactly once and write no other text. Always include a short report title (3 to 7 words, Title Case) that summarises what the user asked for — it becomes the report\'s name in the UI. ' +
@@ -285,6 +310,7 @@ export default async function enqueueAnalysisReport({
   userId,
   subject,
   prompt,
+  timespanDays = null,
   log
 }) {
   if (!VALID_SUBJECTS.has(subject)) {
@@ -297,7 +323,7 @@ export default async function enqueueAnalysisReport({
 
   // Cheap precheck — don't create a doomed-to-fail pending row when the
   // user simply has no sessions for this subject yet.
-  const manifest = await loadSessionManifest({ userId, subject });
+  const manifest = await loadSessionManifest({ userId, subject, timespanDays });
   if (manifest.length === 0) {
     return {
       status: 'empty',
@@ -329,6 +355,7 @@ export default async function enqueueAnalysisReport({
     manifest,
     subject,
     prompt: normalizedPrompt,
+    timespanDays,
     log
   }).catch((err) => log.error({ err, rowId: row.id }, 'runSubjectReport background task crashed'));
 
@@ -341,12 +368,12 @@ export default async function enqueueAnalysisReport({
   };
 }
 
-async function runSubjectReport({ rowId, userId, manifest, subject, prompt, log }) {
+async function runSubjectReport({ rowId, userId, manifest, subject, prompt, timespanDays, log }) {
   try {
     // Pre-generate the title in parallel with the session-refresh work so
     // the polling UI can show the real report name within a couple of
     // seconds — long before the main generation finishes.
-    const titlePromise = generateReportTitle({ prompt, subject, log });
+    const titlePromise = generateReportTitle({ prompt, subject, timespanDays, log });
 
     await refreshStaleSessions(manifest, log);
     const titleResult = await titlePromise;
@@ -370,9 +397,11 @@ async function runSubjectReport({ rowId, userId, manifest, subject, prompt, log 
     }
 
     const data = rolledUpSessionData(manifest);
-    const system = buildSystemPrompt(subject);
+    const system = buildSystemPrompt(subject, timespanDays);
     const userBody =
-      `### User prompt (untrusted)\n${prompt}\n\n### Session data (${data.length} sessions)\n` +
+      `### Time window\n${timespanLabel(timespanDays)}\n\n` +
+      `### User prompt (untrusted)\n${prompt}\n\n` +
+      `### Session data (${data.length} sessions)\n` +
       JSON.stringify(data, null, 2);
     const { baseUrl, apiKey, model } = reporterConfig();
     log.info({ rowId, subject, model, sessionCount: data.length }, 'runSubjectReport: calling LLM');

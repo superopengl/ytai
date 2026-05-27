@@ -13,8 +13,8 @@ import agentChat from './agentChat.js';
 // Counts consecutive silent rounds, so a one-line lead-in like "Let me
 // check…" resets the counter — only the runaway pattern fires. 3 catches
 // obvious spam without false-positives on legitimate chains.
-export const MAX_TOOL_ROUNDS = 10;
-export const TOOL_SPAM_THRESHOLD = 3;
+const MAX_TOOL_ROUNDS = 10;
+const TOOL_SPAM_THRESHOLD = 3;
 
 // Drives one Brain turn end-to-end: streams the chat completion, accumulates
 // tool-call arguments, dispatches them via the caller-supplied function, and

@@ -1,5 +1,6 @@
 import enqueueAnalysisReport, {
   VALID_SUBJECTS,
+  VALID_TIMESPAN_DAYS,
   normalizePrompt
 } from '../lib/generateAnalysisReport.js';
 
@@ -10,6 +11,20 @@ export default function createAnalysisReport(fastify) {
     const body = request.body || {};
     const subject = String(body.subject || '').toLowerCase();
     const prompt = body.prompt ?? null;
+    // null / undefined → no time filter (all sessions). Otherwise must be
+    // one of the explicit windows the UI offers; reject anything else so
+    // a malformed client can't fish for arbitrary date ranges.
+    const rawTimespan = body.timespanDays;
+    let timespanDays = null;
+    if (rawTimespan !== null && rawTimespan !== undefined) {
+      if (!VALID_TIMESPAN_DAYS.has(rawTimespan)) {
+        reply.code(400);
+        return {
+          error: `Invalid timespanDays. Must be one of: ${[...VALID_TIMESPAN_DAYS].join(', ')}, or null for all sessions.`
+        };
+      }
+      timespanDays = rawTimespan;
+    }
 
     if (!VALID_SUBJECTS.has(subject)) {
       reply.code(400);
@@ -35,6 +50,7 @@ export default function createAnalysisReport(fastify) {
         userId: request.userId,
         subject,
         prompt: normalized,
+        timespanDays,
         log: request.log
       });
     } catch (err) {

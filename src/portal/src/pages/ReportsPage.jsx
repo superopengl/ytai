@@ -7,7 +7,7 @@ import {
   ConfigProvider,
   Input,
   Modal,
-  Select,
+  Radio,
   Space,
   Spin,
   Splitter,
@@ -34,6 +34,18 @@ import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
 const POLL_INTERVAL_MS = 10000;
 
+// Time windows the user can pick on the Generate panel. `days: null`
+// means "all sessions" — the backend skips the createdAt filter entirely.
+const TIMESPAN_OPTIONS = [
+  { value: 7, label: '1 week' },
+  { value: 14, label: '2 weeks' },
+  { value: 30, label: '1 month' },
+  { value: 91, label: '3 months' },
+  { value: 183, label: '6 months' },
+  { value: null, label: 'All sessions' }
+];
+const DEFAULT_TIMESPAN_DAYS = 30;
+
 // Prompt templates — UI-only sugar. The cards on the Generate panel
 // use these to prefill the textarea; the backend never sees the key,
 // only the resulting prompt string. Each card carries its own tint +
@@ -43,8 +55,6 @@ const PROMPT_TEMPLATES = [
     key: 'wrong_questions',
     label: 'Wrong Answer Journal',
     blurb: 'Every question the student got wrong or struggled with, with the correct answer and mistake type.',
-    tint: '#FFF1F0',
-    border: '#FFCCC7',
     prompt:
       'List every question the student got wrong or struggled with across their recent sessions. For each one, include the question, the student\'s answer, the correct answer, and what kind of mistake it was.'
   },
@@ -52,8 +62,6 @@ const PROMPT_TEMPLATES = [
     key: 'strengths_weaknesses',
     label: 'Strengths & Weaknesses',
     blurb: 'Where the student is solid and where they need practice, with concrete evidence from sessions.',
-    tint: '#E6F4FF',
-    border: '#BAE0FF',
     prompt:
       'Tell me where the student is solid and where they need more practice. Back each strength and weakness with concrete examples from their sessions.'
   },
@@ -61,8 +69,6 @@ const PROMPT_TEMPLATES = [
     key: 'curriculum_map',
     label: 'Curriculum Map',
     blurb: 'Coverage by focus area and mastery state, against the NSW K-10 syllabus.',
-    tint: '#F6FFED',
-    border: '#D9F7BE',
     prompt:
       'Map the student\'s recent tutoring work against the NSW K-10 syllabus. For each focus area they have touched, give a mastery state (e.g. emerging / developing / proficient) and the evidence behind it.'
   }
@@ -246,6 +252,7 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [customSubject, setCustomSubject] = useState(() => currentSubject().value);
+  const [customTimespanDays, setCustomTimespanDays] = useState(DEFAULT_TIMESPAN_DAYS);
 
   const updateSubject = useCallback((next) => {
     setCustomSubject(next);
@@ -321,7 +328,11 @@ export default function ReportsPage() {
       const res = await apiFetch('/api/analysis-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: customSubject, prompt: trimmed })
+        body: JSON.stringify({
+          subject: customSubject,
+          prompt: trimmed,
+          timespanDays: customTimespanDays
+        })
       });
       const body = await res.json();
       if (!res.ok) {
@@ -343,7 +354,7 @@ export default function ReportsPage() {
     } finally {
       setGenerating(null);
     }
-  }, [customPrompt, customSubject, loadReports]);
+  }, [customPrompt, customSubject, customTimespanDays, loadReports]);
 
   const handleGenerateSimilar = useCallback(
     (report) => {
@@ -424,6 +435,8 @@ export default function ReportsPage() {
                 generating={generating}
                 customSubject={customSubject}
                 setCustomSubject={updateSubject}
+                customTimespanDays={customTimespanDays}
+                setCustomTimespanDays={setCustomTimespanDays}
                 customPrompt={customPrompt}
                 setCustomPrompt={setCustomPrompt}
                 onSubmit={handleSubmit}
@@ -581,6 +594,8 @@ function GeneratePanel({
   generating,
   customSubject,
   setCustomSubject,
+  customTimespanDays,
+  setCustomTimespanDays,
   customPrompt,
   setCustomPrompt,
   onSubmit
@@ -618,30 +633,57 @@ function GeneratePanel({
           Which subject's tutoring work should the AI analyze?
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
-          <Select
+          <Radio.Group
             value={customSubject}
-            onChange={setCustomSubject}
-            style={{ minWidth: 220 }}
-            options={SUBJECTS.map((s) => {
+            onChange={(e) => setCustomSubject(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            {SUBJECTS.map((s) => {
               const Icon = s.icon;
-              return {
-                value: s.key,
-                label: (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <Icon style={{ color: s.color }} />
+              const selected = customSubject === s.key;
+              return (
+                <Radio.Button key={s.key} value={s.key}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Icon style={{ color: selected ? '#fff' : s.color }} />
                     {s.label}
                   </span>
-                )
-              };
+                </Radio.Button>
+              );
             })}
-          />
+          </Radio.Group>
+        </div>
+      </section>
+
+      <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
+
+      <section style={{ marginBottom: 20 }}>
+        <StepHeader n={2} title="Pick a time span">
+          How far back should the AI look? Only sessions started within this window are included.
+        </StepHeader>
+        <div style={{ marginLeft: 36 }}>
+          <Radio.Group
+            value={customTimespanDays === null ? 'all' : customTimespanDays}
+            onChange={(e) => {
+              const v = e.target.value;
+              setCustomTimespanDays(v === 'all' ? null : v);
+            }}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            {TIMESPAN_OPTIONS.map((o) => (
+              <Radio.Button key={o.value ?? 'all'} value={o.value === null ? 'all' : o.value}>
+                {o.label}
+              </Radio.Button>
+            ))}
+          </Radio.Group>
         </div>
       </section>
 
       <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
 
       <section style={{ marginBottom: 28 }}>
-        <StepHeader n={2} title="Tell the AI what to analyze">
+        <StepHeader n={3} title="Tell the AI what to analyze">
           Start from a template, then tweak the prompt before generating.
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
@@ -675,19 +717,25 @@ function GeneratePanel({
                     }}
                     styles={{ body: { padding: 10 } }}
                     style={{
-                      background: t.tint,
-                      border: `1px solid ${selected ? t.border : 'transparent'}`,
-                      boxShadow: selected ? `0 0 0 2px ${t.border}` : 'none',
+                      background: selected ? palette.primary : '#fff',
+                      border: `1px solid ${selected ? palette.primary : palette.border}`,
+                      color: selected ? '#fff' : palette.text,
                       cursor: 'pointer',
-                      transition: 'box-shadow 120ms ease, border-color 120ms ease'
+                      transition: 'background 120ms ease, border-color 120ms ease, color 120ms ease'
                     }}
                   >
-                    <Typography.Text style={{ display: 'block', marginBottom: 2, fontSize: 13 }}>
+                    <Typography.Text
+                      style={{ display: 'block', marginBottom: 2, fontSize: 13, color: 'inherit' }}
+                    >
                       {t.label}
                     </Typography.Text>
                     <Typography.Paragraph
-                      type="secondary"
-                      style={{ fontSize: 12, lineHeight: 1.25, marginBottom: 0 }}
+                      style={{
+                        fontSize: 12,
+                        lineHeight: 1.25,
+                        marginBottom: 0,
+                        color: selected ? 'rgba(255,255,255,0.85)' : palette.textMuted
+                      }}
                     >
                       {t.blurb}
                     </Typography.Paragraph>
