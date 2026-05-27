@@ -132,6 +132,30 @@
   color: transparent;
 }
 
+/* ---- Marketing grids ---------------------------------------------------- */
+/* HomePage stopped using AntD's <Row>/<Col> so its initial chunk can skip
+ * the antd vendor bundle. These mirror the original 24-col breakpoints:
+ *   - .ytai-grid-4: xs 1 / sm 2 / lg 4
+ *   - .ytai-grid-3: xs 1 / sm 3
+ * Gap matches the previous `gutter={[28, 28]}`. */
+
+.ytai-grid-4,
+.ytai-grid-3 {
+  display: grid;
+  gap: 28px;
+}
+
+.ytai-grid-4 { grid-template-columns: 1fr; }
+.ytai-grid-3 { grid-template-columns: 1fr; }
+
+@media (min-width: 576px) {
+  .ytai-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .ytai-grid-3 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 992px) {
+  .ytai-grid-4 { grid-template-columns: repeat(4, 1fr); }
+}
+
 /* ---- Reduced motion ----------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

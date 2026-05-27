@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Typography } from 'antd';
-import { GoogleOutlined } from '@ant-design/icons';
+import { GoogleIcon } from './InlineIcons.jsx';
 import authSession from '../lib/authSession.js';
 import loadGoogleSdk from '../lib/loadGoogleSdk.js';
 import { radius } from '../theme.js';
-
-const { Text } = Typography;
 
 // Read the client ID injected by Vite at build time. Falls back to empty
 // string so the button can render a clear "not configured" hint in dev.
 // eslint-disable-next-line no-undef
 const CLIENT_ID = typeof __YTAI_GOOGLE_CLIENT_ID__ !== 'undefined' ? __YTAI_GOOGLE_CLIENT_ID__ : '';
 
-// AntD "Continue with Google" button backed by the OAuth 2.0 implicit flow
+// "Continue with Google" button backed by the OAuth 2.0 implicit flow
 // (oauth2.initTokenClient). We previously tried id.renderButton, but GIS
 // auto-personalizes that variant to "Sign in as <name>" the moment the
 // visitor has a Google session — and the rendered button doesn't expose
@@ -20,12 +17,14 @@ const CLIENT_ID = typeof __YTAI_GOOGLE_CLIENT_ID__ !== 'undefined' ? __YTAI_GOOG
 // us and just pops Google's account chooser on click; the resulting
 // access token goes to /api/auth/google, which resolves it via the
 // userinfo endpoint server-side.
+//
+// Plain HTML buttons (no antd) so HomePage's initial chunk can skip the
+// antd vendor bundle. antd only loads once the user navigates to a route
+// that needs it.
 export default function GoogleSignInButton({
   role = 'student',
-  size = 'large',
   onSuccess,
-  onError,
-  block = true
+  onError
 }) {
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -112,45 +111,82 @@ export default function GoogleSignInButton({
     }
   };
 
+  const baseButtonStyle = {
+    width: '100%',
+    height: 48,
+    borderRadius: radius.md,
+    fontWeight: 600,
+    fontSize: 15,
+    fontFamily: 'inherit',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    border: '1px solid rgba(0,0,0,0.08)',
+    background: '#fff',
+    color: 'rgba(0,0,0,0.88)',
+    cursor: 'pointer'
+  };
+
   if (!CLIENT_ID) {
     return (
-      <Button
-        size={size}
-        icon={<GoogleOutlined />}
+      <button
+        type="button"
         disabled
-        block={block}
-        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
+        style={{ ...baseButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
       >
+        <GoogleIcon />
         Google sign-in (configure YTAI_GOOGLE_CLIENT_ID)
-      </Button>
+      </button>
     );
   }
 
+  const disabled = !ready || submitting;
+
   return (
     <div style={{ width: '100%' }}>
-      <Button
-        size={size}
-        icon={<GoogleOutlined />}
+      <button
+        type="button"
         onClick={triggerSignIn}
-        loading={submitting}
-        disabled={!ready}
-        block={block}
-        style={{ height: 48, borderRadius: radius.md, fontWeight: 600 }}
+        disabled={disabled}
+        style={{
+          ...baseButtonStyle,
+          opacity: disabled ? 0.6 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer'
+        }}
       >
-        Continue with Google
-      </Button>
+        <GoogleIcon />
+        {submitting ? 'Signing in…' : 'Continue with Google'}
+      </button>
       {error && (
-        <Alert
-          type="error"
-          showIcon
-          message={error}
-          style={{ marginTop: 8, borderRadius: 8, padding: '4px 10px' }}
-        />
+        <div
+          role="alert"
+          style={{
+            marginTop: 8,
+            borderRadius: 8,
+            padding: '6px 12px',
+            background: '#fff2f0',
+            color: '#a8071a',
+            border: '1px solid #ffccc7',
+            fontSize: 13,
+            textAlign: 'center'
+          }}
+        >
+          {error}
+        </div>
       )}
       {!ready && !error && (
-        <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12, textAlign: 'center' }}>
+        <span
+          style={{
+            display: 'block',
+            marginTop: 6,
+            fontSize: 12,
+            textAlign: 'center',
+            color: 'rgba(0,0,0,0.45)'
+          }}
+        >
           Loading Google sign-in…
-        </Text>
+        </span>
       )}
     </div>
   );

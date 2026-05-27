@@ -60,8 +60,14 @@ export default function PrivacyPolicyPage() {
 
         <Title level={3}>How long we keep it</Title>
         <Paragraph>
-          Uploaded photos are automatically deleted after 30 days. Session transcripts are kept
-          while your account is active so you can revisit past tutoring sessions.
+          We keep your data indefinitely — the system does not auto-purge sessions, images, or
+          transcripts. You stay in control: delete a session yourself and its photos, documents,
+          and chat history are permanently removed.
+        </Paragraph>
+        <Paragraph>
+          LLM token-usage records (model, token counts, cost) are kept forever for billing and
+          audit purposes. These records contain no personal data — no prompts, no responses, no
+          images, just the metering numbers.
         </Paragraph>
 
         <Title level={3}>Children’s privacy</Title>

@@ -1,20 +1,19 @@
 import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Row, Col, message } from 'antd';
 import {
-  CameraOutlined,
-  HighlightOutlined,
-  BulbOutlined,
-  ReadOutlined,
-  EditOutlined,
-  CalculatorOutlined,
-  ExperimentOutlined,
-  GoogleOutlined,
-  HeartFilled,
-  GlobalOutlined,
-  RocketOutlined,
-  LineChartOutlined
-} from '@ant-design/icons';
+  CameraIcon,
+  HighlightIcon,
+  BulbIcon,
+  ReadIcon,
+  EditIcon,
+  CalculatorIcon,
+  ExperimentIcon,
+  GoogleIcon,
+  HeartFilledIcon,
+  GlobalIcon,
+  RocketIcon,
+  LineChartIcon
+} from '../components/InlineIcons.jsx';
 import { palette, stickerShadow, radius } from '../theme.js';
 import Logo from '../components/Logo.jsx';
 import authSession from '../lib/authSession.js';
@@ -39,8 +38,6 @@ function SignInButtonSkeleton() {
     />
   );
 }
-
-const { Title, Paragraph, Text, Link } = Typography;
 
 const {
   primary: SAGE,
@@ -93,57 +90,32 @@ function IconCircle({ size = 56, color = MINT, children, style }) {
   );
 }
 
-// Decorative soft blob — adds depth behind hero sections without breaking
-// the calm neumorphism aesthetic.
-function Blob({ color, size, top, left, right, bottom, kind = 'a', opacity = 0.55, blur = 80 }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={kind === 'b' ? 'clay-blob-b' : 'clay-blob-a'}
-      style={{
-        position: 'absolute',
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: color,
-        filter: `blur(${blur}px)`,
-        opacity,
-        top,
-        left,
-        right,
-        bottom,
-        pointerEvents: 'none'
-      }}
-    />
-  );
-}
-
 // --- Content data -----------------------------------------------------------
 
 const features = [
   {
-    icon: <CameraOutlined />,
+    icon: <CameraIcon />,
     color: PEACH,
     title: 'Snap a Photo',
     description:
       'Point your phone at any worksheet, exam, or homework page. The AI reads the questions and gets ready to help.'
   },
   {
-    icon: <HighlightOutlined />,
+    icon: <HighlightIcon />,
     color: CREAM_PEACH,
     title: 'Circle What’s Tricky',
     description:
       'Highlight, circle, or underline the part you’re stuck on. The tutor sees exactly what you’re pointing at.'
   },
   {
-    icon: <BulbOutlined />,
+    icon: <BulbIcon />,
     color: MINT,
     title: 'Learn, Don’t Copy',
     description:
       'A Socratic tutor that scaffolds your thinking step by step — never just hands over the answer, always builds understanding.'
   },
   {
-    icon: <LineChartOutlined />,
+    icon: <LineChartIcon />,
     color: LAVENDER,
     title: 'Spot the Patterns',
     description:
@@ -152,10 +124,10 @@ const features = [
 ];
 
 const subjects = [
-  { icon: <CalculatorOutlined />, label: 'Math', color: SAGE },
-  { icon: <ExperimentOutlined />, label: 'Thinking Skills', color: MAUVE },
-  { icon: <ReadOutlined />, label: 'English', color: MINT },
-  { icon: <EditOutlined />, label: 'Writing', color: PEACH }
+  { icon: <CalculatorIcon />, label: 'Math', color: SAGE },
+  { icon: <ExperimentIcon />, label: 'Thinking Skills', color: MAUVE },
+  { icon: <ReadIcon />, label: 'English', color: MINT },
+  { icon: <EditIcon />, label: 'Writing', color: PEACH }
 ];
 
 const personas = [
@@ -228,7 +200,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
               border: 0
             }}
           >
-            <RocketOutlined style={{ fontSize: 18 }} />
+            <RocketIcon style={{ fontSize: 18 }} />
             Start session
           </button>
         ) : (
@@ -249,7 +221,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
               border: 0
             }}
           >
-            <GoogleOutlined style={{ fontSize: 18 }} />
+            <GoogleIcon style={{ fontSize: 18 }} />
             Sign in
           </button>
         )}
@@ -263,8 +235,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
 export default function HomePage() {
   const navigate = useNavigate();
   const isSignedIn = Boolean(authSession().token);
-  const handleGoogleSuccess = (u) => {
-    message.success(`Welcome, ${u.name}! Loading your tutor…`);
+  const handleGoogleSuccess = () => {
     navigate('/tutor');
   };
 
@@ -302,11 +273,11 @@ export default function HomePage() {
           }}
         >
           <div>
-            <Title
+            <h1
               style={{
                 fontFamily: QUICKSAND,
                 fontSize: 'clamp(48px, 7.5vw, 84px)',
-                marginBottom: 22,
+                margin: '0 0 22px',
                 lineHeight: 1.02,
                 letterSpacing: -1.8,
                 color: INK,
@@ -325,8 +296,8 @@ export default function HomePage() {
               </span>{' '}
               <br />
               <span style={{ color: SAGE_DARK }}>made gentler.</span>
-            </Title>
-            <Paragraph
+            </h1>
+            <p
               style={{
                 color: INK_MUTED,
                 fontSize: 'clamp(17px, 2vw, 21px)',
@@ -338,7 +309,7 @@ export default function HomePage() {
             >
               A Socratic homework tutor for kids 8–14. Snap the worksheet, circle what’s tricky,
               and the tutor walks you through it — calmly, one step at a time.
-            </Paragraph>
+            </p>
 
             <div
               id="signin"
@@ -425,20 +396,19 @@ export default function HomePage() {
         style={{ background: WHITE, padding: '88px 24px 144px', position: 'relative', overflow: 'hidden' }}
       >
         <div style={{ position: 'relative', maxWidth: 1180, margin: '0 auto', textAlign: 'center' }}>
-          <Title
-            level={2}
+          <h2
             style={{
               fontFamily: QUICKSAND,
               fontSize: 'clamp(32px, 4.5vw, 46px)',
-              marginBottom: 14,
+              margin: '0 0 14px',
               letterSpacing: -1,
               fontWeight: 700,
               color: INK
             }}
           >
             What makes this <span className="gradient-text">different</span>
-          </Title>
-          <Paragraph
+          </h2>
+          <p
             style={{
               fontSize: 18,
               color: INK_MUTED,
@@ -449,62 +419,60 @@ export default function HomePage() {
             }}
           >
             Not another chatbot that hands you the answer. A real tutor that meets you on the page.
-          </Paragraph>
-          <Row gutter={[28, 28]}>
+          </p>
+          <div className="ytai-grid-4">
             {features.map((f) => (
-              <Col xs={24} sm={12} lg={6} key={f.title}>
-                <div
-                  className="sticker-card"
+              <div
+                key={f.title}
+                className="sticker-card"
+                style={{
+                  padding: '32px 24px',
+                  height: '100%',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  background: BG,
+                  borderRadius: 28
+                }}
+              >
+                <IconCircle
+                  size={48}
+                  color={f.color}
                   style={{
-                    padding: '32px 24px 36px',
-                    height: '100%',
-                    textAlign: 'center',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    background: BG,
-                    borderRadius: 28
+                    marginBottom: 8,
+                    fontSize: 40,
+                    background: 'transparent',
+                    boxShadow: 'none',
+                    color: INK_HINT
                   }}
                 >
-                  <IconCircle
-                    size={48}
-                    color={f.color}
-                    style={{
-                      marginBottom: 8,
-                      fontSize: 40,
-                      background: 'transparent',
-                      boxShadow: 'none',
-                      color: INK_HINT
-                    }}
-                  >
-                    {f.icon}
-                  </IconCircle>
-                  <Title
-                    level={3}
-                    style={{
-                      fontFamily: QUICKSAND,
-                      fontSize: 20,
-                      marginBottom: 10,
-                      fontWeight: 700,
-                      color: INK
-                    }}
-                  >
-                    {f.title}
-                  </Title>
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      lineHeight: 1.65,
-                      color: INK_MUTED,
-                      fontWeight: 500
-                    }}
-                  >
-                    {f.description}
-                  </Text>
-                </div>
-              </Col>
+                  {f.icon}
+                </IconCircle>
+                <h3
+                  style={{
+                    fontFamily: QUICKSAND,
+                    fontSize: 20,
+                    margin: '0 0 10px',
+                    fontWeight: 700,
+                    color: INK
+                  }}
+                >
+                  {f.title}
+                </h3>
+                <span
+                  style={{
+                    fontSize: 15,
+                    lineHeight: 1.65,
+                    color: INK_MUTED,
+                    fontWeight: 500
+                  }}
+                >
+                  {f.description}
+                </span>
+              </div>
             ))}
-          </Row>
+          </div>
         </div>
       </section>
 
@@ -513,20 +481,19 @@ export default function HomePage() {
         style={{ background: WHITE, padding: '24px 24px 144px', position: 'relative', overflow: 'hidden' }}
       >
         <div style={{ position: 'relative', maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
-          <Title
-            level={2}
+          <h2
             style={{
               fontFamily: QUICKSAND,
               fontSize: 'clamp(32px, 4.5vw, 46px)',
-              marginBottom: 14,
+              margin: '0 0 14px',
               letterSpacing: -1,
               fontWeight: 700,
               color: INK
             }}
           >
             Built for the whole <span className="gradient-text">homework table</span>
-          </Title>
-          <Paragraph
+          </h2>
+          <p
             style={{
               fontSize: 18,
               color: INK_MUTED,
@@ -537,50 +504,48 @@ export default function HomePage() {
             }}
           >
             The same calming, patient tutor — whoever’s using it.
-          </Paragraph>
-          <Row gutter={[28, 28]}>
+          </p>
+          <div className="ytai-grid-3">
             {personas.map((p) => (
-              <Col xs={24} sm={8} key={p.title}>
-                <div
-                  className="sticker-card"
+              <div
+                key={p.title}
+                className="sticker-card"
+                style={{
+                  padding: '32px 28px',
+                  height: '100%',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 12,
+                  background: p.bgColor,
+                  borderRadius: 28
+                }}
+              >
+                <h3
                   style={{
-                    padding: '32px 28px 24px',
-                    height: '100%',
-                    textAlign: 'center',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 12,
-                    background: p.bgColor,
-                    borderRadius: 28
+                    fontFamily: QUICKSAND,
+                    fontSize: 20,
+                    margin: 0,
+                    fontWeight: 700,
+                    color: INK
                   }}
                 >
-                  <Title
-                    level={3}
-                    style={{
-                      fontFamily: QUICKSAND,
-                      fontSize: 20,
-                      margin: 0,
-                      fontWeight: 700,
-                      color: INK
-                    }}
-                  >
-                    {p.title}
-                  </Title>
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      lineHeight: 1.65,
-                      color: INK_MUTED,
-                      fontWeight: 500
-                    }}
-                  >
-                    {p.description}
-                  </Text>
-                </div>
-              </Col>
+                  {p.title}
+                </h3>
+                <span
+                  style={{
+                    fontSize: 15,
+                    lineHeight: 1.65,
+                    color: INK_MUTED,
+                    fontWeight: 500
+                  }}
+                >
+                  {p.description}
+                </span>
+              </div>
             ))}
-          </Row>
+          </div>
         </div>
       </section>
 
@@ -614,15 +579,14 @@ export default function HomePage() {
               fontSize: 36
             }}
           >
-            <HeartFilled />
+            <HeartFilledIcon />
           </div>
-          <Title
-            level={2}
+          <h2
             style={{
               fontFamily: QUICKSAND,
               color: WHITE,
               fontSize: 'clamp(32px, 5vw, 46px)',
-              marginBottom: 14,
+              margin: '0 0 14px',
               letterSpacing: -1,
               fontWeight: 700
             }}
@@ -640,18 +604,18 @@ export default function HomePage() {
               calmer
             </span>{' '}
             homework hour?
-          </Title>
-          <Paragraph
+          </h2>
+          <p
             style={{
               color: 'rgba(255, 255, 255, 0.88)',
               fontSize: 18,
-              marginBottom: 36,
+              margin: '0 0 36px',
               lineHeight: 1.65,
               fontWeight: 500
             }}
           >
             One tap with Google. New accounts are admin-reviewed to keep young learners safe.
-          </Paragraph>
+          </p>
           <div
             style={{
               display: 'inline-flex',
@@ -705,20 +669,20 @@ export default function HomePage() {
         <div style={{ marginBottom: 6 }}>
           <Logo height={24} />
         </div>
-        <Text style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
+        <span style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
           &copy;2019&ndash;2026 Techseeding PTY LTD. All rights reserved.
-        </Text>
-        <Link
+        </span>
+        <a
           href="https://techseeding.com.au"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
+          style={{ color: ON_DARK.textMuted, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}
         >
-          <GlobalOutlined/> techseeding.com.au
-        </Link>
-        <Text style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
+          <GlobalIcon /> techseeding.com.au
+        </a>
+        <span style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
           ABN: 35631597450 / ACN: 631597450
-        </Text>
+        </span>
         <div
           style={{
             marginTop: 14,
@@ -728,22 +692,22 @@ export default function HomePage() {
             justifyContent: 'center'
           }}
         >
-          <Link
+          <a
             href="/privacy_policy"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
           >
             Privacy
-          </Link>
-          <Link
+          </a>
+          <a
             href="/terms_of_use"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: ON_DARK.textMuted, fontWeight: 600 }}
           >
             Terms
-          </Link>
+          </a>
         </div>
       </footer>
     </div>
