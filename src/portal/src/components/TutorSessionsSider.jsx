@@ -64,8 +64,10 @@ export default function TutorSessionsSider({
         {onNewSession ? (
           <div style={actionStyle}>
             <Button
-              ghost
-              type="primary"
+              // ghost
+              // type="primary"
+              color="green"
+              variant="solid"
               block
               icon={<FileAddOutlined />}
               onClick={onNewSession}
@@ -211,7 +213,7 @@ const scrollStyle = {
   flex: 1,
   overflowY: 'auto',
   minHeight: 0,
-  padding: '4px 0'
+  padding: '0 0 4px'
 };
 const centeredHint = {
   display: 'flex',
@@ -230,7 +232,8 @@ const rowStyle = {
 };
 const rowTitleStyle = {
   fontSize: 13,
-  color: TEXT_PRIMARY,
+  fontWeight: 500,
+  color: 'rgba(255, 255, 255, 0.95)',
   lineHeight: 1.35,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
@@ -238,7 +241,7 @@ const rowTitleStyle = {
 };
 const rowMetaStyle = {
   fontSize: 11,
-  color: TEXT_MUTED,
+  color: 'rgba(255, 255, 255, 0.65)',
   marginTop: 2
 };
 
