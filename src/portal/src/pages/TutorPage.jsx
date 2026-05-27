@@ -208,7 +208,7 @@ export default function TutorPage() {
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
         />
-        <Logo height={32} />
+        <Logo height={24} />
 
         <div style={{ marginLeft: 'auto' }}>
           <Select
