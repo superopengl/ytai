@@ -27,8 +27,8 @@
         margin: 0;
         padding: 0;
         font-family: 'Nunito', 'Quicksand', system-ui, -apple-system, 'Segoe UI', sans-serif;
-        background: #F0F4F8;
-        color: #2D3748;
+        background: #F5F5F5;
+        color: rgba(0, 0, 0, 0.88);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
@@ -39,67 +39,7 @@
     </style>
   </head>
   <body>
-    <div id="root">
-      <!--
-        Static hero painted from the initial HTML so the LCP element
-        (the subtitle paragraph) fires before the React bundle parses.
-        React's createRoot.render() will replace this on mount; the
-        copy/colors/sizes match HomePage.jsx's hero so there's no
-        visible swap. Keep these two in sync.
-      -->
-      <section
-        style="
-          position: relative;
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 60px 24px;
-          background: #F0F4F8;
-        "
-      >
-        <div style="max-width: 720px; margin: 0 auto; text-align: center;">
-          <h1
-            style="
-              font-family: 'Quicksand', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
-              font-size: clamp(48px, 7.5vw, 84px);
-              margin: 0 0 22px;
-              line-height: 1.02;
-              letter-spacing: -1.8px;
-              color: #2D3748;
-              font-weight: 800;
-            "
-          >
-            <span
-              style="
-                background: linear-gradient(135deg, #7C9EB2 0%, #B8A9C9 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-              "
-              >Homework,</span
-            >
-            <br />
-            <span style="color: #6A8DA1;">made gentler.</span>
-          </h1>
-          <p
-            style="
-              color: #718096;
-              font-size: clamp(17px, 2vw, 21px);
-              max-width: 560px;
-              margin: 0 auto 36px;
-              line-height: 1.65;
-              font-weight: 500;
-              font-family: 'Nunito', 'Quicksand', system-ui, -apple-system, 'Segoe UI', sans-serif;
-            "
-          >
-            YouTutorAI is a Socratic homework tutor for kids 8&ndash;14. Snap the worksheet, circle
-            what&rsquo;s tricky, and the AI walks you through it &mdash; never just hands over the
-            answer. The pace is calm. The voice is kind.
-          </p>
-        </div>
-      </section>
-    </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
