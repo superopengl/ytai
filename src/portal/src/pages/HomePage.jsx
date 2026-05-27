@@ -240,7 +240,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
           boxShadow: stickerShadow.button
         }}
       >
-        <Logo height={32} />
+        <Logo height={24} />
 
         {isSignedIn ? (
           <button
@@ -261,7 +261,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
             }}
           >
             <RocketOutlined style={{ fontSize: 18 }} />
-            Go to Tutor
+            Start session
           </button>
         ) : (
           <button
@@ -825,7 +825,7 @@ export default function HomePage() {
         }}
       >
         <div style={{ marginBottom: 6 }}>
-          <Logo height={28} />
+          <Logo height={24} />
         </div>
         <Text style={{ color: ON_DARK.textMuted, fontSize: 12 }}>
           &copy;2019&ndash;2026 Techseeding PTY LTD. All rights reserved.
