@@ -480,9 +480,10 @@ export default function HomePage() {
                     {f.icon}
                   </IconCircle>
                   <Title
-                    level={4}
+                    level={3}
                     style={{
                       fontFamily: QUICKSAND,
+                      fontSize: 20,
                       marginBottom: 10,
                       fontWeight: 700,
                       color: INK
@@ -555,9 +556,10 @@ export default function HomePage() {
                   }}
                 >
                   <Title
-                    level={4}
+                    level={3}
                     style={{
                       fontFamily: QUICKSAND,
+                      fontSize: 20,
                       margin: 0,
                       fontWeight: 700,
                       color: INK
