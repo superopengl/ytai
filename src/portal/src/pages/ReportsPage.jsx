@@ -34,14 +34,17 @@ import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
 const POLL_INTERVAL_MS = 10000;
 
-// Prompt templates — UI-only sugar. The Select on the Generate panel
-// uses these to prefill the textarea; the backend never sees the key,
-// only the resulting prompt string.
+// Prompt templates — UI-only sugar. The cards on the Generate panel
+// use these to prefill the textarea; the backend never sees the key,
+// only the resulting prompt string. Each card carries its own tint +
+// border so the three options read as distinct at a glance.
 const PROMPT_TEMPLATES = [
   {
     key: 'wrong_questions',
     label: 'Wrong Answer Journal',
     blurb: 'Every question the student got wrong or struggled with, with the correct answer and mistake type.',
+    tint: '#FFF1F0',
+    border: '#FFCCC7',
     prompt:
       'List every question the student got wrong or struggled with across their recent sessions. For each one, include the question, the student\'s answer, the correct answer, and what kind of mistake it was.'
   },
@@ -49,6 +52,8 @@ const PROMPT_TEMPLATES = [
     key: 'strengths_weaknesses',
     label: 'Strengths & Weaknesses',
     blurb: 'Where the student is solid and where they need practice, with concrete evidence from sessions.',
+    tint: '#E6F4FF',
+    border: '#BAE0FF',
     prompt:
       'Tell me where the student is solid and where they need more practice. Back each strength and weakness with concrete examples from their sessions.'
   },
@@ -56,6 +61,8 @@ const PROMPT_TEMPLATES = [
     key: 'curriculum_map',
     label: 'Curriculum Map',
     blurb: 'Coverage by focus area and mastery state, against the NSW K-10 syllabus.',
+    tint: '#F6FFED',
+    border: '#D9F7BE',
     prompt:
       'Map the student\'s recent tutoring work against the NSW K-10 syllabus. For each focus area they have touched, give a mastery state (e.g. emerging / developing / proficient) and the evidence behind it.'
   }
@@ -579,6 +586,7 @@ function GeneratePanel({
   onSubmit
 }) {
   const isGenerating = generating?.startsWith(`${customSubject}::`);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState(null);
   return (
     <div
       style={{
@@ -637,42 +645,66 @@ function GeneratePanel({
           Start from a template, then tweak the prompt before generating.
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
-            Report template (optional)
-          </Typography.Text>
-          <Select
-            value={undefined}
-            placeholder="Pick a template to prefill the prompt…"
-            style={{ width: '100%' }}
-            optionLabelProp="label"
-            onChange={(_, option) => setCustomPrompt(option?.prompt ?? '')}
-            options={PROMPT_TEMPLATES.map((t) => ({
-              value: t.key,
-              label: t.label,
-              prompt: t.prompt,
-              blurb: t.blurb
-            }))}
-            optionRender={(option) => (
-              <div style={{ padding: '2px 0' }}>
-                <Typography.Text strong>{option.data.label}</Typography.Text>
-                <div style={{ fontSize: 12, color: palette.textMuted, marginTop: 2 }}>
-                  {option.data.blurb}
-                </div>
-              </div>
-            )}
-          />
-        </div>
-        <div style={{ marginLeft: 36, marginTop: 16 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
-            Your prompt
-          </Typography.Text>
-          <Input.TextArea
-            rows={4}
-            maxLength={2000}
-            placeholder='Pick a template above to start, or write your own — e.g. "Which concepts has my child confused the most in the last week?"'
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-          />
+          <div
+            style={{
+              border: `1px solid ${palette.border}`,
+              borderRadius: 8,
+              background: '#fff',
+              padding: 12,
+              transition: 'border-color 120ms ease'
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 8,
+                marginBottom: 10
+              }}
+            >
+              {PROMPT_TEMPLATES.map((t) => {
+                const selected = selectedTemplateKey === t.key;
+                return (
+                  <Card
+                    key={t.key}
+                    hoverable
+                    size="small"
+                    onClick={() => {
+                      setSelectedTemplateKey(t.key);
+                      setCustomPrompt(t.prompt);
+                    }}
+                    styles={{ body: { padding: 10 } }}
+                    style={{
+                      background: t.tint,
+                      border: `1px solid ${selected ? t.border : 'transparent'}`,
+                      boxShadow: selected ? `0 0 0 2px ${t.border}` : 'none',
+                      cursor: 'pointer',
+                      transition: 'box-shadow 120ms ease, border-color 120ms ease'
+                    }}
+                  >
+                    <Typography.Text style={{ display: 'block', marginBottom: 2, fontSize: 13 }}>
+                      {t.label}
+                    </Typography.Text>
+                    <Typography.Paragraph
+                      type="secondary"
+                      style={{ fontSize: 12, lineHeight: 1.25, marginBottom: 0 }}
+                    >
+                      {t.blurb}
+                    </Typography.Paragraph>
+                  </Card>
+                );
+              })}
+            </div>
+            <Input.TextArea
+              variant="borderless"
+              autoSize={{ minRows: 4 }}
+              maxLength={2000}
+              placeholder='Pick a template above to start, or write your own — e.g. "Which concepts has my child confused the most in the last week?"'
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              style={{ padding: '4px 0', resize: 'none', overflow: 'hidden' }}
+            />
+          </div>
           <div style={{ marginTop: 8, textAlign: 'right' }}>
             <Button
               type="primary"
