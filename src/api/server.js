@@ -10,9 +10,12 @@ import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
 import authPassword from './routes/authPassword.js';
 import bootstrapAdmin from './lib/bootstrapAdmin.js';
+import changeAdminPassword from './routes/changeAdminPassword.js';
 import createAnalysisReport from './routes/createAnalysisReport.js';
+import deleteAdminUserData from './routes/deleteAdminUserData.js';
 import deleteAnalysisReport from './routes/deleteAnalysisReport.js';
 import healthcheck from './routes/healthcheck.js';
+import listAdminUsers from './routes/listAdminUsers.js';
 import listAnalysisReports from './routes/listAnalysisReports.js';
 import tutorCreateDoc from './routes/tutorCreateDoc.js';
 import tutorCreateSession from './routes/tutorCreateSession.js';
@@ -58,6 +61,13 @@ export default async function server() {
       if (!request.userId) throw new Error('JWT missing sub claim');
     } catch (err) {
       reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
+    // /api/admin/* is gated to role=admin. The JWT carries the role claim
+    // from the login routes, so we don't need an extra DB lookup on every
+    // request — the token itself is the source of truth.
+    if (url.startsWith('/api/admin/') && request.user?.role !== 'admin') {
+      reply.code(403).send({ error: 'Forbidden' });
     }
   });
 
@@ -66,8 +76,11 @@ export default async function server() {
   authGoogle(app);
   authOtp(app);
   authPassword(app);
+  changeAdminPassword(app);
   createAnalysisReport(app);
+  deleteAdminUserData(app);
   deleteAnalysisReport(app);
+  listAdminUsers(app);
   listAnalysisReports(app);
   tutorCreateDoc(app);
   tutorCreateSession(app);
