@@ -166,9 +166,7 @@ export const visionExtraction = ytai.table(
     id: uuid('id').primaryKey().defaultRandom(),
     imageId: uuid('image_id').notNull().references(() => sessionImage.id),
     regionHash: text('region_hash'),
-    regionBbox: jsonb('region_bbox'),
     extracted: jsonb('extracted').notNull(),
-    confidence: numeric('confidence'),
     // Eyes (vision) identity for the call that populated this row. `model`
     // is what we asked for; `modelVersion` is what the provider returned.
     // Subsequent reads of this row are cache hits — they don't write a new
@@ -221,7 +219,6 @@ export const sessionMessage = ytai.table('session_message', {
   role: text('role').notNull(),
   content: text('content').notNull(),
   imageId: uuid('image_id').references(() => sessionImage.id),
-  regionHash: text('region_hash'),
   // Brain's model identity for this turn. `provider` is the platform that
   // served it (openrouter, anthropic, openai, …); `modelId` is the model
   // string we asked for (e.g. "deepseek/deepseek-v4-flash"). The audit

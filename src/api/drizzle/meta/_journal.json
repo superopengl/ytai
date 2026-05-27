@@ -155,6 +155,13 @@
       "when": 1781600000000,
       "tag": "0021_user_local_login_user_name",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781700000000,
+      "tag": "0022_drop_unused_columns",
+      "breakpoints": true
     }
   ]
 }
