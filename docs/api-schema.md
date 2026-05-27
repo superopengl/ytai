@@ -7,13 +7,79 @@ Fastify HTTP API. All routes are prefixed with `/api` except `/healthcheck`. Aut
 ### `GET /healthcheck`
 Liveness probe. Returns `200 { ok: true }`. No auth.
 
-## Admin *(planned)*
+## Admin
 
-### `POST /api/admin/user`
+Every `/api/admin/*` route requires a YTAI JWT whose `role` claim is `admin`. The global `onRequest` hook in `server.js` rejects everything else with `403 Forbidden` before the handler runs, so individual admin routes never need to re-check the role.
+
+### `GET /api/admin/users`
+List every real user — Google sign-ups, email OTP sign-ups, and any other admins — newest `created_at` first. The bootstrap admin (`auth_provider='local'` with a `user_name` set) is filtered out so the dashboard isn't cluttered with the machine-managed login handle.
+
+**Returns**:
+```json
+{
+  "users": [
+    {
+      "id": "uuid",
+      "name": "string",
+      "role": "student" | "parent" | "teacher" | "admin",
+      "authProvider": "google" | "email" | "local",
+      "email": "string | null",
+      "picture": "string | null",
+      "userName": "string | null",
+      "createdAt": "<iso8601>",
+      "updatedAt": "<iso8601>"
+    }
+  ]
+}
+```
+
+**Errors**:
+- `401` — missing / invalid JWT
+- `403` — JWT's `role` claim is not `admin`
+
+### `POST /api/admin/password`
+Change the signed-in admin's password. Verifies `currentPassword` against the stored scrypt hash, then writes a freshly hashed `newPassword`. The route is admin-only by virtue of the global `/api/admin/*` gate — the JWT's `sub` identifies which admin row to update.
+
+**Body**: `{ "currentPassword": "string", "newPassword": "string" }` (`newPassword` min length 8)
+
+**Returns**: `{ "ok": true }`
+
+**Errors**:
+- `400` — missing fields or `newPassword` shorter than 8 characters
+- `401` — `currentPassword` doesn't match the stored hash
+- `403` — JWT's `role` claim is not `admin`, or the user row no longer has a password hash
+
+**Note**: `bootstrapAdmin` re-asserts the password from `YTAI_ADMIN_PASSWORD` on every server start, so a change made here is reverted on next restart unless the env var is updated too.
+
+### `POST /api/admin/user` *(planned)*
 Create a user directly (bypasses login request flow). Admin-only.
 
 **Body**: `{ name: string, role: "student" | "parent" | "teacher" | "admin" }`
 **Returns**: `{ userId: string }`
+
+### `DELETE /api/admin/user/:id/data`
+Wipe every content row tied to a student account: every `tutor_session` and the cascade beneath it (`session_doc`, `session_image`, `image_ocr`, `vision_extraction`, `session_message`, `session_report`), every `subject_report` the student authored, and every matching `llm_usage` audit row. The `user` row itself is kept so the student can sign back in to a fresh slate. `login_otp` (short-lived auth state) and `tts_audio` (cross-user TTS cache) are deliberately untouched. S3 objects are not deleted by this call — the `<prefix>/images/` lifecycle rule on `YTAI_S3_BUCKET` reclaims them automatically.
+
+The whole wipe runs in a single transaction so partial deletes can't leave dangling rows (an OCR row that points at an already-deleted image, etc.). Restricted to `role='student'` — calling it on an admin/parent/teacher returns `409` and does nothing.
+
+**Returns**:
+```json
+{
+  "ok": true,
+  "deleted": {
+    "sessions": 7,
+    "images": 23,
+    "subjectReports": 2
+  }
+}
+```
+
+**Errors**:
+- `400` — missing `:id`
+- `401` — missing / invalid JWT
+- `403` — JWT's `role` claim is not `admin`
+- `404` — no user with that id
+- `409` — user exists but `role != 'student'`
 
 ## Auth
 
