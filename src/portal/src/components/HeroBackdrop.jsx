@@ -123,33 +123,10 @@ function NotebookPaper() {
   );
 }
 
-function BackdropBlob({ color, size, top, left, right, bottom, kind = 'a', opacity = 0.5, blur = 90 }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={kind === 'b' ? 'clay-blob-b' : 'clay-blob-a'}
-      style={{
-        position: 'absolute',
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: color,
-        filter: `blur(${blur}px)`,
-        opacity,
-        top,
-        left,
-        right,
-        bottom,
-        pointerEvents: 'none'
-      }}
-    />
-  );
-}
-
 // Combined hero backdrop. Place inside any `position: relative; overflow:
-// hidden` container — emits notebook paper, a center-faded dot grid, six
-// pastel blobs, and the floating doodles, all `pointer-events: none` and
-// `aria-hidden`. The parent owns the base background gradient.
+// hidden` container — emits notebook paper, a center-faded dot grid, and
+// the floating doodles, all `pointer-events: none` and `aria-hidden`. The
+// parent owns the base background gradient.
 export default function HeroBackdrop() {
   return (
     <>
@@ -168,12 +145,6 @@ export default function HeroBackdrop() {
           pointerEvents: 'none'
         }}
       />
-      <BackdropBlob color={SAGE}        size={520} top={-120}     left={-160}      opacity={0.55} blur={90} />
-      <BackdropBlob color={MAUVE}       size={420} top={80}       right="-100px"   kind="b" opacity={0.45} blur={90} />
-      <BackdropBlob color={MINT}        size={300} top={260}      right="12%"      kind="b" opacity={0.5}  blur={70} />
-      <BackdropBlob color={PEACH}       size={240} bottom={-40}   left="22%"       opacity={0.4}  blur={60} />
-      <BackdropBlob color={LAVENDER}    size={360} bottom={-60}   right="-80px"    kind="b" opacity={0.4}  blur={90} />
-      <BackdropBlob color={CREAM_PEACH} size={220} top="42%"      left="-60px"     opacity={0.45} blur={70} />
       <FloatingDoodles />
     </>
   );

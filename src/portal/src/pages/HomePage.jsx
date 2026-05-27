@@ -9,13 +9,11 @@ import {
   EditOutlined,
   CalculatorOutlined,
   ExperimentOutlined,
-  SafetyCertificateOutlined,
-  SmileOutlined,
-  TeamOutlined,
   GoogleOutlined,
   HeartFilled,
   GlobalOutlined,
-  RocketOutlined
+  RocketOutlined,
+  LineChartOutlined
 } from '@ant-design/icons';
 import { palette, stickerShadow, radius } from '../theme.js';
 import Logo from '../components/Logo.jsx';
@@ -58,9 +56,11 @@ const {
   text: INK,
   textMuted: INK_MUTED,
   textHint: INK_HINT,
+  textInkSoft: INK_SOFT,
   onDark: ON_DARK,
   gradient: GRAD,
-  tint: TINT
+  tint: TINT,
+  subjects: SUBJECTS
 } = palette;
 
 const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
@@ -118,33 +118,6 @@ function Blob({ color, size, top, left, right, bottom, kind = 'a', opacity = 0.5
   );
 }
 
-function SectionEyebrow({ children, color = SAGE }) {
-  return (
-    <div
-      className="sticker-chip"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 16px',
-        background: BG,
-        color,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
-        marginBottom: 18
-      }}
-    >
-      <span
-        className="breathing-circle"
-        style={{ width: 8, height: 8, background: color, borderRadius: '50%' }}
-      />
-      {children}
-    </div>
-  );
-}
-
 // --- Content data -----------------------------------------------------------
 
 const features = [
@@ -170,11 +143,11 @@ const features = [
       'A Socratic tutor that scaffolds your thinking step by step — never just hands over the answer, always builds understanding.'
   },
   {
-    icon: <GoogleOutlined />,
+    icon: <LineChartOutlined />,
     color: LAVENDER,
-    title: 'One-tap Sign-in',
+    title: 'Spot the Patterns',
     description:
-      'Skip the password. Continue with Google to create a parent, teacher, or student profile in seconds.'
+      'Every session rolls up into a clear report — weak spots, wins, and growth over time, subject by subject.'
   }
 ];
 
@@ -185,48 +158,24 @@ const subjects = [
   { icon: <EditOutlined />, label: 'Writing', color: PEACH }
 ];
 
-const steps = [
-  {
-    num: '1',
-    title: 'Snap your worksheet',
-    description: 'Take a clear photo of the homework, exam, or textbook page you need help with.',
-    color: PEACH
-  },
-  {
-    num: '2',
-    title: 'Circle what’s tricky',
-    description: 'Use the pen to point at the question — or region — that you don’t get yet.',
-    color: CREAM_PEACH
-  },
-  {
-    num: '3',
-    title: 'Get tutored',
-    description: 'Ask in your own words. The tutor walks you through it, the way a great teacher would.',
-    color: MINT
-  }
-];
-
 const personas = [
   {
-    icon: <SmileOutlined />,
     title: 'Students',
     description:
-      'Ages 8–14. Kid-friendly, encouraging, and never gives away answers without working through the reasoning with you.',
-    color: PEACH
+      'Ages 8–14. A kind, encouraging tutor that walks you through the thinking — never just hands over the answer.',
+    bgColor: SUBJECTS.writing.tint
   },
   {
-    icon: <TeamOutlined />,
     title: 'Parents',
     description:
-      'Help your child with homework even when you don’t remember the material — YouTutorAI is your co-tutor.',
-    color: SAGE
+      'Help your kid with homework even when you don’t remember the material yourself. YouTutorAI is your co-tutor at the table.',
+    bgColor: SUBJECTS.reading.tint
   },
   {
-    icon: <SafetyCertificateOutlined />,
     title: 'Teachers',
     description:
-      'Assign as homework support, or walk a student through tricky problems together during class.',
-    color: LAVENDER
+      'Assign it as homework support, or work through a tricky problem with a student during class.',
+    bgColor: SUBJECTS.thinking.tint
   }
 ];
 
@@ -247,7 +196,7 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
     >
       <div
         style={{
-          background: 'rgba(240, 244, 248, 0.85)',
+          background: 'rgba(255, 255, 255, 0.85)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           padding: '12px 18px',
@@ -386,9 +335,8 @@ export default function HomePage() {
                 fontWeight: 500
               }}
             >
-              YouTutorAI is a Socratic homework tutor for kids 8–14. Snap the worksheet, circle
-              what’s tricky, and the AI walks you through it — never just hands over the answer.
-              The pace is calm. The voice is kind.
+              A Socratic homework tutor for kids 8–14. Snap the worksheet, circle what’s tricky,
+              and the tutor walks you through it — calmly, one step at a time.
             </Paragraph>
 
             <div
@@ -473,12 +421,9 @@ export default function HomePage() {
 
       {/* ============ FEATURES ============ */}
       <section
-        style={{ background: BG, padding: '88px 24px 96px', position: 'relative', overflow: 'hidden' }}
+        style={{ background: WHITE, padding: '88px 24px 144px', position: 'relative', overflow: 'hidden' }}
       >
-        <Blob color={LAVENDER} size={300} top={60} right="-60px" opacity={0.45} blur={80} />
-        <Blob color={MINT} size={260} bottom={-50} left="-60px" kind="b" opacity={0.45} blur={80} />
         <div style={{ position: 'relative', maxWidth: 1180, margin: '0 auto', textAlign: 'center' }}>
-          <SectionEyebrow color={SAGE}>How it helps</SectionEyebrow>
           <Title
             level={2}
             style={{
@@ -490,7 +435,7 @@ export default function HomePage() {
               color: INK
             }}
           >
-            Four things make this <span className="gradient-text">different</span>
+            What makes this <span className="gradient-text">different</span>
           </Title>
           <Paragraph
             style={{
@@ -520,7 +465,17 @@ export default function HomePage() {
                     borderRadius: 28
                   }}
                 >
-                  <IconCircle size={72} color={f.color} style={{ marginBottom: 24, fontSize: 28 }}>
+                  <IconCircle
+                    size={48}
+                    color={f.color}
+                    style={{
+                      marginBottom: 8,
+                      fontSize: 40,
+                      background: 'transparent',
+                      boxShadow: 'none',
+                      color: INK_HINT
+                    }}
+                  >
                     {f.icon}
                   </IconCircle>
                   <Title
@@ -551,99 +506,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ============ HOW IT WORKS ============ */}
-      <section
-        style={{ background: BG, padding: '24px 24px 96px', position: 'relative', overflow: 'hidden' }}
-      >
-        <div style={{ position: 'relative', maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
-          <SectionEyebrow color={MAUVE}>How it works</SectionEyebrow>
-          <Title
-            level={2}
-            style={{
-              fontFamily: QUICKSAND,
-              fontSize: 'clamp(32px, 4.5vw, 46px)',
-              marginBottom: 14,
-              letterSpacing: -1,
-              fontWeight: 700,
-              color: INK
-            }}
-          >
-            From photo to <span className="gradient-text">“I get it”</span> in three steps
-          </Title>
-          <Paragraph
-            style={{
-              fontSize: 18,
-              color: INK_MUTED,
-              maxWidth: 560,
-              margin: '0 auto 56px',
-              lineHeight: 1.65,
-              fontWeight: 500
-            }}
-          >
-            No setup, no copy-paste. Works on the phone in your pocket.
-          </Paragraph>
-          <Row gutter={[28, 32]}>
-            {steps.map((s, idx) => (
-              <Col xs={24} sm={8} key={s.num}>
-                <div
-                  className="sticker-card"
-                  style={{
-                    padding: '40px 26px 32px',
-                    height: '100%',
-                    textAlign: 'center',
-                    background: BG,
-                    borderRadius: 28,
-                    position: 'relative'
-                  }}
-                >
-                  <IconCircle
-                    size={76}
-                    color={s.color}
-                    style={{
-                      marginBottom: 22,
-                      fontFamily: QUICKSAND,
-                      fontSize: 32,
-                      fontWeight: 700
-                    }}
-                  >
-                    {s.num}
-                  </IconCircle>
-                  <Title
-                    level={4}
-                    style={{
-                      fontFamily: QUICKSAND,
-                      marginBottom: 10,
-                      fontWeight: 700,
-                      color: INK
-                    }}
-                  >
-                    {s.title}
-                  </Title>
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      lineHeight: 1.65,
-                      color: INK_MUTED,
-                      fontWeight: 500
-                    }}
-                  >
-                    {s.description}
-                  </Text>
-                </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
-      </section>
-
       {/* ============ PERSONAS ============ */}
       <section
-        style={{ background: BG, padding: '24px 24px 96px', position: 'relative', overflow: 'hidden' }}
+        style={{ background: WHITE, padding: '24px 24px 144px', position: 'relative', overflow: 'hidden' }}
       >
-        <Blob color={PEACH} size={300} top={-80} right="-60px" opacity={0.35} blur={80} />
-        <Blob color={LAVENDER} size={260} bottom={-60} left="-50px" kind="b" opacity={0.45} blur={80} />
         <div style={{ position: 'relative', maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
-          <SectionEyebrow color={PEACH}>Who it’s for</SectionEyebrow>
           <Title
             level={2}
             style={{
@@ -675,19 +542,17 @@ export default function HomePage() {
                 <div
                   className="sticker-card"
                   style={{
-                    padding: '36px 28px',
+                    padding: '32px 28px 24px',
                     height: '100%',
-                    textAlign: 'left',
+                    textAlign: 'center',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 14,
-                    background: BG,
+                    alignItems: 'center',
+                    gap: 12,
+                    background: p.bgColor,
                     borderRadius: 28
                   }}
                 >
-                  <IconCircle size={64} color={p.color} style={{ fontSize: 26 }}>
-                    {p.icon}
-                  </IconCircle>
                   <Title
                     level={4}
                     style={{
@@ -721,7 +586,7 @@ export default function HomePage() {
         style={{
           padding: '96px 24px',
           textAlign: 'center',
-          background: '#A595B8'
+          background: SUBJECTS.thinking.color
         }}
       >
         <div
@@ -782,7 +647,7 @@ export default function HomePage() {
               fontWeight: 500
             }}
           >
-            One tap with Google. An admin approves new accounts to keep young learners safe.
+            One tap with Google. New accounts are admin-reviewed to keep young learners safe.
           </Paragraph>
           <div
             style={{
@@ -824,7 +689,7 @@ export default function HomePage() {
         style={{
           padding: '48px 24px 40px',
           textAlign: 'center',
-          background: '#1A202C',
+          background: palette.canvasVoid,
           color: ON_DARK.text,
           display: 'flex',
           flexDirection: 'column',

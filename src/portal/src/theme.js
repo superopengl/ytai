@@ -1,129 +1,122 @@
-// Soft-neumorphism design tokens for YouTutorAI.
+// AntDesign default light theme palette for YouTutorAI.
 //
-// Aesthetic guardrails — based on the uupm.cc "Serenity" mental-wellness demo:
-//   * Calming cool-grey background (#f0f4f8) with paired light/dark shadows
-//     for the neumorphism "pressed into the surface" feel.
-//   * Sage-blue primary (#7c9eb2), mauve secondary (#b8a9c9), peach accent
-//     (#f0b7a4), with mint / lavender / peach utility tints.
-//   * No hard outlines — depth comes entirely from the shadow pair, not from
-//     borders. Borders are an invisible 1px in the surface tone for input
-//     hit-targets only.
-//   * Generous border radii: 16px buttons, 20–24px cards, 50px pills.
-//   * Quicksand for display, Nunito for body — both loaded in index.html.
+// Color tokens follow Ant Design's seed + derived defaults:
+//   * Soft Daybreak Blue primary (#4096ff), Polar Green success (#52c41a),
+//     Calendula Gold warning (#faad14), Dust Red error (#ff4d4f).
+//   * Neutral surfaces use Ant's grey ramp (#fff / #fafafa / #f5f5f5 /
+//     #f0f0f0 / #d9d9d9) so panels read as Ant Design out of the box.
+//   * Text uses Ant's black-alpha scale (88/65/45/25%).
+//   * Borders are #d9d9d9 (primary hairline) and #f0f0f0 (secondary).
 //
 // `theme` is consumed by ConfigProvider. `palette`, `stickerShadow`, and
 // `radius` are exported for direct use in JSX. CSS classes (.sticker-card,
 // .sticker-press, …) live in styles/clay.css and own the hover behavior.
-// The "sticker" prefix is historical — these are now neumorphic.
+// The "sticker" prefix is historical and preserved for API compatibility.
 
-const PRIMARY = '#7C9EB2';       // sage blue-grey — Serenity primary
-const PRIMARY_DARK = '#6A8DA1';
-const SECONDARY = '#B8A9C9';     // mauve / dusty lavender
-const SECONDARY_DARK = '#A595B8';
-const CTA = '#7C9EB2';           // CTA shares the calming primary — gradient handles emphasis
-const CTA_DARK = '#5F8298';
-const ACCENT_MINT = '#A8D5BA';   // soft sage mint
-const ACCENT_PURPLE = '#E6E6FA'; // pale lavender
-const ACCENT_YELLOW = '#FFE8C5'; // warm cream-peach (no harsh sunshine)
-const ACCENT_PEACH = '#F0B7A4';  // peachy coral
-const SUCCESS = '#7BB59A';       // muted sage green — semantic "got it"
-const ERROR = '#E57373';         // soft coral red
+const PRIMARY = '#4096FF';       // Daybreak Blue 5 — softer Ant primary
+const PRIMARY_DARK = '#1677FF';  // Daybreak Blue 6 — hover/active
+const SECONDARY = '#722ED1';     // Golden Purple 6 — complementary accent
+const SECONDARY_DARK = '#531DAB'; // Golden Purple 7
+const CTA = '#4096FF';           // CTA shares primary
+const CTA_DARK = '#1677FF';
+const ACCENT_MINT = '#B7EB8F';   // Polar Green 3 — soft success tint
+const ACCENT_PURPLE = '#F9F0FF'; // Golden Purple 1 — pale lavender tint
+const ACCENT_YELLOW = '#FFFBE6'; // Calendula Gold 1 — pale yellow tint
+const ACCENT_PEACH = '#FFD591';  // Sunset Orange 3 — soft warm tint
+const SUCCESS = '#52C41A';       // Polar Green 6
+const ERROR = '#FF4D4F';         // Dust Red 5
 
-const BG = '#F0F4F8';            // cool pale grey-blue — page bg, neumorphism base
-const BG_PAPER = '#F7FAFD';      // very faint cooler bg for paper / ruled hero
-const BG_PANEL = '#E8EEF4';      // bg-alt — chat surface, recessed panels
-const BG_BUBBLE = '#E6EBF3';     // assistant chat bubbles (slightly deeper)
+const BG = '#F5F5F5';            // Ant grey-3 — page bg / colorBgLayout
+const BG_PAPER = '#FAFAFA';      // Ant grey-2 — paper-like surface
+const BG_PANEL = '#F0F0F0';      // Ant grey-4 — recessed panel
+const BG_BUBBLE = '#F5F5F5';     // assistant chat bubbles
 const SURFACE = '#FFFFFF';
-const SURFACE_OAT = '#E8EEF4';   // recessed surface — menu hover, table header
-const SURFACE_OAT_DARK = '#D8E1EC';
-const TEXT = '#2D3748';          // dark slate ink
-const TEXT_MUTED = '#718096';    // slate gray
-const TEXT_INK_SOFT = '#1A202C'; // deeper ink for high-emphasis text
-const TEXT_HINT = '#A0AEC0';     // mid slate — captions, small labels
-const TEXT_DISABLED = '#CBD5E0';
-const BORDER = '#D6DEE9';        // soft cool-grey hairline (visible only when needed)
-const BORDER_SOFT = '#E2E8F0';   // even softer hairline for dividers
+const SURFACE_OAT = '#FAFAFA';   // Ant grey-2 — menu hover, table header
+const SURFACE_OAT_DARK = '#F0F0F0';
+const TEXT = 'rgba(0, 0, 0, 0.88)';        // colorText
+const TEXT_MUTED = 'rgba(0, 0, 0, 0.65)';  // colorTextSecondary
+const TEXT_INK_SOFT = 'rgba(0, 0, 0, 0.88)';
+const TEXT_HINT = 'rgba(0, 0, 0, 0.45)';   // colorTextTertiary
+const TEXT_DISABLED = 'rgba(0, 0, 0, 0.25)'; // colorTextQuaternary
+const BORDER = '#D9D9D9';        // colorBorder — Ant grey-5
+const BORDER_SOFT = '#F0F0F0';   // colorBorderSecondary — Ant grey-4
 
 // Semantic state colors used in stats panels, validation feedback, etc.
-const STATE_CORRECT = '#7BB59A'; // sage green for "got it right"
-const STATE_WRONG = '#E57373';   // soft coral for "struggled with"
+const STATE_CORRECT = '#52C41A'; // Polar Green 6 — "got it right"
+const STATE_WRONG = '#FF4D4F';   // Dust Red 5 — "struggled with"
 
 // Sider / dark-mode strip used for the session list.
 const SIDER = {
-  bg: '#2D3748',
-  border: '#3D4A60',
-  textPrimary: '#E6EBF3',
-  textMuted: '#A0AEC0',
-  activeBg: '#3D4A60',
+  bg: '#001529',
+  border: '#1F1F1F',
+  textPrimary: 'rgba(255, 255, 255, 0.85)',
+  textMuted: 'rgba(255, 255, 255, 0.45)',
+  activeBg: '#4096FF',
   accent: PRIMARY,
   danger: ERROR
 };
 
 // Pen palette for the annotation canvas. NOT brand colors — the box of pens
-// the student picks from when drawing on a worksheet. Kept saturated so
-// marks read clearly on top of any worksheet color.
+// the student picks from when drawing on a worksheet. Mapped to Ant preset
+// colors so marks read clearly on top of any worksheet color.
 const PENS = {
-  red: '#E57373',
-  green: '#7BB59A',
-  orange: '#F0B7A4',
-  purple: '#B8A9C9',
-  ink: '#1A202C',
-  yellow: '#F5D67D',
-  cyan: '#8FC3D6'
+  red: '#FF4D4F',     // Dust Red 5
+  green: '#52C41A',   // Polar Green 6
+  orange: '#FA8C16',  // Sunset Orange 6
+  purple: '#722ED1',  // Golden Purple 6
+  ink: '#000000',
+  yellow: '#FADB14',  // Sunrise Yellow 6
+  cyan: '#13C2C2'     // Cyan 6
 };
 const PEN_PRESETS = [PENS.red, PENS.green, PENS.orange, PENS.purple, PENS.ink, PENS.yellow, PENS.cyan];
-const AI_ANNOTATION_DEFAULT = PRIMARY;     // sage-blue, default fill for AI annotations
-const CANVAS_VOID = '#2D3748';              // dark slate behind the worksheet on the canvas
+const AI_ANNOTATION_DEFAULT = PRIMARY;     // Daybreak Blue, default fill for AI annotations
+const CANVAS_VOID = '#1F1F1F';              // dark grey behind the worksheet on the canvas
 
 // Subject palette — math/thinking/reading/writing each have a swatch + a
-// pale tint. Tuned to the Serenity palette so subjects still feel calming.
+// pale tint. Aligned to Ant Design preset color ramps.
 const SUBJECTS = {
-  math: { color: '#7C9EB2', tint: '#E2EBF1' },
-  thinking: { color: '#B8A9C9', tint: '#EFEAF4' },
-  reading: { color: '#7BB59A', tint: '#E4F0E9' },
-  writing: { color: '#F0B7A4', tint: '#FBE9E1' }
+  math: { color: '#4096FF', tint: '#E6F4FF' },     // Blue 5 / Blue 1
+  thinking: { color: '#722ED1', tint: '#F9F0FF' }, // Purple 6 / Purple 1
+  reading: { color: '#52C41A', tint: '#F6FFED' },  // Green 6 / Green 1
+  writing: { color: '#FAAD14', tint: '#FFFBE6' }   // Gold 6 / Gold 1
 };
 
 // Text colors used on dark surfaces (footer, sider, scrim ribbons).
 const ON_DARK = {
-  text: 'rgba(255, 255, 255, 0.92)',
-  textMuted: 'rgba(255, 255, 255, 0.62)'
+  text: 'rgba(255, 255, 255, 0.85)',
+  textMuted: 'rgba(255, 255, 255, 0.45)'
 };
 
 // Common overlays — kept as named constants so call sites don't sprinkle
 // rgba() literals.
 const OVERLAY = {
-  // Dark scrim used over photos / canvas for caption ribbons.
-  scrim: 'rgba(45, 55, 72, 0.78)',
+  // Modal-mask scrim, matches Ant colorBgMask.
+  scrim: 'rgba(0, 0, 0, 0.45)',
   inkSheen: 'rgba(0, 0, 0, 0.03)',
-  inkVeil: 'rgba(0, 0, 0, 0.05)',
+  inkVeil: 'rgba(0, 0, 0, 0.06)',
   inkRule: 'rgba(0, 0, 0, 0.10)',
   inkQuote: 'rgba(0, 0, 0, 0.15)',
-  // Ruled-paper hero accent.
-  paperRule: 'rgba(124, 158, 178, 0.18)',
-  // Subtle ink shadow used inside stickerShadow.
-  inkSoft: 'rgba(163, 177, 198, 0.40)'
+  // Ruled-paper hero accent, in primary blue.
+  paperRule: 'rgba(64, 150, 255, 0.12)',
+  // Subtle neutral ink shadow used inside stickerShadow.
+  inkSoft: 'rgba(0, 0, 0, 0.08)'
 };
 
-// Neumorphism shadow pairs. The signature interaction of this style: a soft
-// white highlight on the top-left + a soft cool-grey shadow on the
-// bottom-right makes the element look gently raised from the page. The
-// "press" state inverts both into insets, so the element looks pushed in.
-//
-// "Sticker" naming is preserved for API compatibility — the values now
-// describe a softer, calmer language.
-const SHADOW_LIGHT = '-8px -8px 20px rgba(255, 255, 255, 0.85)';
-const SHADOW_DARK = '8px 8px 20px rgba(163, 177, 198, 0.45)';
-const SHADOW_LIGHT_SM = '-4px -4px 10px rgba(255, 255, 255, 0.80)';
-const SHADOW_DARK_SM = '4px 4px 10px rgba(163, 177, 198, 0.35)';
-const SHADOW_LIGHT_XS = '-2px -2px 6px rgba(255, 255, 255, 0.85)';
-const SHADOW_DARK_XS = '2px 2px 6px rgba(163, 177, 198, 0.40)';
-const SHADOW_INSET_LIGHT = 'inset -4px -4px 10px rgba(255, 255, 255, 0.85)';
-const SHADOW_INSET_DARK = 'inset 4px 4px 10px rgba(163, 177, 198, 0.45)';
+// Soft drop-shadow pairs. Naming preserved for API compatibility — values
+// are tuned to Ant Design's neutral shadow language (light grey diffusion,
+// no colored highlight).
+const SHADOW_LIGHT = '0 1px 2px -2px rgba(0, 0, 0, 0.16)';
+const SHADOW_DARK = '0 3px 6px 0 rgba(0, 0, 0, 0.12)';
+const SHADOW_LIGHT_SM = '0 1px 2px 0 rgba(0, 0, 0, 0.03)';
+const SHADOW_DARK_SM = '0 1px 6px -1px rgba(0, 0, 0, 0.08)';
+const SHADOW_LIGHT_XS = '0 1px 2px 0 rgba(0, 0, 0, 0.03)';
+const SHADOW_DARK_XS = '0 1px 4px -1px rgba(0, 0, 0, 0.06)';
+const SHADOW_INSET_LIGHT = 'inset 0 0 0 1px rgba(0, 0, 0, 0.04)';
+const SHADOW_INSET_DARK = 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.08)';
 
 const stickerShadow = {
-  card: `${SHADOW_LIGHT}, ${SHADOW_DARK}`,
-  cardHover: `-10px -10px 25px rgba(255,255,255,0.95), 10px 10px 25px rgba(163,177,198,0.55)`,
+  card: `${SHADOW_LIGHT}, ${SHADOW_DARK}, 0 9px 28px 8px rgba(0, 0, 0, 0.05)`,
+  cardHover: `0 6px 16px 0 rgba(0, 0, 0, 0.10), 0 3px 6px -4px rgba(0, 0, 0, 0.14), 0 9px 28px 8px rgba(0, 0, 0, 0.06)`,
   button: `${SHADOW_LIGHT_SM}, ${SHADOW_DARK_SM}`,
   buttonHover: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`,
   chip: `${SHADOW_LIGHT_XS}, ${SHADOW_DARK_XS}`,
@@ -171,12 +164,12 @@ const palette = {
   borderSoft: BORDER_SOFT,
   // Tints used for icon plinths and section-eyebrow chips.
   tint: {
-    primary: '#E2EBF1',
-    secondary: '#EFEAF4',
-    cta: '#E2EBF1',
-    mint: '#E4F0E9',
-    purple: '#EFEAF4',
-    yellow: '#FFF6E5'
+    primary: '#E6F4FF',   // Blue 1
+    secondary: '#F9F0FF', // Purple 1
+    cta: '#E6F4FF',
+    mint: '#F6FFED',      // Green 1
+    purple: '#F9F0FF',
+    yellow: '#FFFBE6'     // Gold 1
   },
   // Semantic state — distinct from CTA/error which are action colors.
   state: {
@@ -199,30 +192,27 @@ const palette = {
   // Gradient pair for headline text and the hero CTA button.
   gradient: {
     text: `linear-gradient(135deg, ${PRIMARY} 0%, ${SECONDARY} 100%)`,
-    primary: `linear-gradient(135deg, ${PRIMARY} 0%, #8FAFC4 100%)`,
+    primary: `linear-gradient(135deg, ${PRIMARY} 0%, #69B1FF 100%)`,
     surface: `linear-gradient(135deg, ${BG} 0%, ${BG_PANEL} 100%)`
   }
 };
 
 const theme = {
   token: {
-    // Ant's "primary" is mapped to the sage-blue PRIMARY since the neumorphism
-    // language wants one calm hue across click-targets, with shadow depth
-    // doing the emphasis work rather than a contrasting accent.
+    // Ant Design default seed colors. Primary drives every click-target;
+    // success/warning/error stay on their canonical hues.
     colorPrimary: PRIMARY,
     colorSuccess: SUCCESS,
-    colorWarning: ACCENT_PEACH,
+    colorWarning: '#FAAD14',
     colorError: ERROR,
     colorInfo: PRIMARY,
 
     colorBgLayout: BG,
     colorBgContainer: SURFACE,
-    colorTextBase: TEXT,
+    colorTextBase: '#000000',
     colorBorder: BORDER,
     colorBorderSecondary: BORDER_SOFT,
 
-    // Neumorphism: depth comes from paired shadows, not from hard outlines.
-    // Borders are kept hair-thin so input fields still have a hit-target.
     lineWidth: 1,
     lineWidthBold: 1,
 
@@ -239,9 +229,6 @@ const theme = {
     controlHeightLG: 56,
     controlHeightSM: 40,
 
-    // Every floating Ant component (Dropdown, Popover, Notification, …)
-    // picks up the neumorphism card shadow by default. Per-component
-    // overrides below tighten this further for buttons vs cards vs chips.
     boxShadow: stickerShadow.card,
     boxShadowSecondary: stickerShadow.button,
     boxShadowTertiary: stickerShadow.card
@@ -255,8 +242,6 @@ const theme = {
       controlHeightLG: 56,
       controlHeightSM: 40,
       fontWeight: 600,
-      // Buttons own a tighter shadow pair than cards. The .sticker-btn class
-      // in clay.css handles the inset press-down on :active.
       primaryShadow: stickerShadow.button,
       defaultShadow: stickerShadow.button,
       dangerShadow: stickerShadow.button
@@ -270,12 +255,12 @@ const theme = {
     Input: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}, 0 0 0 3px ${PRIMARY}33`
+      activeShadow: `0 0 0 2px ${PRIMARY}33`
     },
     InputNumber: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}, 0 0 0 3px ${PRIMARY}33`
+      activeShadow: `0 0 0 2px ${PRIMARY}33`
     },
     Select: {
       borderRadius: radius.md,
@@ -285,7 +270,7 @@ const theme = {
     DatePicker: {
       borderRadius: radius.md,
       controlHeight: 48,
-      activeShadow: `0 0 0 3px ${PRIMARY}33`,
+      activeShadow: `0 0 0 2px ${PRIMARY}33`,
       boxShadowSecondary: stickerShadow.card
     },
     Cascader: {
@@ -329,7 +314,7 @@ const theme = {
       borderRadiusLG: radius.md,
       itemBorderRadius: radius.sm,
       activeBarBorderWidth: 0,
-      itemSelectedBg: `${PRIMARY}1A`,
+      itemSelectedBg: '#E6F4FF',
       itemSelectedColor: PRIMARY
     },
     Modal: {
