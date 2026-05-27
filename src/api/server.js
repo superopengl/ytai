@@ -10,6 +10,7 @@ import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
 import authPassword from './routes/authPassword.js';
 import bootstrapAdmin from './lib/bootstrapAdmin.js';
+import failOrphanReports from './lib/failOrphanReports.js';
 import changeAdminPassword from './routes/changeAdminPassword.js';
 import createAnalysisReport from './routes/createAnalysisReport.js';
 import deleteAdminUserData from './routes/deleteAdminUserData.js';
@@ -125,6 +126,11 @@ export default async function server() {
   } catch (err) {
     app.log.error({ err }, 'bootstrapAdmin failed');
   }
+
+  // Anything still 'pending' must be a leftover from the previous process
+  // (its background task didn't survive the restart). Mark them failed so
+  // the polling UI unblocks instead of spinning forever.
+  await failOrphanReports(app.log);
 
   const port = Number(process.env.YTAI_API_PORT ?? 9521);
   await app.listen({ port, host: '0.0.0.0' });
