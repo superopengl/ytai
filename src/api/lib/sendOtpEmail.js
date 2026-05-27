@@ -19,11 +19,16 @@ function getSesClient() {
 export default async function sendOtpEmail({ to, code, expiresAt, recipientName, log }) {
   log?.info({ to, code, expiresAt: expiresAt.toISOString() }, 'OTP issued');
 
-  const from = process.env.YTAI_SES_FROM_EMAIL;
-  if (!from) {
+  const fromAddr = process.env.YTAI_SES_FROM_EMAIL;
+  if (!fromAddr) {
     log?.warn({ to }, 'YTAI_SES_FROM_EMAIL not set; skipping SES send (code still in DB)');
     return { delivered: false, reason: 'SES_NOT_CONFIGURED' };
   }
+  // Inbox clients show the display name when the Source header is RFC 5322
+  // "Name <addr>" — without it Gmail just shows the local part ("yoututorai").
+  // If the operator already set a display-name form in the env var, pass it
+  // through untouched.
+  const from = fromAddr.includes('<') ? fromAddr : `YouTutorAI <${fromAddr}>`;
 
   const ttl = formatMinutes(expiresAt);
   const greeting = recipientName ? `Hi ${escape(recipientName)},` : 'Hi there,';
