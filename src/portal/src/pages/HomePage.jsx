@@ -275,6 +275,7 @@ export default function HomePage() {
     <div style={{ minHeight: '100vh', background: BG, color: INK }}>
       <NavBar isSignedIn={isSignedIn} onSignIn={goToLogin} onGoToTutor={goToTutor} />
 
+      <main>
       {/* ============ HERO ============ */}
       <section
         style={{
@@ -683,6 +684,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      </main>
 
       {/* ============ Footer ============ */}
       <footer

@@ -27,13 +27,13 @@ export default function Logo({
   let src;
   let ratio;
   if (variant === 'square') {
-    src = '/ytai-logo-square.png';
+    src = '/ytai-logo-square.webp';
     ratio = SQUARE_RATIO;
   } else if (variant === 'mark') {
-    src = '/ytai-logo-square.png';
+    src = '/ytai-logo-square.webp';
     ratio = MARK_RATIO;
   } else {
-    src = '/ytai-logo.png';
+    src = '/ytai-logo.webp';
     ratio = LOCKUP_RATIO;
   }
   return (
