@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Input, Select, Tooltip, Upload } from 'antd';
+import { Alert, Button, Input, Select, Tag, Tooltip, Upload } from 'antd';
 import {
   AudioOutlined,
   CheckOutlined,
@@ -714,17 +714,9 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
           {isPdf ? <FilePdfOutlined /> : <PictureOutlined />}
           <span style={{ fontWeight: 600 }}>{label}</span>
           {isCurrent && (
-            <span
-              style={{
-                fontSize: 11,
-                color: ACCENT_BLUE,
-                background: palette.surface,
-                padding: '1px 6px',
-                borderRadius: 10
-              }}
-            >
-              now studying
-            </span>
+            <Tag color="green" style={{ marginInlineEnd: 0 }} variant='outlined'>
+              current
+            </Tag>
           )}
         </div>
         <div
