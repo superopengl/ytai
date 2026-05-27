@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import theme from './theme.js';
 import HomePage from './pages/HomePage.jsx';
+import authSession from './lib/authSession.js';
 
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const TutorPage = lazy(() => import('./pages/TutorPage.jsx'));
@@ -19,6 +20,14 @@ function lazyRoute(element) {
   return <Suspense fallback={null}>{element}</Suspense>;
 }
 
+// /tutor is a student/parent/teacher experience. Admins land here only by
+// typing the URL — bounce them back to /admin so the kid-facing flow stays
+// out of the admin role's path.
+function StudentRoute({ children }) {
+  if (authSession().user?.role === 'admin') return <Navigate to="/admin" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <ConfigProvider theme={theme}>
@@ -26,8 +35,14 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={lazyRoute(<LoginPage />)} />
-          <Route path="/tutor" element={lazyRoute(<TutorPage />)} />
-          <Route path="/tutor/:sessionId" element={lazyRoute(<TutorPage />)} />
+          <Route
+            path="/tutor"
+            element={<StudentRoute>{lazyRoute(<TutorPage />)}</StudentRoute>}
+          />
+          <Route
+            path="/tutor/:sessionId"
+            element={<StudentRoute>{lazyRoute(<TutorPage />)}</StudentRoute>}
+          />
           <Route path="/admin" element={lazyRoute(<AdminPage />)} />
           <Route path="/reports" element={lazyRoute(<ReportsPage />)} />
           <Route path="/privacy_policy" element={lazyRoute(<PrivacyPolicyPage />)} />
