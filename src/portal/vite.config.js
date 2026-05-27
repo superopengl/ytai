@@ -68,8 +68,19 @@ export default defineConfig(({ mode }) => {
             ) {
               return 'vendor-react';
             }
-            if (id.includes('@ant-design/icons')) return 'vendor-antd-icons';
-            if (id.includes('/antd/') || id.includes('/rc-')) return 'vendor-antd';
+            // antd internally imports @ant-design/icons, and the icons
+            // package re-imports antd theme utilities — splitting them
+            // into separate chunks creates a top-level TDZ ("Cannot
+            // access 'X' before initialization") in prod. Keep them
+            // co-located in one vendor chunk so the cycle resolves in
+            // a single module-init pass.
+            if (
+              id.includes('@ant-design/icons') ||
+              id.includes('/antd/') ||
+              id.includes('/rc-')
+            ) {
+              return 'vendor-antd';
+            }
           }
         }
       }
