@@ -130,36 +130,30 @@ function PromptCard({ prompt, style }) {
     }
   };
   return (
-    <Card
-      size="small"
-      style={{ background: palette.bgPanel, position: 'relative', ...style }}
-      styles={{ body: { padding: 12 } }}
-    >
-      <Tooltip title={copied ? 'Copied' : 'Copy prompt'}>
-        <Button
-          type="text"
-          size="small"
-          icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-          onClick={handleCopy}
-          aria-label={copied ? 'Prompt copied' : 'Copy prompt to clipboard'}
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 10,
-            width: 22,
-            height: 22,
-            minWidth: 22,
-            padding: 0,
-            fontSize: 12,
-            color: palette.textMuted
-          }}
-        />
-      </Tooltip>
-      <Typography.Text type="secondary" style={{ fontSize: 11 }}>Your prompt</Typography.Text>
-      <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13, paddingRight: 24 }}>
-        {prompt}
-      </Typography.Paragraph>
-    </Card>
+    <div style={style}>
+      <Card
+        size="small"
+        style={{ background: palette.bgPanel }}
+        styles={{ body: { padding: 12 } }}
+      >
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>Your prompt</Typography.Text>
+        <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13 }}>
+          {prompt}
+        </Typography.Paragraph>
+      </Card>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+        <Tooltip title={copied ? 'Copied' : 'Copy prompt'}>
+          <Button
+            type="link"
+            size="small"
+            shape='circle'
+            icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+            onClick={handleCopy}
+            aria-label={copied ? 'Prompt copied' : 'Copy prompt to clipboard'}
+          />
+        </Tooltip>
+      </div>
+    </div>
   );
 }
 
