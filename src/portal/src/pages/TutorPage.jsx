@@ -319,7 +319,6 @@ export default function TutorPage() {
             subject={subject}
             onSelect={onSelectSession}
             onNewSession={onNewSession}
-            onSessionDeleted={onSessionDeleted}
             creatingSession={creatingSession}
           />
         </Splitter.Panel>
@@ -358,6 +357,7 @@ export default function TutorPage() {
                 onDocCreated={handleDocCreated}
                 onAiAnnotation={handleAiAnnotation}
                 onSelectDoc={handleSelectDoc}
+                onSessionDeleted={onSessionDeleted}
                 getAnnotatedImage={getAnnotatedImage}
               />
             </Splitter.Panel>

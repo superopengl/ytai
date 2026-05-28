@@ -1,27 +1,26 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, ConfigProvider, Empty, message, Popconfirm, Spin, theme, Typography, Space } from 'antd';
-import { DeleteOutlined, FileAddOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  ConfigProvider,
+  Space,
+  Spin,
+  Tabs,
+  theme as antdTheme,
+  Typography
+} from 'antd';
+import { FileAddOutlined, LoadingOutlined } from '@ant-design/icons';
 import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
-
-const SIDER_BG = palette.sider.bg;
-const SIDER_BORDER = palette.sider.border;
-const TEXT_PRIMARY = palette.sider.textPrimary;
-const TEXT_MUTED = palette.sider.textMuted;
-const ACTIVE_BG = palette.sider.activeBg;
-const ACCENT = palette.sider.accent;
 
 export default function TutorSessionsSider({
   currentSessionId,
   subject,
   onSelect,
   onNewSession,
-  onSessionDeleted,
   creatingSession
 }) {
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -40,132 +39,120 @@ export default function TutorSessionsSider({
     load();
   }, [load, currentSessionId]);
 
-  const handleDelete = useCallback(
-    async (sessionId) => {
-      setDeletingId(sessionId);
-      try {
-        const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error("Couldn't delete that session");
-        setSessions((prev) => (prev ? prev.filter((s) => s.id !== sessionId) : prev));
-        onSessionDeleted?.(sessionId);
-      } catch (err) {
-        message.error(err.message || "Couldn't delete that session");
-      } finally {
-        setDeletingId(null);
-      }
-    },
-    [onSessionDeleted]
-  );
+  const visible = useMemo(() => {
+    if (!sessions) return null;
+    return subject ? sessions.filter((s) => s.subject === subject) : sessions;
+  }, [sessions, subject]);
 
+  const items = useMemo(() => {
+    const tabs = [
+      {
+        key: 'new',
+        label: (
+          <Space
+            size={8}
+            align="center"
+            className="ytai-new-report-label"
+            style={{ '--ytai-new-report-color': palette.state.correct }}
+          >
+            {creatingSession ? <LoadingOutlined /> : <FileAddOutlined />}
+            <Typography.Text strong>New Session</Typography.Text>
+          </Space>
+        )
+      }
+    ];
+    if (visible) {
+      for (const s of visible) {
+        tabs.push({
+          key: s.id,
+          label: <SessionTabLabel session={s} />
+        });
+      }
+    }
+    return tabs;
+  }, [visible, creatingSession]);
+
+  const activeKey = currentSessionId ?? 'new';
+
+  // Dark theme scoped to the sider only — same pattern as ReportsList so the
+  // two dark surfaces in the app feel of a piece. darkAlgorithm recolors Tabs
+  // internals automatically; the explicit `palette.sider.bg` sets the surface
+  // behind the tab strip, and `cardBg: 'transparent'` lets the dark surface
+  // show through inactive tab cards.
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-      <div style={containerStyle}>
-        <style>{ROW_CSS}</style>
-        {onNewSession ? (
-          <div style={actionStyle}>
-            <Button
-              // ghost
-              // type="primary"
-              color="green"
-              variant="solid"
-              block
-              icon={<FileAddOutlined />}
-              onClick={onNewSession}
-              loading={creatingSession}
-            >
-              New Session
-            </Button>
+    <ConfigProvider
+      theme={{
+        algorithm: antdTheme.darkAlgorithm,
+        token: {
+          colorTextBase: '#FFFFFF',
+          colorBgBase: palette.sider.bg,
+          colorPrimary: palette.sider.accent,
+          colorBgContainer: palette.sider.bg,
+          colorBgElevated: palette.sider.activeBg,
+          colorBorderSecondary: palette.sider.border,
+          colorText: palette.sider.textPrimary,
+          colorTextSecondary: palette.sider.textMuted,
+          colorTextTertiary: palette.sider.textMuted
+        },
+        components: {
+          Tabs: {
+            itemColor: palette.sider.textMuted,
+            itemHoverColor: palette.sider.textPrimary,
+            itemSelectedColor: palette.sider.textPrimary,
+            inkBarColor: palette.sider.accent,
+            cardBg: 'transparent'
+          }
+        }
+      }}
+    >
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          background: palette.sider.bg,
+          color: palette.sider.textPrimary
+        }}
+      >
+        {sessions === null ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <Spin indicator={<LoadingOutlined spin />} size="small" />
           </div>
-        ) : null}
-        <div style={scrollStyle}>
-          {sessions === null ? (
-            <div style={centeredHint}>
-              <Spin indicator={<LoadingOutlined spin />} size="small" />
-            </div>
-          ) : error ? (
-            <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
-          ) : (() => {
-            const visible = subject ? sessions.filter((s) => s.subject === subject) : sessions;
-            if (visible.length === 0) {
-              return null;
-            }
-            return visible.map((s) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                active={s.id === currentSessionId}
-                deleting={deletingId === s.id}
-                onSelect={onSelect}
-                onDelete={handleDelete}
-              />
-            ));
-          })()}
-        </div>
+        ) : error ? (
+          <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
+        ) : (
+          <Tabs
+            className="ytai-vert-nav-tabs"
+            tabPosition="left"
+            type="card"
+            activeKey={activeKey}
+            onChange={(key) => (key === 'new' ? onNewSession?.() : onSelect?.(key))}
+            items={items}
+          />
+        )}
       </div>
     </ConfigProvider>
   );
 }
 
-function SessionRow({ session, active, deleting, onSelect, onDelete }) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+function SessionTabLabel({ session }) {
   const title = previewLabel(session);
-  const when = formatRelative(session.lastActivityAt);
-  const alwaysShow = confirmOpen || deleting;
+  const when = session.lastActivityAt;
   return (
-    <div
-      className={`ytai-session-row ${alwaysShow ? 'show-delete' : ''}`}
-      style={{
-        ...rowStyle,
-        position: 'relative',
-        background: active ? ACTIVE_BG : 'transparent',
-        borderLeft: active ? `3px solid ${ACCENT}` : '3px solid transparent'
-      }}
-      onClick={() => onSelect?.(session.id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect?.(session.id);
-        }
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={rowTitleStyle}>{title}</div>
-          <div style={rowMetaStyle}>{when}</div>
-        </div>
-        <span className="ytai-session-row-delete" onClick={(e) => e.stopPropagation()}>
-          <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
-            <Popconfirm
-              title="Delete this session?"
-              description="This permanently removes the chat, images, and any reports. You can't undo it."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deleting }}
-              cancelText="Cancel"
-              open={confirmOpen}
-              onOpenChange={(o) => setConfirmOpen(o)}
-              onConfirm={(e) => {
-                e?.stopPropagation?.();
-                onDelete?.(session.id);
-              }}
-              onCancel={(e) => e?.stopPropagation?.()}
-            >
-              <Button
-                type="text"
-                size="small"
-                icon={<DeleteOutlined style={{ color: TEXT_MUTED }} />}
-                loading={deleting}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmOpen(true);
-                }}
-                aria-label="Delete session"
-              />
-            </Popconfirm>
-          </ConfigProvider>
-        </span>
-      </div>
+    <div>
+      <Typography.Text
+        strong
+        ellipsis
+        style={{ display: 'block', fontSize: 13, lineHeight: 1.35 }}
+      >
+        {title}
+      </Typography.Text>
+      {when ? (
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {formatDate(when)} ({formatRelative(when)})
+        </Typography.Text>
+      ) : null}
     </div>
   );
 }
@@ -173,94 +160,37 @@ function SessionRow({ session, active, deleting, onSelect, onDelete }) {
 function previewLabel(session) {
   const raw = typeof session.preview === 'string' ? session.preview.trim() : '';
   if (!raw) return 'New Session';
-  // Single-line preview — strip newlines so they don't break the row.
   const flat = raw.replace(/\s+/g, ' ');
   return flat.length > 60 ? `${flat.slice(0, 57)}…` : flat;
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return '';
+  }
 }
 
 function formatRelative(iso) {
   if (!iso) return '';
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return '';
-  const diff = Date.now() - then;
-  if (diff < 60_000) return 'Just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'just now';
+  if (secs < 90) return '1 minute ago';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.round(days / 30);
+  if (months === 1) return '1 month ago';
+  if (months < 12) return `${months} months ago`;
+  const years = Math.round(days / 365);
+  return years === 1 ? '1 year ago' : `${years} years ago`;
 }
-
-const containerStyle = {
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  minHeight: 0,
-  background: SIDER_BG,
-  color: TEXT_PRIMARY
-};
-const headerStyle = {
-  padding: '8px 12px',
-  borderBottom: `1px solid ${SIDER_BORDER}`,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8
-};
-const actionStyle = {
-  padding: '12px',
-  // borderBottom: `1px solid ${SIDER_BORDER}`
-};
-const scrollStyle = {
-  flex: 1,
-  overflowY: 'auto',
-  minHeight: 0,
-  padding: '0 0 4px'
-};
-const centeredHint = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 24
-};
-const rowStyle = {
-  display: 'block',
-  textAlign: 'left',
-  padding: '10px 13px',
-  border: 'none',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  color: 'inherit'
-};
-const rowTitleStyle = {
-  fontSize: 13,
-  fontWeight: 800,
-  color: 'rgba(255, 255, 255, 0.95)',
-  lineHeight: 1.35,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis'
-};
-const rowMetaStyle = {
-  fontSize: 11,
-  color: 'rgba(255, 255, 255, 0.9)',
-  fontWeight: 600,
-  marginTop: 2
-};
-
-const ROW_CSS = `
-.ytai-session-row {
-  outline: none;
-}
-.ytai-session-row-delete {
-  flex: 0 0 auto;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.ytai-session-row:hover .ytai-session-row-delete,
-.ytai-session-row:focus-within .ytai-session-row-delete,
-.ytai-session-row.show-delete .ytai-session-row-delete {
-  opacity: 1;
-}
-.ytai-session-row-delete:hover .anticon-delete {
-  color: ${palette.sider.danger} !important;
-}
-`;

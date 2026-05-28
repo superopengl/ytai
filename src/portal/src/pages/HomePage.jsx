@@ -134,20 +134,17 @@ const personas = [
   {
     title: 'Students',
     description:
-      'Ages 8–14. A kind, encouraging tutor that walks you through the thinking — never just hands over the answer.',
-    bgColor: SUBJECTS.writing.tint
+      'Ages 8–14. A kind, encouraging tutor that walks you through the thinking — never just hands over the answer.'
   },
   {
     title: 'Parents',
     description:
-      'Help your kid with homework even when you don’t remember the material yourself. YouTutorAI is your co-tutor at the table.',
-    bgColor: SUBJECTS.reading.tint
+      'Help your kid with homework even when you don’t remember the material yourself. YouTutorAI is your co-tutor at the table.'
   },
   {
     title: 'Teachers',
     description:
-      'Assign it as homework support, or work through a tricky problem with a student during class.',
-    bgColor: SUBJECTS.thinking.tint
+      'Assign it as homework support, or work through a tricky problem with a student during class.'
   }
 ];
 
@@ -512,13 +509,13 @@ export default function HomePage() {
                 className="sticker-card"
                 style={{
                   padding: '32px 28px',
-                  // height: '100%',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 12,
-                  background: p.bgColor,
+                  background: WHITE,
+                  border: `2px solid ${palette.border}`,
                   borderRadius: 28
                 }}
               >
@@ -554,7 +551,7 @@ export default function HomePage() {
         style={{
           padding: '96px 24px',
           textAlign: 'center',
-          background: SUBJECTS.thinking.color
+          background: palette.secondaryDark
         }}
       >
         <div

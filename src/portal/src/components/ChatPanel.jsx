@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Input, Select, Tag, Tooltip, Upload } from 'antd';
+import { Alert, Button, Dropdown, Input, message, Modal, Select, Tag, Tooltip, Upload } from 'antd';
 import {
   AudioOutlined,
   CheckOutlined,
   CopyOutlined,
+  DeleteOutlined,
   FilePdfOutlined,
   LoadingOutlined,
+  MoreOutlined,
   MutedOutlined,
   PictureOutlined,
   PlusOutlined,
@@ -57,6 +59,7 @@ export default function ChatPanel({
   onAiAnnotation,
   onDocCreated,
   onSelectDoc,
+  onSessionDeleted,
   getAnnotatedImage
 }) {
   const [messages, setMessages] = useState([]);
@@ -357,6 +360,28 @@ export default function ChatPanel({
     if (speech.listening) speech.stop();
   }, [voice, speech]);
 
+  const [modal, modalContextHolder] = Modal.useModal();
+
+  const handleDeleteSession = useCallback(() => {
+    if (!sessionId) return;
+    modal.confirm({
+      title: 'Delete this session?',
+      content: "This permanently removes the chat, images, and any reports. You can't undo it.",
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error("Couldn't delete that session");
+          onSessionDeleted?.(sessionId);
+        } catch (err) {
+          message.error(err.message || "Couldn't delete that session");
+        }
+      }
+    });
+  }, [modal, sessionId, onSessionDeleted]);
+
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -376,6 +401,7 @@ export default function ChatPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {modalContextHolder}
       <div style={headerStyle}>
         <Tooltip
           title={
@@ -414,6 +440,23 @@ export default function ChatPanel({
             type={voice.enabled ? 'primary' : 'default'}
           />
         </Tooltip>
+        <Dropdown
+          trigger={['click']}
+          placement="bottomRight"
+          menu={{
+            items: [
+              {
+                key: 'delete',
+                label: 'Delete this session',
+                icon: <DeleteOutlined />,
+                danger: true,
+                onClick: handleDeleteSession
+              }
+            ]
+          }}
+        >
+          <Button icon={<MoreOutlined />} aria-label="Session menu" />
+        </Dropdown>
       </div>
       <div ref={scrollRef} style={scrollStyle}>
         {!historyLoaded ? (

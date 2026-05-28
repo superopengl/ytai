@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { GoogleIcon } from './InlineIcons.jsx';
 import authSession from '../lib/authSession.js';
 import loadGoogleSdk from '../lib/loadGoogleSdk.js';
-import { radius } from '../theme.js';
+import { palette, radius } from '../theme.js';
 
 // Read the client ID injected by Vite at build time. Falls back to empty
 // string so the button can render a clear "not configured" hint in dev.
@@ -111,6 +111,9 @@ export default function GoogleSignInButton({
     }
   };
 
+  // Sunrise Yellow (palette.pens.yellow) with dark ink text — bright and
+  // obvious without leaning on Google's blue brand color. White-on-yellow
+  // fails contrast, so text/icon stay on the dark ink token.
   const baseButtonStyle = {
     width: '100%',
     height: 48,
@@ -122,9 +125,9 @@ export default function GoogleSignInButton({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    border: '1px solid rgba(0,0,0,0.08)',
-    background: '#fff',
-    color: 'rgba(0,0,0,0.88)',
+    border: `1px solid ${palette.pens.yellow}`,
+    background: palette.pens.yellow,
+    color: palette.text,
     cursor: 'pointer'
   };
 
