@@ -1,6 +1,6 @@
 // Ported from the "Veterinary Clinic" demo (uupm.cc/demo/veterinary-clinic):
 // a calm, neumorphic palette of teal-blue, mint, peach, and coral on a pale
-// sky background. Plus Jakarta Sans for headings, Poppins for body.
+// sky background. Plus Jakarta Sans for headings, system font for body.
 //
 // Color tokens follow the source's semantic scheme:
 //   * Primary teal-blue (#4A90A4) drives every click-target.
@@ -147,13 +147,15 @@ const radius = {
   pill: 999
 };
 
-// Centralized font stacks — heading uses Plus Jakarta Sans, body uses Poppins.
-// Imported throughout the app instead of redeclaring per-file constants.
+// Centralized font stacks — heading uses Plus Jakarta Sans (the one font we
+// still ship over the wire), body falls back to the OS system font so we
+// don't pay for a second woff2 download. Imported throughout the app
+// instead of redeclaring per-file constants.
 const fonts = {
   heading:
-    '"Plus Jakarta Sans", "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    '"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   body:
-    '"Poppins", "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+    'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 };
 
 const palette = {

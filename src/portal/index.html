@@ -16,38 +16,35 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://accounts.google.com" crossorigin />
     <!--
-      Font weights trimmed to what the homepage paints above the fold:
-        - Plus Jakarta Sans 700/800: hero h1 + section h2 headings.
-        - Poppins 400/500/700: body, intro paragraph, footer text.
-      Other weights asked for by deeper routes (e.g. 600 on LogoPage)
-      fall back to the browser's nearest-weight synthesis. Cuts the
-      font CSS from 9 declared weights to 5, which translates to
-      ~3 woff2 files instead of 5.
+      Only Plus Jakarta Sans (700 + 800) ships over the wire — used for
+      every heading, where letter-shape character is most visible. Body
+      text uses the OS system font (SF Pro / Segoe UI / Roboto) so we
+      save the second woff2 family entirely. 2 woff2 files total.
     -->
     <link
       rel="preload"
       as="style"
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Poppins:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&display=swap"
       onload="this.onload=null;this.rel='stylesheet'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Poppins:wght@400;500;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&display=swap"
       />
     </noscript>
     <style>
       body {
         margin: 0;
         padding: 0;
-        font-family: 'Poppins', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         background: #F8FBFC;
         color: #1E3A4C;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
       h1, h2, h3, h4, h5, h6 {
-        font-family: 'Plus Jakarta Sans', 'Poppins', system-ui, sans-serif;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
         font-weight: 700;
       }
     </style>
