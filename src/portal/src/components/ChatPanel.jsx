@@ -630,7 +630,7 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
           )}
         </div>
         {(canReplay || canCopy) && (
-          <div style={{ marginTop: 4, display: 'flex', gap: 0 }}>
+          <div style={{ marginTop: 4, display: 'flex', gap: 0, alignSelf: 'flex-end' }}>
             {canReplay && (
               <Tooltip title={isSpeaking ? 'Stop reading' : 'Read this aloud'}>
                 <Button
