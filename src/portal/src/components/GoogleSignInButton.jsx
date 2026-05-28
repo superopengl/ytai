@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { GoogleIcon } from './InlineIcons.jsx';
 import authSession from '../lib/authSession.js';
 import loadGoogleSdk from '../lib/loadGoogleSdk.js';
@@ -26,32 +26,42 @@ export default function GoogleSignInButton({
   onSuccess,
   onError
 }) {
-  const [ready, setReady] = useState(false);
+  const [loadingSdk, setLoadingSdk] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const warmedRef = useRef(false);
 
-  useEffect(() => {
-    if (!CLIENT_ID) return;
-    let cancelled = false;
-    loadGoogleSdk()
-      .then(() => {
-        if (!cancelled) setReady(true);
-      })
-      .catch((e) => {
+  // Kick off the SDK fetch on first hover/focus so the eventual click feels
+  // instant, but only if the visitor actually shows intent. Visitors who
+  // never aim at the button (most of them) skip the 95 KB entirely.
+  const warmSdk = () => {
+    if (warmedRef.current || !CLIENT_ID) return;
+    warmedRef.current = true;
+    loadGoogleSdk().catch(() => {
+      // Real error surfaces on click; silent here so a flaky network on
+      // hover doesn't paint a red banner the user never asked for.
+      warmedRef.current = false;
+    });
+  };
+
+  const triggerSignIn = async () => {
+    setError(null);
+    if (!window.google?.accounts?.oauth2) {
+      setLoadingSdk(true);
+      try {
+        await loadGoogleSdk();
+      } catch (e) {
         console.error('[GoogleSignIn] Google SDK never loaded', e);
-        if (!cancelled) setError(e.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const triggerSignIn = () => {
+        setError(e.message);
+        setLoadingSdk(false);
+        return;
+      }
+      setLoadingSdk(false);
+    }
     if (!window.google?.accounts?.oauth2) {
       setError('Google sign-in not ready');
       return;
     }
-    setError(null);
     let client;
     try {
       client = window.google.accounts.oauth2.initTokenClient({
@@ -144,13 +154,21 @@ export default function GoogleSignInButton({
     );
   }
 
-  const disabled = !ready || submitting;
+  const disabled = loadingSdk || submitting;
+  const label = submitting
+    ? 'Signing in…'
+    : loadingSdk
+      ? 'Loading…'
+      : 'Continue with Google';
 
   return (
     <div style={{ width: '100%' }}>
       <button
         type="button"
         onClick={triggerSignIn}
+        onMouseEnter={warmSdk}
+        onFocus={warmSdk}
+        onTouchStart={warmSdk}
         disabled={disabled}
         style={{
           ...baseButtonStyle,
@@ -159,7 +177,7 @@ export default function GoogleSignInButton({
         }}
       >
         <GoogleIcon />
-        {submitting ? 'Signing in…' : 'Continue with Google'}
+        {label}
       </button>
       {error && (
         <div
@@ -177,19 +195,6 @@ export default function GoogleSignInButton({
         >
           {error}
         </div>
-      )}
-      {!ready && !error && (
-        <span
-          style={{
-            display: 'block',
-            marginTop: 6,
-            fontSize: 12,
-            textAlign: 'center',
-            color: 'rgba(0,0,0,0.45)'
-          }}
-        >
-          Loading Google sign-in…
-        </span>
       )}
     </div>
   );
