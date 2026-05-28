@@ -180,43 +180,37 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
         {isSignedIn ? (
           <button
             type="button"
-            className="sticker-btn sticker-press"
+            className="sticker-btn sticker-press ytai-nav-cta"
             onClick={onGoToTutor}
             style={{
               background: GRAD.primary,
               color: '#fff',
-              padding: '10px 24px',
-              fontSize: 15,
               cursor: 'pointer',
               fontFamily: 'inherit',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 10,
               border: 0
             }}
           >
-            <RocketIcon style={{ fontSize: 18 }} />
+            <RocketIcon style={{ fontSize: 16 }} />
             Start session
           </button>
         ) : (
           <button
             type="button"
-            className="sticker-btn sticker-press"
+            className="sticker-btn sticker-press ytai-nav-cta"
             onClick={onSignIn}
             style={{
               background: GRAD.primary,
               color: '#fff',
-              padding: '10px 24px',
-              fontSize: 15,
               cursor: 'pointer',
               fontFamily: 'inherit',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 10,
               border: 0
             }}
           >
-            <GoogleIcon style={{ fontSize: 18 }} />
+            <GoogleIcon style={{ fontSize: 16 }} />
             Sign in
           </button>
         )}

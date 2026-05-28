@@ -183,6 +183,24 @@
   }
 }
 
+/* Floating NavBar CTA: keep the label on one line and trim padding +
+ * font on phones so the call-to-action ("Sign in" / "Start session")
+ * doesn't wrap next to the logo on narrow screens. Desktop sizing
+ * stays generous. */
+.ytai-nav-cta {
+  white-space: nowrap;
+  padding: 8px 14px;
+  font-size: 13px;
+  gap: 8px;
+}
+@media (min-width: 480px) {
+  .ytai-nav-cta {
+    padding: 10px 24px;
+    font-size: 15px;
+    gap: 10px;
+  }
+}
+
 /* ---- Reduced motion ----------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
