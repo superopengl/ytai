@@ -393,7 +393,7 @@ export default function HomePage() {
 
       {/* ============ FEATURES ============ */}
       <section
-        style={{ background: WHITE, padding: '88px 24px 144px', position: 'relative', overflow: 'hidden' }}
+        style={{ background: WHITE, padding: '88px 24px', position: 'relative', overflow: 'hidden' }}
       >
         <div style={{ position: 'relative', maxWidth: 1180, margin: '0 auto', textAlign: 'center' }}>
           <h2
@@ -427,7 +427,7 @@ export default function HomePage() {
                 className="sticker-card"
                 style={{
                   padding: '32px 24px',
-                  height: '100%',
+                  // height: '100%',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
@@ -478,7 +478,7 @@ export default function HomePage() {
 
       {/* ============ PERSONAS ============ */}
       <section
-        style={{ background: WHITE, padding: '24px 24px 144px', position: 'relative', overflow: 'hidden' }}
+        style={{ background: WHITE, padding: '24px 24px 88px', position: 'relative', overflow: 'hidden' }}
       >
         <div style={{ position: 'relative', maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
           <h2
@@ -512,7 +512,7 @@ export default function HomePage() {
                 className="sticker-card"
                 style={{
                   padding: '32px 28px',
-                  height: '100%',
+                  // height: '100%',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
