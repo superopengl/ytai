@@ -164,10 +164,8 @@ function NavBar({ isSignedIn, onSignIn, onGoToTutor }) {
       }}
     >
       <div
+        className="ytai-nav-glass"
         style={{
-          background: 'rgba(255, 255, 255, 0.85)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
           padding: '12px 18px',
           display: 'flex',
           alignItems: 'center',

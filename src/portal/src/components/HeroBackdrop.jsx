@@ -51,6 +51,7 @@ function FloatingDoodles() {
   return (
     <div
       aria-hidden="true"
+      className="ytai-hero-decoration"
       style={{
         position: 'absolute',
         inset: 0,
@@ -104,6 +105,7 @@ function NotebookPaper() {
   return (
     <div
       aria-hidden="true"
+      className="ytai-hero-decoration"
       style={{
         position: 'absolute',
         inset: 0,
@@ -133,6 +135,7 @@ export default function HeroBackdrop() {
       <NotebookPaper />
       <div
         aria-hidden="true"
+        className="ytai-hero-decoration"
         style={{
           position: 'absolute',
           inset: 0,
