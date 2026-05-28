@@ -14,7 +14,7 @@ import {
   RocketIcon,
   LineChartIcon
 } from '../components/InlineIcons.jsx';
-import { palette, stickerShadow, radius } from '../theme.js';
+import { palette, stickerShadow, radius, fonts } from '../theme.js';
 import Logo from '../components/Logo.jsx';
 import authSession from '../lib/authSession.js';
 
@@ -60,7 +60,7 @@ const {
   subjects: SUBJECTS
 } = palette;
 
-const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
+const QUICKSAND = fonts.heading;
 
 // --- Visual primitives ------------------------------------------------------
 
@@ -655,7 +655,7 @@ export default function HomePage() {
         style={{
           padding: '48px 24px 40px',
           textAlign: 'center',
-          background: palette.canvasVoid,
+          background: palette.bgDeep,
           color: ON_DARK.text,
           display: 'flex',
           flexDirection: 'column',

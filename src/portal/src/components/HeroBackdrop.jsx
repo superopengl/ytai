@@ -6,7 +6,7 @@ import {
   RocketIcon,
   StarFilledIcon
 } from './InlineIcons.jsx';
-import { palette } from '../theme.js';
+import { palette, fonts } from '../theme.js';
 
 const {
   primary: SAGE,
@@ -18,7 +18,7 @@ const {
   accentYellow: CREAM_PEACH
 } = palette;
 
-const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
+const QUICKSAND = fonts.heading;
 
 const DOODLE_ITEMS = [
   // Top band

@@ -1,10 +1,10 @@
 import { Typography } from 'antd';
-import theme, { palette as brand } from '../theme.js';
+import theme, { palette as brand, fonts } from '../theme.js';
 import Logo from '../components/Logo.jsx';
 
 const { Title, Paragraph, Text } = Typography;
 
-const QUICKSAND = "'Quicksand', 'Nunito', system-ui, sans-serif";
+const QUICKSAND = fonts.heading;
 
 // Color sections — read straight from the brand palette so this page can
 // never drift from theme.js. Each entry names the JSX-friendly path
@@ -370,7 +370,7 @@ export default function LogoPage() {
           <div style={{ display: 'grid', gap: 20 }}>
             <div>
               <Text type="secondary" style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6 }}>
-                DISPLAY · QUICKSAND 700
+                DISPLAY · PLUS JAKARTA SANS 700
               </Text>
               <div
                 style={{
@@ -397,11 +397,11 @@ export default function LogoPage() {
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6 }}>
-                BODY · NUNITO 500
+                BODY · POPPINS 500
               </Text>
               <div
                 style={{
-                  fontFamily: 'Nunito, system-ui, sans-serif',
+                  fontFamily: fonts.body,
                   fontSize: 17,
                   fontWeight: 500,
                   lineHeight: 1.65,
