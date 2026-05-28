@@ -102,7 +102,20 @@ export default async function server() {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const publicDir = path.resolve(__dirname, '../../public');
   if (isProd && existsSync(publicDir)) {
-    await app.register(fastifyStatic, { root: publicDir, prefix: '/' });
+    await app.register(fastifyStatic, {
+      root: publicDir,
+      prefix: '/',
+      // Vite emits content-hashed filenames into /assets/*, so they are
+      // safe to cache forever. Everything else (index.html, favicons,
+      // robots.txt) stays short-lived so deploys take effect immediately.
+      setHeaders(res, filePath) {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+        }
+      }
+    });
     // SPA fallback: any non-/api/* miss falls through to index.html so
     // react-router-dom can take over client-side. /api/* keeps the
     // standard JSON 404 so misrouted API calls don't silently land on
