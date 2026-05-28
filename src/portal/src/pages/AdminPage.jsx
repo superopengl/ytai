@@ -310,6 +310,7 @@ function UsersPanel() {
         title: 'Username',
         dataIndex: 'name',
         key: 'name',
+        sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         render: (_, row) => (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Avatar
@@ -335,6 +336,7 @@ function UsersPanel() {
         title: 'Email',
         dataIndex: 'email',
         key: 'email',
+        sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
         render: (email) => (
           <span style={{ color: email ? palette.text : palette.textMuted }}>
             {email || '—'}
