@@ -433,7 +433,7 @@ export default function ChatPanel({
                   doc={item.data}
                   sessionId={sessionId}
                   isCurrent={item.data.id === currentDocId}
-                  onSelect={() => onSelectDoc?.(item.data.id, 1)}
+                  onSelect={(pageNumber) => onSelectDoc?.(item.data.id, pageNumber ?? 1)}
                 />
               );
             }
@@ -679,11 +679,11 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
       <div
         role="button"
         tabIndex={0}
-        onClick={onSelect}
+        onClick={() => onSelect?.(1)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            onSelect?.();
+            onSelect?.(1);
           }
         }}
         style={{
@@ -727,20 +727,24 @@ function DocBubble({ doc, sessionId, isCurrent, onSelect }) {
             minWidth: 0,
             scrollbarWidth: 'thin'
           }}
-          onClick={(e) => e.stopPropagation()}
         >
           {pages.map((page) => (
             <AuthedImage
               key={page.id}
               src={`/api/tutor/${sessionId}/image/${page.id}`}
               alt={`page ${page.pageNumber}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect?.(page.pageNumber);
+              }}
               style={{
                 width: 80,
                 height: 100,
                 objectFit: 'cover',
                 borderRadius: 6,
                 background: palette.surface,
-                flex: '0 0 auto'
+                flex: '0 0 auto',
+                cursor: 'pointer'
               }}
             />
           ))}
