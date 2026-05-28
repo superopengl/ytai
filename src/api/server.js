@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
+import fastifyCompress from '@fastify/compress';
 import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
 import pinoPretty from 'pino-pretty';
@@ -40,6 +41,18 @@ export default async function server() {
       ? true
       : { stream: pinoPretty({ colorize: true, translateTime: 'SYS:HH:MM:ss.l' }) },
     bodyLimit: 20 * 1024 * 1024
+  });
+
+  // Brotli/gzip everything we can — text/* (HTML, JS, CSS, JSON) compresses
+  // 60-80% on the wire. Threshold of 1024 skips tiny payloads where the
+  // CPU cost outweighs the savings. Safe to leave global: the SSE chat
+  // stream calls `reply.hijack()` so @fastify/compress never sees it, and
+  // the TTS route serves `audio/mpeg` which isn't in the compressible
+  // mime-type list.
+  await app.register(fastifyCompress, {
+    global: true,
+    threshold: 1024,
+    encodings: ['br', 'gzip', 'deflate']
   });
 
   const jwtSecret = process.env.YTAI_JWT_SECRET;
