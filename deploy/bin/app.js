@@ -19,11 +19,6 @@ const imageTag =
   app.node.tryGetContext("imageTag") ?? process.env.IMAGE_TAG ?? "latest";
 const appRepoName =
   app.node.tryGetContext("appRepoName") ?? process.env.APP_REPO_NAME ?? "ytai";
-const imageRetentionDays = Number(
-  app.node.tryGetContext("imageRetentionDays") ??
-    process.env.YTAI_IMAGE_RETENTION_DAYS ??
-    30,
-);
 // Optional — leave unset to disable Google SSO on prod. Public string from
 // the Google Cloud Console (OAuth 2.0 Web Client ID).
 const googleClientId =
@@ -86,7 +81,6 @@ new YoututoraiStack(app, `ytai-${stage}`, {
   hostedZoneName,
   appRepoName,
   imageTag,
-  imageRetentionDays,
   googleClientId,
   sesFromEmail,
   chatModel,

@@ -169,6 +169,13 @@
       "when": 1781800000000,
       "tag": "0023_drop_llm_usage_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781900000000,
+      "tag": "0024_drop_session_image_content_hash",
+      "breakpoints": true
     }
   ]
 }

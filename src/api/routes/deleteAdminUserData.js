@@ -11,6 +11,7 @@ import {
   user,
   visionExtraction
 } from '../db/schema.js';
+import { markObjectOrphan } from '../lib/s3.js';
 
 // DELETE /api/admin/user/:id/data
 //
@@ -65,12 +66,20 @@ export default function deleteAdminUserData(fastify) {
       const subjectReportIds = subjectReports.map((r) => r.id);
 
       let imageIds = [];
+      const orphanUrls = [];
       if (sessionIds.length > 0) {
         const images = await tx
-          .select({ id: sessionImage.id })
+          .select({ id: sessionImage.id, storageUrl: sessionImage.storageUrl })
           .from(sessionImage)
           .where(inArray(sessionImage.sessionId, sessionIds));
         imageIds = images.map((i) => i.id);
+        orphanUrls.push(...images.map((i) => i.storageUrl));
+
+        const docs = await tx
+          .select({ sourcePdfUrl: sessionDoc.sourcePdfUrl })
+          .from(sessionDoc)
+          .where(inArray(sessionDoc.sessionId, sessionIds));
+        orphanUrls.push(...docs.map((d) => d.sourcePdfUrl).filter(Boolean));
       }
 
       if (sessionIds.length > 0) {
@@ -100,7 +109,8 @@ export default function deleteAdminUserData(fastify) {
           sessions: sessionIds.length,
           images: imageIds.length,
           subjectReports: subjectReportIds.length
-        }
+        },
+        orphanUrls
       };
     });
 
@@ -111,6 +121,14 @@ export default function deleteAdminUserData(fastify) {
     if (result.kind === 'notStudent') {
       reply.code(409);
       return { error: `Refusing to wipe data for non-student account (role=${result.role})` };
+    }
+
+    // Tag the S3 bytes as orphan after commit. The bucket's tag-filtered
+    // lifecycle rule reaps them on the next daily sweep (~24h).
+    for (const url of result.orphanUrls) {
+      markObjectOrphan(url).catch((err) => {
+        request.log.error({ url, err }, 'deleteAdminUserData: orphan tag failed');
+      });
     }
 
     request.log.info(

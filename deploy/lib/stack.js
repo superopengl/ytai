@@ -42,7 +42,6 @@ export default class YoututoraiStack extends Stack {
       hostedZoneName,
       appRepoName,
       imageTag,
-      imageRetentionDays,
       googleClientId,
       sesFromEmail,
       chatModel,
@@ -146,20 +145,25 @@ export default class YoututoraiStack extends Stack {
 
     // === Image bucket =======================================================
 
-    // Shared bucket: `images/<hash>.<ext>` (session uploads, expire on a
-    // schedule), `audio/<hash>.mp3` (TTS cache, kept indefinitely since
-    // synthesis cost dominates storage). The lifecycle rule is scoped to
-    // the images/ prefix so audio survives.
+    // Shared bucket: `images/<uuid>.<ext>` (session uploads, kept forever
+    // unless the owning session is deleted), `audio/<hash>.mp3` (TTS cache,
+    // kept indefinitely since synthesis cost dominates storage).
+    //
+    // Cleanup is driven by the app: when a session/doc is deleted, the
+    // delete handler PUTs a `lifecycle=orphan` tag on the S3 object. The
+    // tag-filtered rule below reaps those orphans on the next daily sweep
+    // (~24h). No prefix-based expiry — live session content stays until
+    // the user (or admin wipe) deletes it.
     const imageBucket = new Bucket(this, "ImageBucket", {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       lifecycleRules: [
         {
-          id: `expire-${stage}-images`,
+          id: `expire-${stage}-orphans`,
           enabled: true,
-          prefix: `${stage}/images/`,
-          expiration: Duration.days(imageRetentionDays),
+          tagFilters: { lifecycle: "orphan" },
+          expiration: Duration.days(1),
         },
       ],
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
@@ -212,7 +216,6 @@ export default class YoututoraiStack extends Stack {
         // Local-dev laptops use "dev/…" by default.
         YTAI_S3_PREFIX: stage,
         YTAI_AWS_REGION: this.region,
-        YTAI_IMAGE_RETENTION_DAYS: String(imageRetentionDays),
         YTAI_ADMIN_USERNAME: "admin",
         ...(googleClientId ? { YTAI_GOOGLE_CLIENT_ID: googleClientId } : {}),
         ...(sesFromEmail ? { YTAI_SES_FROM_EMAIL: sesFromEmail } : {}),

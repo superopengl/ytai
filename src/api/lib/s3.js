@@ -1,6 +1,7 @@
 import {
   S3Client,
   PutObjectCommand,
+  PutObjectTaggingCommand,
   GetObjectCommand,
   HeadObjectCommand,
   NoSuchKey,
@@ -96,6 +97,31 @@ export async function getObjectBytes(s3Url) {
   } catch (err) {
     if (err instanceof NoSuchKey || err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
       return null;
+    }
+    throw err;
+  }
+}
+
+// Mark an S3 object as orphan so the bucket's tag-filtered lifecycle rule
+// deletes it on the next sweep (24h-ish). Used by the session/doc/admin
+// delete paths: the DB row goes immediately, the underlying bytes follow.
+// No-ops for non-S3 URLs (local-dev `file://` paths) and missing objects
+// (404 on tag is fine — there's nothing to clean up). Other errors bubble
+// so the caller can log them.
+export async function markObjectOrphan(s3Url) {
+  const parsed = parseS3Url(s3Url);
+  if (!parsed) return;
+  try {
+    await getClient().send(
+      new PutObjectTaggingCommand({
+        Bucket: parsed.bucket,
+        Key: parsed.key,
+        Tagging: { TagSet: [{ Key: 'lifecycle', Value: 'orphan' }] }
+      })
+    );
+  } catch (err) {
+    if (err instanceof NoSuchKey || err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
+      return;
     }
     throw err;
   }

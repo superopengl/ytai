@@ -1,8 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import { sessionDoc, sessionImage, tutorSession } from '../db/schema.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
-import hashBuffer from '../lib/hashBuffer.js';
 import persistImage from '../lib/persistImage.js';
 
 // Create a new doc on a session from 1..N images. Each image becomes a
@@ -36,14 +36,19 @@ export default function tutorCreateDoc(fastify) {
       reply.code(400);
       return { error: 'no valid images supplied' };
     }
+    // Pre-generate the row UUID so the S3 key (one-to-one with the row)
+    // can be written before the DB insert. Keeps the transaction short
+    // and makes orphan-tagging on session delete trivial: each S3 object
+    // belongs to exactly one session_image row.
     const persisted = [];
     for (const d of usable) {
+      const imageId = randomUUID();
       const { storageUrl } = await persistImage({
         bytes: d.bytes,
-        contentHash: d.contentHash,
+        imageId,
         mimeType: d.mimeType
       });
-      persisted.push({ ...d, storageUrl });
+      persisted.push({ ...d, imageId, storageUrl });
     }
 
     let txResult;
@@ -83,30 +88,25 @@ export default function tutorCreateDoc(fastify) {
         const inserted = [];
         let pageNumber = 1;
         for (const p of persisted) {
-          // Dedup within the doc: re-uploading the same bytes onto the same
-          // page collides on (doc_id, content_hash). When it does, skip.
           const [row] = await tx
             .insert(sessionImage)
             .values({
+              id: p.imageId,
               sessionId,
               docId: docRow.id,
               pageNumber,
-              contentHash: p.contentHash,
               storageUrl: p.storageUrl,
               width: p.width,
               height: p.height
             })
-            .onConflictDoNothing()
             .returning({
               id: sessionImage.id,
               pageNumber: sessionImage.pageNumber,
               width: sessionImage.width,
               height: sessionImage.height
             });
-          if (row) {
-            inserted.push({ ...row, storageUrl: p.storageUrl });
-            pageNumber += 1;
-          }
+          inserted.push({ ...row, storageUrl: p.storageUrl });
+          pageNumber += 1;
         }
 
         if (inserted.length === 0) {
@@ -187,7 +187,6 @@ function decodeAndDescribe(image) {
   return {
     bytes: decoded.bytes,
     mimeType: decoded.mimeType,
-    contentHash: hashBuffer(decoded.bytes),
     width: Math.max(0, Math.round(Number(image?.width) || 0)),
     height: Math.max(0, Math.round(Number(image?.height) || 0))
   };

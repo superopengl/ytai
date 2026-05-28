@@ -123,11 +123,6 @@ export const sessionImage = ytai.table(
     // doc; ordering within the doc is page_number (1..N).
     docId: uuid('doc_id').notNull().references(() => sessionDoc.id),
     pageNumber: integer('page_number').notNull().default(1),
-    // sha256 of the flattened canvas bytes — same hash within a doc returns
-    // the existing row so vision_extraction can be reused. Dedup is per-doc
-    // (not per-session) so the same photo can legitimately appear in two
-    // different docs without collision.
-    contentHash: text('content_hash').notNull(),
     storageUrl: text('storage_url').notNull(),
     width: integer('width').notNull(),
     height: integer('height').notNull(),
@@ -135,7 +130,6 @@ export const sessionImage = ytai.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
   },
   (t) => ({
-    docHashUnique: uniqueIndex('session_image_doc_hash_uq').on(t.docId, t.contentHash),
     docPageUnique: uniqueIndex('session_image_doc_page_uq').on(t.docId, t.pageNumber)
   })
 );

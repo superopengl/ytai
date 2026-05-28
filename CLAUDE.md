@@ -29,7 +29,7 @@ Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sh
 
 1. User visits the homepage and signs in via one of: Google SSO (one-tap), email OTP (`/login`, 6-digit code), or — admins only — username + password (`/login` → Admin tab).
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
-3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Bytes are deduped by sha256 and persisted; the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
+3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Each upload writes its own S3 object (key = the new `session_image.id`); the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
 4. **deepseek-v4-flash ("Brain")** runs on every turn. Two image tools, used in order of cheapness:
    - `find_text_on_image(query)` — looks up printed text in the EasyOCR results. Fast, tight bboxes. Returns up to 5 matches + a union bbox.
    - `lookup_on_image(question)` — falls back to Eyes for handwriting, math notation, diagrams, or anything semantic. One focused question per call.
@@ -169,7 +169,6 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
 | `YTAI_S3_BUCKET` | Bucket for session images and TTS audio. Unset → local-disk fallback (dev only). | *(required in prod)* |
 | `YTAI_S3_PREFIX` | Key namespace inside `YTAI_S3_BUCKET`. CDK sets this to the deployed stage (`prod`). Local dev defaults to `dev` so a misconfigured laptop can't write into prod's keyspace. | `dev` |
-| `YTAI_IMAGE_RETENTION_DAYS` | Auto-delete uploaded images after N days (scoped to `<prefix>/images/` via S3 lifecycle) | `30` |
 | `YTAI_SES_FROM_EMAIL` | Verified AWS SES sender identity for sign-in OTP emails. Unset disables SES (the OTP still lands in the DB and logs so an operator can read it back). | *(unset)* |
 | `YTAI_AWS_REGION` | AWS region for SES and S3. Standard `AWS_*` credentials (env, shared config, IAM role) are resolved by the SDK chain. | `ap-southeast-2` |
 | `YTAI_TTS_BASE_URL` | OpenAI-compatible `/audio/speech` endpoint (e.g. local Kokoro at `http://localhost:9530/v1`). Unset disables voice (route returns 503, UI greys out). | *(unset)* |
