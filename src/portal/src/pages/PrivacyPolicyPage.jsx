@@ -61,8 +61,9 @@ export default function PrivacyPolicyPage() {
         <Title level={3}>How long we keep it</Title>
         <Paragraph>
           We keep your data indefinitely — the system does not auto-purge sessions, images, or
-          transcripts. You stay in control: delete a session yourself and its photos, documents,
-          and chat history are permanently removed.
+          transcripts. You stay in control: delete a session yourself and its chat history is
+          removed immediately. The uploaded photos and documents tied to that session are
+          marked for deletion and permanently removed from storage within 24–48 hours.
         </Paragraph>
         <Paragraph>
           LLM token-usage records (model, token counts, cost) are kept forever for billing and

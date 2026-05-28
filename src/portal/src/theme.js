@@ -82,9 +82,10 @@ const SUBJECTS = {
 };
 
 // Text colors used on dark surfaces (footer, sider, scrim ribbons).
+// textMuted alpha is 0.65 so 12px copy on #1F1F1F clears WCAG AA (4.5:1).
 const ON_DARK = {
   text: 'rgba(255, 255, 255, 0.85)',
-  textMuted: 'rgba(255, 255, 255, 0.45)'
+  textMuted: 'rgba(255, 255, 255, 0.65)'
 };
 
 // Common overlays — kept as named constants so call sites don't sprinkle

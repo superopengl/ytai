@@ -232,7 +232,7 @@ const rowStyle = {
 };
 const rowTitleStyle = {
   fontSize: 13,
-  fontWeight: 600,
+  fontWeight: 800,
   color: 'rgba(255, 255, 255, 0.95)',
   lineHeight: 1.35,
   whiteSpace: 'nowrap',
