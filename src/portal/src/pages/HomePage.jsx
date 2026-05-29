@@ -1,20 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  CameraIcon,
-  HighlightIcon,
-  BulbIcon,
-  ReadIcon,
-  EditIcon,
-  CalculatorIcon,
-  ExperimentIcon,
   GoogleIcon,
-  HeartFilledIcon,
   StarFilledIcon,
-  BookIcon,
   GlobalIcon,
-  RocketIcon,
-  LineChartIcon
+  RocketIcon
 } from '../components/InlineIcons.jsx';
 import { palette, stickerShadow, radius, fonts } from '../theme.js';
 import Logo from '../components/Logo.jsx';
@@ -92,36 +82,88 @@ function IconCircle({ size = 56, color = MINT, children, style }) {
   );
 }
 
+// Stroke-outline icons used only on the "How it works" cards. Kept local
+// to this page so the shared InlineIcons (which mirror AntD filled-path
+// outlines) stay untouched.
+function StrokeIcon({ children }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {children}
+    </svg>
+  );
+}
+function CameraOutlineIcon() {
+  return (
+    <StrokeIcon>
+      <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H8l1.5-2h5L16 6h2.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </StrokeIcon>
+  );
+}
+function HighlightOutlineIcon() {
+  return (
+    <StrokeIcon>
+      <path d="M14 3l7 7-9 9H5v-7z" />
+      <path d="M11 6l7 7" />
+      <path d="M5 19l-2 2" />
+    </StrokeIcon>
+  );
+}
+function BulbOutlineIcon() {
+  return (
+    <StrokeIcon>
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M12 3a6 6 0 0 0-3.6 10.8c.9.7 1.6 1.7 1.6 2.7V18h4v-1.5c0-1 .7-2 1.6-2.7A6 6 0 0 0 12 3z" />
+    </StrokeIcon>
+  );
+}
+function LineChartOutlineIcon() {
+  return (
+    <StrokeIcon>
+      <path d="M4 4v16h16" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </StrokeIcon>
+  );
+}
+
 // --- Content data -----------------------------------------------------------
 
 const features = [
   {
-    step: '1',
-    icon: <CameraIcon />,
+    icon: <CameraOutlineIcon />,
     color: PEACH,
     title: 'Snap the worksheet',
     description:
       'Point your phone at any worksheet, exam, or homework page. The tutor reads the questions and gets ready to help.'
   },
   {
-    step: '2',
-    icon: <HighlightIcon />,
+    icon: <HighlightOutlineIcon />,
     color: CREAM_PEACH,
     title: 'Circle the tricky bit',
     description:
       "Highlight, circle, or underline the part you're stuck on. The tutor sees exactly what you're pointing at."
   },
   {
-    step: '3',
-    icon: <BulbIcon />,
+    icon: <BulbOutlineIcon />,
     color: MINT,
     title: "Let's figure it out",
     description:
       'A kind, patient tutor walks you through the thinking step by step. It never just hands over the answer.'
   },
   {
-    step: '★',
-    icon: <LineChartIcon />,
+    icon: <LineChartOutlineIcon />,
     color: LAVENDER,
     title: 'See how you grow',
     description:
@@ -130,29 +172,26 @@ const features = [
 ];
 
 const subjects = [
-  { icon: <CalculatorIcon />, label: 'Math', color: SAGE },
-  { icon: <ExperimentIcon />, label: 'Thinking Skills', color: MAUVE },
-  { icon: <ReadIcon />, label: 'Reading', color: MINT },
-  { icon: <EditIcon />, label: 'Writing', color: PEACH }
+  { label: 'Math', color: SAGE },
+  { label: 'Thinking Skills', color: MAUVE },
+  { label: 'Reading', color: MINT },
+  { label: 'Writing', color: PEACH }
 ];
 
 const personas = [
   {
-    icon: <RocketIcon />,
     color: PEACH,
     title: 'Students',
     description:
       "Ages 8 to 14. A kind, encouraging tutor that walks you through the thinking. Never just hands you the answer."
   },
   {
-    icon: <HeartFilledIcon />,
     color: MINT,
     title: 'Parents',
     description:
       "Help your kid with homework even when you don't remember the material yourself. A calm co-tutor at the table."
   },
   {
-    icon: <BookIcon />,
     color: LAVENDER,
     title: 'Teachers',
     description:
@@ -251,7 +290,7 @@ export default function HomePage() {
       {/* ============ HERO ============ */}
       <section
         style={{
-          padding: 'clamp(120px, 14vw, 160px) 24px clamp(80px, 10vw, 110px)',
+          padding: 'clamp(120px, 14vw, 160px) 24px clamp(40px, 5vw, 60px)',
           position: 'relative',
           overflow: 'hidden',
           background: `
@@ -345,7 +384,7 @@ export default function HomePage() {
       <section
         style={{
           background: BG,
-          padding: '32px 24px 64px'
+          padding: '0 24px 64px'
         }}
       >
         <div
@@ -366,17 +405,24 @@ export default function HomePage() {
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 12,
-                padding: '10px 22px 10px 10px',
+                gap: 10,
+                padding: '10px 20px',
                 background: BG,
                 color: INK,
-                fontWeight: 700,
+                fontWeight: 400,
                 fontSize: 15
               }}
             >
-              <IconCircle size={34} color={s.color} style={{ boxShadow: 'none', fontSize: 14 }}>
-                {s.icon}
-              </IconCircle>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: s.color,
+                  flexShrink: 0
+                }}
+              />
               {s.label}
             </div>
           ))}
@@ -424,36 +470,13 @@ export default function HomePage() {
                   flexDirection: 'column',
                   alignItems: 'center',
                   background: BG,
-                  borderRadius: radius.xl + 4,
-                  position: 'relative'
+                  borderRadius: radius.xl + 4
                 }}
               >
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position: 'absolute',
-                    top: 16,
-                    left: 16,
-                    width: 30,
-                    height: 30,
-                    borderRadius: '50%',
-                    background: SAGE_DARK,
-                    color: '#fff',
-                    fontFamily: QUICKSAND,
-                    fontWeight: 800,
-                    fontSize: 15,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: stickerShadow.button
-                  }}
-                >
-                  {f.step}
-                </div>
                 <IconCircle
                   size={72}
                   color={f.color}
-                  style={{ marginBottom: 18, marginTop: 8 }}
+                  style={{ marginBottom: 18 }}
                 >
                   {f.icon}
                 </IconCircle>
@@ -519,20 +542,18 @@ export default function HomePage() {
                 key={p.title}
                 className="sticker-card"
                 style={{
-                  padding: '36px 28px 32px',
+                  padding: '32px 28px',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: 14,
+                  gap: 12,
                   background: WHITE,
                   border: `2px solid ${palette.border}`,
+                  borderTop: `6px solid ${p.color}`,
                   borderRadius: radius.xl + 4
                 }}
               >
-                <IconCircle size={64} color={p.color}>
-                  {p.icon}
-                </IconCircle>
                 <h3
                   style={{
                     fontFamily: QUICKSAND,
