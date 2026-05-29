@@ -37,7 +37,7 @@ const colorSections = [
       { name: 'Mint', token: 'palette.accentMint', hex: brand.accentMint },
       { name: 'Lavender', token: 'palette.accentPurple', hex: brand.accentPurple },
       { name: 'Peach', token: 'palette.accentPeach', hex: brand.accentPeach },
-      { name: 'Cream Peach', token: 'palette.accentYellow', hex: brand.accentYellow }
+      { name: 'Sunshine', token: 'palette.accentYellow', hex: brand.accentYellow }
     ]
   },
   {

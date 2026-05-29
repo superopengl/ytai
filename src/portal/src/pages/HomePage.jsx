@@ -10,6 +10,8 @@ import {
   ExperimentIcon,
   GoogleIcon,
   HeartFilledIcon,
+  StarFilledIcon,
+  BookIcon,
   GlobalIcon,
   RocketIcon,
   LineChartIcon
@@ -94,54 +96,64 @@ function IconCircle({ size = 56, color = MINT, children, style }) {
 
 const features = [
   {
+    step: '1',
     icon: <CameraIcon />,
     color: PEACH,
-    title: 'Snap a Photo',
+    title: 'Snap the worksheet',
     description:
-      'Point your phone at any worksheet, exam, or homework page. The AI reads the questions and gets ready to help.'
+      'Point your phone at any worksheet, exam, or homework page. The tutor reads the questions and gets ready to help.'
   },
   {
+    step: '2',
     icon: <HighlightIcon />,
     color: CREAM_PEACH,
-    title: 'Circle What’s Tricky',
+    title: 'Circle the tricky bit',
     description:
-      'Highlight, circle, or underline the part you’re stuck on. The tutor sees exactly what you’re pointing at.'
+      "Highlight, circle, or underline the part you're stuck on. The tutor sees exactly what you're pointing at."
   },
   {
+    step: '3',
     icon: <BulbIcon />,
     color: MINT,
-    title: 'Learn, Don’t Copy',
+    title: "Let's figure it out",
     description:
-      'A Socratic tutor that scaffolds your thinking step by step — never just hands over the answer, always builds understanding.'
+      'A kind, patient tutor walks you through the thinking step by step. It never just hands over the answer.'
   },
   {
+    step: '★',
     icon: <LineChartIcon />,
     color: LAVENDER,
-    title: 'Spot the Patterns',
+    title: 'See how you grow',
     description:
-      'Every session rolls up into a clear report — weak spots, wins, and growth over time, subject by subject.'
+      'Every session rolls up into a clear report. Weak spots, wins, and progress over time, subject by subject.'
   }
 ];
 
 const subjects = [
   { icon: <CalculatorIcon />, label: 'Math', color: SAGE },
   { icon: <ExperimentIcon />, label: 'Thinking Skills', color: MAUVE },
-  { icon: <ReadIcon />, label: 'English', color: MINT },
+  { icon: <ReadIcon />, label: 'Reading', color: MINT },
   { icon: <EditIcon />, label: 'Writing', color: PEACH }
 ];
 
 const personas = [
   {
+    icon: <RocketIcon />,
+    color: PEACH,
     title: 'Students',
     description:
-      'Ages 8–14. A kind, encouraging tutor that walks you through the thinking — never just hands over the answer.'
+      "Ages 8 to 14. A kind, encouraging tutor that walks you through the thinking. Never just hands you the answer."
   },
   {
+    icon: <HeartFilledIcon />,
+    color: MINT,
     title: 'Parents',
     description:
-      'Help your kid with homework even when you don’t remember the material yourself. YouTutorAI is your co-tutor at the table.'
+      "Help your kid with homework even when you don't remember the material yourself. A calm co-tutor at the table."
   },
   {
+    icon: <BookIcon />,
+    color: LAVENDER,
     title: 'Teachers',
     description:
       'Assign it as homework support, or work through a tricky problem with a student during class.'
@@ -273,18 +285,9 @@ export default function HomePage() {
                 fontWeight: 800
               }}
             >
-              <span
-                style={{
-                  background: GRAD.text,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}
-              >
-                Homework,
-              </span>{' '}
+              <span style={{ color: INK }}>Stuck on homework?</span>{' '}
               <br />
-              <span style={{ color: SAGE_DARK }}>made gentler.</span>
+              <span style={{ color: SAGE_DARK }}>Let&apos;s figure it out.</span>
             </h1>
             <p
               style={{
@@ -296,8 +299,8 @@ export default function HomePage() {
                 fontWeight: 500
               }}
             >
-              A Socratic homework tutor for kids 8–14. Snap the worksheet, circle what’s tricky,
-              and the tutor walks you through it — calmly, one step at a time.
+              A patient homework tutor for kids 8 to 14. Snap the page, circle what&apos;s tricky,
+              we figure it out together.
             </p>
 
             <div
@@ -380,7 +383,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ============ FEATURES ============ */}
+      {/* ============ HOW IT WORKS ============ */}
       <section
         style={{ background: WHITE, padding: '88px 24px', position: 'relative', overflow: 'hidden' }}
       >
@@ -395,7 +398,7 @@ export default function HomePage() {
               color: INK
             }}
           >
-            What makes this <span className="gradient-text">different</span>
+            How it works
           </h2>
           <p
             style={{
@@ -407,7 +410,7 @@ export default function HomePage() {
               fontWeight: 500
             }}
           >
-            Not another chatbot that hands you the answer. A real tutor that meets you on the page.
+            Three steps to get unstuck, plus a clear picture of how you&apos;re growing.
           </p>
           <div className="ytai-grid-4">
             {features.map((f) => (
@@ -415,26 +418,42 @@ export default function HomePage() {
                 key={f.title}
                 className="sticker-card"
                 style={{
-                  padding: '32px 24px',
-                  // height: '100%',
+                  padding: '32px 24px 28px',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   background: BG,
-                  borderRadius: 28
+                  borderRadius: radius.xl + 4,
+                  position: 'relative'
                 }}
               >
-                <IconCircle
-                  size={48}
-                  color={f.color}
+                <div
+                  aria-hidden="true"
                   style={{
-                    marginBottom: 8,
-                    fontSize: 40,
-                    background: 'transparent',
-                    boxShadow: 'none',
-                    color: INK_HINT
+                    position: 'absolute',
+                    top: 16,
+                    left: 16,
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    background: SAGE_DARK,
+                    color: '#fff',
+                    fontFamily: QUICKSAND,
+                    fontWeight: 800,
+                    fontSize: 15,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: stickerShadow.button
                   }}
+                >
+                  {f.step}
+                </div>
+                <IconCircle
+                  size={72}
+                  color={f.color}
+                  style={{ marginBottom: 18, marginTop: 8 }}
                 >
                   {f.icon}
                 </IconCircle>
@@ -480,7 +499,7 @@ export default function HomePage() {
               color: INK
             }}
           >
-            Built for the whole <span className="gradient-text">homework table</span>
+            Built for the whole homework table
           </h2>
           <p
             style={{
@@ -492,7 +511,7 @@ export default function HomePage() {
               fontWeight: 500
             }}
           >
-            The same calming, patient tutor — whoever’s using it.
+            The same calming, patient tutor for whoever&apos;s using it.
           </p>
           <div className="ytai-grid-3">
             {personas.map((p) => (
@@ -500,21 +519,24 @@ export default function HomePage() {
                 key={p.title}
                 className="sticker-card"
                 style={{
-                  padding: '32px 28px',
+                  padding: '36px 28px 32px',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: 12,
+                  gap: 14,
                   background: WHITE,
                   border: `2px solid ${palette.border}`,
-                  borderRadius: 28
+                  borderRadius: radius.xl + 4
                 }}
               >
+                <IconCircle size={64} color={p.color}>
+                  {p.icon}
+                </IconCircle>
                 <h3
                   style={{
                     fontFamily: QUICKSAND,
-                    fontSize: 20,
+                    fontSize: 22,
                     margin: 0,
                     fontWeight: 700,
                     color: INK
@@ -558,17 +580,17 @@ export default function HomePage() {
               width: 80,
               height: 80,
               borderRadius: '50%',
-              background: GRAD.primary,
-              boxShadow: `0 0 0 14px ${SAGE}1A, 0 0 0 28px ${SAGE}0F`,
+              background: CREAM_PEACH,
+              boxShadow: `0 0 0 14px rgba(255, 255, 255, 0.10), 0 0 0 28px rgba(255, 255, 255, 0.05)`,
               margin: '0 auto 28px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#fff',
-              fontSize: 36
+              color: SAGE_DARK,
+              fontSize: 38
             }}
           >
-            <HeartFilledIcon />
+            <StarFilledIcon />
           </div>
           <h2
             style={{
@@ -580,19 +602,7 @@ export default function HomePage() {
               fontWeight: 700
             }}
           >
-            Ready for a{' '}
-            <span
-              style={{
-                background: `linear-gradient(135deg, ${CREAM_PEACH} 0%, ${PEACH} 100%)`,
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                color: 'transparent'
-              }}
-            >
-              calmer
-            </span>{' '}
-            homework hour?
+            Ready to get unstuck?
           </h2>
           <p
             style={{

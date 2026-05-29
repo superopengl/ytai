@@ -26,9 +26,9 @@ const SECONDARY = '#6BB5A2';     // Mint-teal — source --color-secondary
 const SECONDARY_DARK = '#4F9B89';
 const CTA = PRIMARY;
 const CTA_DARK = PRIMARY_DARK;
-const ACCENT_MINT = '#B8D9CE';   // Mint tint — paler secondary
-const ACCENT_PURPLE = '#E8E3F2'; // Lavender tint
-const ACCENT_YELLOW = '#FCE7CC'; // Peach tint
+const ACCENT_MINT = '#A7E0CF';   // Mint tint, bumped a notch for kid vibrancy
+const ACCENT_PURPLE = '#D9CFEE'; // Lavender tint, slightly more saturated
+const ACCENT_YELLOW = '#FFE39E'; // Sunshine tint, warmer than peach
 const ACCENT_PEACH = '#F4A261';  // Source --color-accent — warm peach
 const CORAL = '#E76F51';         // Source --color-coral — emergency/CTA
 const LAVENDER = '#9B8EC4';      // Source --color-lavender
@@ -197,9 +197,9 @@ const palette = {
     primary: '#E3EEF2',
     secondary: '#E1EFEB',
     cta: '#E3EEF2',
-    mint: '#E1EFEB',
-    purple: '#EFEBF7',
-    yellow: '#FCE9D4'
+    mint: '#DDF2EB',
+    purple: '#ECE5F7',
+    yellow: '#FFF1CF'
   },
   // Semantic state — distinct from CTA/error which are action colors.
   state: {

@@ -157,21 +157,13 @@
 }
 
 /* ---- Mobile paint budget ------------------------------------------------ */
-/* Mobile GPUs (especially Safari) treat backdrop-filter and the masked /
- * animated hero doodles as paint-heavy work that lands right inside the
- * LCP window. Below 768px we drop these effects entirely: the navbar
- * keeps its translucent fill but loses the blur, and HeroBackdrop's
- * notebook lines, dot grid, and 16 floating doodles don't render. */
+/* HeroBackdrop's notebook lines, dot grid, and floating doodles don't
+ * render below 768px to keep the LCP paint cheap. The nav uses a solid
+ * tinted fill in every viewport (no backdrop-filter) so phones don't
+ * pay the blur tax. */
 
 .ytai-nav-glass {
-  background: rgba(255, 255, 255, 0.92);
-}
-@media (min-width: 768px) {
-  .ytai-nav-glass {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
+  background: #ffffff;
 }
 
 .ytai-hero-decoration {
