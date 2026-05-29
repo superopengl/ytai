@@ -198,10 +198,12 @@ export default class YoututoraiStack extends Stack {
     taskDef.addContainer("App", {
       image: ContainerImage.fromEcrRepository(appRepo, imageTag),
       // App ~300 MB + EasyOCR resident ~1.5 GB + Kokoro resident ~1 GB.
-      // 4 GiB hard cap, 2 GiB soft reservation leaves the rest of the
-      // t3.large's 8 GiB for kpai's task.
+      // Soft reservation matches the hard cap so ECS schedules with the
+      // real footprint in mind and CloudWatch's MemoryUtilization metric
+      // (reported against the soft reservation) reads as a sensible
+      // percentage of the actual envelope, not >100% all the time.
       memoryLimitMiB: 4096,
-      memoryReservationMiB: 2048,
+      memoryReservationMiB: 4096,
       cpu: 1024,
       logging: LogDrivers.awsLogs({ logGroup, streamPrefix: "app" }),
       environment: {
