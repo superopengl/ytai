@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
-import { withTx } from '../db/index.js';
+import db from '../db/index.js';
 import { ttsAudio, tutorSession } from '../db/schema.js';
 import persistAudio from '../lib/persistAudio.js';
 import synthesizeSpeech from '../lib/synthesizeSpeech.js';
@@ -76,23 +76,22 @@ export default function tutorSpeak(fastify) {
       abortController.abort();
     });
 
-    // Single transaction wraps session check → cache lookup → freshness
-    // probe → (on miss) synthesis + persist + upsert. Synthesis holds the
-    // connection during the HTTP round-trip; acceptable because sentence
-    // audio is small and the cache hit-rate is high. The freshness probe
-    // catches the case where a `tts_audio` row points at storage that's
-    // since vanished (file:// in /tmp after a container restart; s3://
-    // after a manual delete).
+    // Three discrete DB hits with the slow external IO (synth fetch +
+    // persistAudio S3/disk write) sandwiched between them. Wrapping the
+    // whole thing in a single `withTx` pinned one Postgres connection per
+    // in-flight TTS call (each sentence the frontend speaks!), exhausting
+    // the pool under load. Splitting the work means a synth round-trip no
+    // longer holds a connection at all.
     let result;
     try {
-      result = await withTx(async (tx) => {
-        const [session] = await tx
-          .select({ id: tutorSession.id })
-          .from(tutorSession)
-          .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, request.userId)));
-        if (!session) return { kind: 'notFound' };
-
-        const [cached] = await tx
+      const [session] = await db()
+        .select({ id: tutorSession.id })
+        .from(tutorSession)
+        .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, request.userId)));
+      if (!session) {
+        result = { kind: 'notFound' };
+      } else {
+        const [cached] = await db()
           .select({ storageUrl: ttsAudio.storageUrl, bytes: ttsAudio.bytes })
           .from(ttsAudio)
           .where(
@@ -104,48 +103,48 @@ export default function tutorSpeak(fastify) {
           );
 
         if (cached && (await cacheBytesExist(cached.storageUrl))) {
-          return { kind: 'cached', cached };
-        }
-
-        const synth = await synthesizeSpeech({
-          text,
-          baseUrl,
-          apiKey,
-          model,
-          voice,
-          signal: abortController.signal
-        });
-
-        // Treat an empty synth result as a hard failure — never persist a
-        // 0-byte file. Falling through to `reply.send(empty)` here is what
-        // produced the silent ERR_REQUEST_RANGE_NOT_SATISFIABLE in the
-        // browser <audio> element. Failing fast with 502 makes the
-        // frontend toast surface the issue instead.
-        if (!synth?.bytes || synth.bytes.length === 0) {
-          throw new Error('TTS provider returned 0 bytes');
-        }
-
-        const { storageUrl } = await persistAudio({ bytes: synth.bytes, contentHash: textHash });
-        await tx
-          .insert(ttsAudio)
-          .values({
-            textHash,
-            voice,
+          result = { kind: 'cached', cached };
+        } else {
+          const synth = await synthesizeSpeech({
+            text,
+            baseUrl,
+            apiKey,
             model,
-            storageUrl,
-            bytes: synth.bytes.length
-          })
-          .onConflictDoUpdate({
-            target: [ttsAudio.textHash, ttsAudio.voice, ttsAudio.model],
-            set: {
-              storageUrl,
-              bytes: synth.bytes.length,
-              updatedAt: sql`now()`
-            }
+            voice,
+            signal: abortController.signal
           });
 
-        return { kind: 'fresh', synth };
-      });
+          // Treat an empty synth result as a hard failure — never persist a
+          // 0-byte file. Falling through to `reply.send(empty)` here is what
+          // produced the silent ERR_REQUEST_RANGE_NOT_SATISFIABLE in the
+          // browser <audio> element. Failing fast with 502 makes the
+          // frontend toast surface the issue instead.
+          if (!synth?.bytes || synth.bytes.length === 0) {
+            throw new Error('TTS provider returned 0 bytes');
+          }
+
+          const { storageUrl } = await persistAudio({ bytes: synth.bytes, contentHash: textHash });
+          await db()
+            .insert(ttsAudio)
+            .values({
+              textHash,
+              voice,
+              model,
+              storageUrl,
+              bytes: synth.bytes.length
+            })
+            .onConflictDoUpdate({
+              target: [ttsAudio.textHash, ttsAudio.voice, ttsAudio.model],
+              set: {
+                storageUrl,
+                bytes: synth.bytes.length,
+                updatedAt: sql`now()`
+              }
+            });
+
+          result = { kind: 'fresh', synth };
+        }
+      }
     } catch (err) {
       if (abortController.signal.aborted) return;
       request.log.error({ err, sessionId, voice, model }, 'TTS synthesis failed');
