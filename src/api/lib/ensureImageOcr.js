@@ -23,6 +23,20 @@ import { getObjectBytes } from './s3.js';
 
 const IN_FLIGHT = new Map(); // imageId -> Promise
 
+// Defense-in-depth: even though runOcr has its own timeout and the IIFE's
+// finally always deletes the entry on settlement, a non-fetch hang (e.g.
+// an S3 read that stalls, a DB write that wedges) could keep the promise
+// pending — and the closure pins the image Buffer. This watchdog forces
+// the entry out of the map after a generous deadline. .unref() so the
+// timer never keeps the process alive on shutdown.
+const WATCHDOG_MS = 120_000;
+
+// Exposed for diagnostics — the server logs the size periodically to make
+// any leak visible early.
+export function inFlightOcrCount() {
+  return IN_FLIGHT.size;
+}
+
 export default function ensureImageOcr({ imageId, storageUrl, log }) {
   if (!imageId) return Promise.resolve(null);
   const baseUrl = process.env.YTAI_OCR_BASE_URL || '';
@@ -110,6 +124,13 @@ export default function ensureImageOcr({ imageId, storageUrl, log }) {
   })();
 
   IN_FLIGHT.set(imageId, job);
+  const watchdog = setTimeout(() => {
+    if (IN_FLIGHT.get(imageId) === job) {
+      log?.warn({ imageId, watchdogMs: WATCHDOG_MS }, 'ensureImageOcr: watchdog forcing IN_FLIGHT entry out — promise never settled');
+      IN_FLIGHT.delete(imageId);
+    }
+  }, WATCHDOG_MS);
+  watchdog.unref?.();
   return job;
 }
 
