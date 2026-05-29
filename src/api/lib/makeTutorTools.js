@@ -162,7 +162,7 @@ async function dispatchLookup(
       question,
       log,
       signal,
-      imageDataUrlOverride: annotatedOverride?.dataUrl ?? null,
+      annotatedOverride,
       usageCollector: visionUsageCollector
     });
   } catch (err) {

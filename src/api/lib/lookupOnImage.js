@@ -28,22 +28,18 @@ function hashQuestion(question, bytesSignature) {
   return createHash('sha256').update(seed).digest('hex');
 }
 
-function bytesSignatureFromDataUrl(dataUrl) {
-  if (typeof dataUrl !== 'string') return '';
-  const commaIdx = dataUrl.indexOf(',');
-  if (commaIdx < 0) return '';
-  // Hash only the base64 payload — the data URL prefix is constant per
-  // mime and the payload alone identifies the bytes.
-  return createHash('sha256').update(dataUrl.slice(commaIdx + 1)).digest('hex');
-}
-
 // Hashed natural-language vision Q&A cache. Brain often asks the same thing
 // twice during a session (e.g. "list the questions") — caching makes the
 // second-and-onwards calls free. Keyed by (imageId, hashedQuestion); when
-// `imageDataUrlOverride` is passed (student-drawn freehand on the canvas),
+// `annotatedOverride` is passed (student-drawn freehand on the canvas),
 // the question hash is dusted with the override's bytes hash so each
 // distinct annotation state caches independently and stale answers from a
 // past, un-annotated turn don't leak through.
+//
+// `annotatedOverride` shape: { bytes: Buffer, mimeType: string, bytesHash:
+// string }. We accept the raw Buffer rather than a pre-encoded data URL so
+// the base64 string is materialized exactly once (inside this function, on
+// a cache miss) instead of being held across the entire Brain turn.
 //
 // Billing: when the caller supplies a `usageCollector` array, every actual
 // upstream call (not cache hits — those didn't cost anything) appends
@@ -54,10 +50,10 @@ export default async function lookupOnImage({
   question,
   log,
   signal,
-  imageDataUrlOverride = null,
+  annotatedOverride = null,
   usageCollector = null
 }) {
-  const bytesSignature = imageDataUrlOverride ? bytesSignatureFromDataUrl(imageDataUrlOverride) : '';
+  const bytesSignature = annotatedOverride?.bytesHash || '';
   const questionHash = hashQuestion(question, bytesSignature);
   const [cached] = await db()
     .select({ extracted: visionExtraction.extracted })
@@ -65,13 +61,22 @@ export default async function lookupOnImage({
     .where(and(eq(visionExtraction.imageId, image.id), eq(visionExtraction.regionHash, questionHash)));
   if (cached?.extracted) {
     log?.info(
-      { imageId: image.id, questionHash: questionHash.slice(0, 12), annotated: !!imageDataUrlOverride },
+      { imageId: image.id, questionHash: questionHash.slice(0, 12), annotated: !!annotatedOverride },
       'vision cache hit'
     );
     return cached.extracted;
   }
 
-  const imageDataUrl = imageDataUrlOverride || (await loadImageDataUrl(image.storageUrl));
+  // Encode the data URL only now that we know we're hitting the model.
+  // For annotated pages this is the single allocation of the base64 string
+  // per turn (vs the previous code path that held it for the whole turn).
+  let imageDataUrl;
+  if (annotatedOverride) {
+    const mime = annotatedOverride.mimeType || 'image/png';
+    imageDataUrl = `data:${mime};base64,${annotatedOverride.bytes.toString('base64')}`;
+  } else {
+    imageDataUrl = await loadImageDataUrl(image.storageUrl);
+  }
   if (!imageDataUrl) {
     log?.warn({ imageId: image.id }, 'cannot run vision: no data URL and storage unreadable');
     return { answer: '', bbox: null, error: 'image-unavailable' };
@@ -79,7 +84,7 @@ export default async function lookupOnImage({
 
   const { baseUrl, apiKey, model } = visionConfig();
   log?.info(
-    { imageId: image.id, question, model, annotated: !!imageDataUrlOverride },
+    { imageId: image.id, question, model, annotated: !!annotatedOverride },
     'running Eyes (lookup_on_image)'
   );
   const { answer, modelVersion, usage } = await askVisionModel({

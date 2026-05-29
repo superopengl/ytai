@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
@@ -178,6 +179,15 @@ export default function tutorSendMessage(fastify) {
     // Build the per-imageId annotated-bytes map for this turn. Only honor an
     // annotated image whose imageId belongs to a page of the active doc —
     // a stale imageId from a switched-out doc gets dropped, not trusted.
+    //
+    // We store the raw Buffer + mimeType + a bytes hash, not the original
+    // base64 dataUrl. Two reasons: (1) the dataUrl JS string is ~33% bigger
+    // than the Buffer and lives in memory for the whole multi-round Brain
+    // turn, (2) downstream vision calls used to re-hash the entire base64
+    // payload as the cache key, allocating another copy of the string just
+    // to feed to sha256. Hashing the bytes directly is equivalent and
+    // cheaper, and the dataUrl is encoded lazily inside lookupOnImage only
+    // when there's a cache miss.
     const annotatedByImageId = new Map();
     if (annotatedImage && activeDoc) {
       const pageMatch = activeDoc.pages.find((p) => p.id === annotatedImage.imageId);
@@ -185,8 +195,9 @@ export default function tutorSendMessage(fastify) {
         const decoded = decodeImageDataUrl(annotatedImage.dataUrl);
         if (decoded) {
           annotatedByImageId.set(pageMatch.id, {
-            dataUrl: annotatedImage.dataUrl,
-            byteLength: decoded.bytes.length
+            bytes: decoded.bytes,
+            mimeType: decoded.mimeType,
+            bytesHash: createHash('sha256').update(decoded.bytes).digest('hex')
           });
         } else {
           request.log.warn(
