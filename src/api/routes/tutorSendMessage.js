@@ -107,7 +107,9 @@ async function loadActiveDoc(sessionId, currentDocId, log) {
   // Backfill OCR for any page that predates the OCR feature. The job is
   // idempotent so a no-op when the row already exists.
   for (const p of pages) {
-    ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch(() => {});
+    ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch((err) => {
+      log?.warn({ err: err?.message, imageId: p.id }, 'ensureImageOcr background job rejected');
+    });
   }
 
   return { id: doc.id, kind: doc.kind, pages };
@@ -427,7 +429,9 @@ export default function tutorSendMessage(fastify) {
           usage: rec.usage
         }))
       ];
-      recordLlmUsageBatch(auditRecords, request.log).catch(() => {});
+      recordLlmUsageBatch(auditRecords, request.log).catch((err) => {
+        request.log.warn({ err: err?.message, sessionId }, 'recordLlmUsageBatch background job rejected');
+      });
 
       if (turnError) {
         sse('error', {

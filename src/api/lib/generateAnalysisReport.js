@@ -393,7 +393,9 @@ async function runSubjectReport({ rowId, userId, manifest, subject, prompt, time
         modelVersion: titleResult.modelVersion,
         usage: titleResult.usage,
         log
-      }).catch(() => {});
+      }).catch((err) => {
+        log?.warn({ err: err?.message, rowId }, 'recordLlmUsage(subject_report_title) rejected');
+      });
     }
 
     const data = rolledUpSessionData(manifest);
@@ -463,7 +465,9 @@ async function runSubjectReport({ rowId, userId, manifest, subject, prompt, time
       modelVersion,
       usage,
       log
-    }).catch(() => {});
+    }).catch((err) => {
+      log?.warn({ err: err?.message, rowId }, 'recordLlmUsage(subject_report) rejected');
+    });
   } catch (err) {
     log.error({ err, rowId, subject }, 'runSubjectReport failed');
     await db()

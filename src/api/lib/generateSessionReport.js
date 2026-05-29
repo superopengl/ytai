@@ -528,7 +528,9 @@ export default async function generateSessionReport({ sessionId, log, force = fa
       modelVersion,
       usage,
       log
-    }).catch(() => {});
+    }).catch((err) => {
+      log?.warn({ err: err?.message, sessionId }, 'recordLlmUsage(session_report) rejected');
+    });
 
     return {
       status: 'ready',
