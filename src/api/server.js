@@ -11,6 +11,7 @@ import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
 import authPassword from './routes/authPassword.js';
 import bootstrapAdmin from './lib/bootstrapAdmin.js';
+import { inFlightOcrCount } from './lib/ensureImageOcr.js';
 import failOrphanReports from './lib/failOrphanReports.js';
 import changeAdminPassword from './routes/changeAdminPassword.js';
 import createAnalysisReport from './routes/createAnalysisReport.js';
@@ -157,6 +158,31 @@ export default async function server() {
   // (its background task didn't survive the restart). Mark them failed so
   // the polling UI unblocks instead of spinning forever.
   await failOrphanReports(app.log);
+
+  // Periodic memory + leak-suspect snapshot. RSS climbing without GC
+  // catching up is the smoke signal for the kind of leak we just patched
+  // around (closure-pinned image Buffers, queued requests on a saturated
+  // DB pool). Logging it on a regular tick makes growth visible in prod
+  // log aggregation without needing a profiler attached. Interval is
+  // configurable; 60s is cheap and `unref`'d so it never blocks shutdown.
+  const memLogIntervalMs = Number(process.env.YTAI_MEM_LOG_INTERVAL_MS ?? 60_000);
+  if (memLogIntervalMs > 0) {
+    const timer = setInterval(() => {
+      const mem = process.memoryUsage();
+      app.log.info(
+        {
+          rssMb: Math.round(mem.rss / 1024 / 1024),
+          heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+          heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+          externalMb: Math.round(mem.external / 1024 / 1024),
+          arrayBuffersMb: Math.round(mem.arrayBuffers / 1024 / 1024),
+          ocrInFlight: inFlightOcrCount()
+        },
+        'memory snapshot'
+      );
+    }, memLogIntervalMs);
+    timer.unref?.();
+  }
 
   const port = Number(process.env.YTAI_API_PORT ?? 9521);
   await app.listen({ port, host: '0.0.0.0' });
