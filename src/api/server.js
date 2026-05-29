@@ -159,13 +159,12 @@ export default async function server() {
   // the polling UI unblocks instead of spinning forever.
   await failOrphanReports(app.log);
 
-  // Periodic memory + leak-suspect snapshot. RSS climbing without GC
-  // catching up is the smoke signal for the kind of leak we just patched
-  // around (closure-pinned image Buffers, queued requests on a saturated
-  // DB pool). Logging it on a regular tick makes growth visible in prod
-  // log aggregation without needing a profiler attached. Interval is
-  // configurable; 60s is cheap and `unref`'d so it never blocks shutdown.
-  const memLogIntervalMs = Number(process.env.YTAI_MEM_LOG_INTERVAL_MS ?? 60_000);
+  // Periodic memory + leak-suspect snapshot. Off by default — the post-fix
+  // baseline is healthy and the log line was only useful while we were
+  // hunting for the cause. Re-enable for future investigations by setting
+  // YTAI_MEM_LOG_INTERVAL_MS to a positive number of milliseconds (e.g.
+  // 60_000 for a one-minute tick).
+  const memLogIntervalMs = Number(process.env.YTAI_MEM_LOG_INTERVAL_MS ?? 0);
   if (memLogIntervalMs > 0) {
     const timer = setInterval(() => {
       const mem = process.memoryUsage();
