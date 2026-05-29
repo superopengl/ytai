@@ -595,7 +595,6 @@ function GeneratePanel({
   onSubmit
 }) {
   const isGenerating = generating?.startsWith(`${customSubject}::`);
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState(null);
   return (
     <div
       style={{
@@ -698,44 +697,36 @@ function GeneratePanel({
                 marginBottom: 10
               }}
             >
-              {PROMPT_TEMPLATES.map((t) => {
-                const selected = selectedTemplateKey === t.key;
-                return (
-                  <Card
-                    key={t.key}
-                    hoverable
-                    size="small"
-                    onClick={() => {
-                      setSelectedTemplateKey(t.key);
-                      setCustomPrompt(t.prompt);
-                    }}
-                    styles={{ body: { padding: 10 } }}
+              {PROMPT_TEMPLATES.map((t) => (
+                <Card
+                  key={t.key}
+                  hoverable
+                  size="small"
+                  onClick={() => setCustomPrompt(t.prompt)}
+                  styles={{ body: { padding: 10 } }}
+                  style={{
+                    cursor: 'pointer',
+                    background: palette.tint.primary,
+                    borderColor: palette.tint.primary
+                  }}
+                >
+                  <Typography.Text
+                    style={{ display: 'block', marginBottom: 2, fontSize: 13 }}
+                  >
+                    {t.label}
+                  </Typography.Text>
+                  <Typography.Paragraph
                     style={{
-                      background: selected ? palette.primary : '#fff',
-                      border: `1px solid ${selected ? palette.primary : palette.border}`,
-                      color: selected ? '#fff' : palette.text,
-                      cursor: 'pointer',
-                      transition: 'background 120ms ease, border-color 120ms ease, color 120ms ease'
+                      fontSize: 12,
+                      lineHeight: 1.25,
+                      marginBottom: 0,
+                      color: palette.textMuted
                     }}
                   >
-                    <Typography.Text
-                      style={{ display: 'block', marginBottom: 2, fontSize: 13, color: 'inherit' }}
-                    >
-                      {t.label}
-                    </Typography.Text>
-                    <Typography.Paragraph
-                      style={{
-                        fontSize: 12,
-                        lineHeight: 1.25,
-                        marginBottom: 0,
-                        color: selected ? 'rgba(255,255,255,0.85)' : palette.textMuted
-                      }}
-                    >
-                      {t.blurb}
-                    </Typography.Paragraph>
-                  </Card>
-                );
-              })}
+                    {t.blurb}
+                  </Typography.Paragraph>
+                </Card>
+              ))}
             </div>
             <Input.TextArea
               variant="borderless"
