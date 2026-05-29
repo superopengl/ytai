@@ -20,12 +20,15 @@
 # Linux/amd64 deploy targets.
 
 import base64
+import ctypes
+import ctypes.util
+import gc
 import io
 import os
 
 import easyocr
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from PIL import Image
 from pydantic import BaseModel
 
@@ -43,7 +46,44 @@ MIN_CONFIDENCE = float(os.environ.get("YTAI_OCR_MIN_CONFIDENCE", "0.3"))
 # few seconds, so we pay it once at process start.
 _engine = easyocr.Reader(["en"], gpu=False)
 
+# Resolve libc.malloc_trim once at startup. Used after every request to
+# force glibc's ptmalloc to return freed arena pages to the kernel. Without
+# this the RSS of this process monotonically climbs because PyTorch's CPU
+# inference allocates large scratch buffers, frees them at the Python level,
+# but ptmalloc holds the pages in its freelist for reuse — so the kernel
+# never reclaims them and the ECS task's RSS reading stays pegged.
+# Resolves to None on non-glibc systems (musl, macOS) — the middleware
+# below becomes a no-op in that case.
+_libc = None
+try:
+    _libc_path = ctypes.util.find_library("c")
+    if _libc_path:
+        _libc = ctypes.CDLL(_libc_path)
+        if not hasattr(_libc, "malloc_trim"):
+            _libc = None
+except Exception:
+    _libc = None
+
+
+def _trim_memory() -> None:
+    # gc.collect() first so any cyclic-reference holders (PyTorch tensors
+    # often live in cycles with autograd nodes) get freed before we ask
+    # libc to release pages — otherwise the freed bytes the trim sees are
+    # smaller than the actual reclaimable working set.
+    gc.collect()
+    if _libc is not None:
+        _libc.malloc_trim(0)
+
+
 app = FastAPI()
+
+
+@app.middleware("http")
+async def trim_after_request(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in ("/ocr", "/ocr-json"):
+        _trim_memory()
+    return response
 
 
 class OcrJsonBody(BaseModel):
