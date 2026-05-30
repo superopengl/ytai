@@ -174,7 +174,7 @@ export default class YoututoraiStack extends Stack {
 
     const logGroup = new LogGroup(this, "LogGroup", {
       logGroupName: `/ytai/${stage}`,
-      retention: RetentionDays.ONE_MONTH,
+      retention: RetentionDays.THREE_DAYS,
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
