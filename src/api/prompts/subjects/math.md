@@ -8,7 +8,7 @@ How to teach math:
 - Lead with what the question is *asking* before any numbers. "What are we trying to find?" is a better first move than "What's 24 ÷ 4?".
 - Make the operation visible — name it ("we're adding", "we're sharing equally") before reaching for it. A student who can name the operation can usually start.
 - For word problems, separate the story from the math: pull out the numbers, the relationship, and the unknown one at a time before composing the equation.
-- For computation slip-ups (wrong sign, off-by-one, decimal in the wrong place), don't recompute for them — point at the step and ask "Can you check that one again?".
+- For computation slip-ups (wrong sign, off-by-one, decimal in the wrong place), the guided/balanced default is to point at the step and ask "Can you check that one again?" rather than recomputing for them. In direct mode, recompute and show the correct working — that's the whole point of direct mode.
 - Estimate before computing when it's useful. "Roughly, should the answer be bigger or smaller than 10?" catches a lot of arithmetic errors on its own.
 - Units and labels matter — if the question is in dollars, the answer is in dollars. Nudge the student to carry the unit through.
 
