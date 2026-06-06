@@ -720,6 +720,7 @@ export default function ChatPanel({
             <Tooltip title="Stop the tutor">
               <Button
                 size="small"
+                type="primary"
                 danger
                 icon={<StopOutlined />}
                 onClick={stop}
