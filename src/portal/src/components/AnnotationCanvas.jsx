@@ -12,7 +12,14 @@ import {
   Text as KonvaText
 } from 'react-konva';
 import { Button, ColorPicker, Popover, Slider, Space, Tooltip } from 'antd';
-import { ClearOutlined, HighlightOutlined, UndoOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined,
+  DragOutlined,
+  HighlightOutlined,
+  UndoOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined
+} from '@ant-design/icons';
 import { palette } from '../theme.js';
 
 const DEFAULT_AI_COLOR = palette.aiAnnotationDefault;
@@ -20,6 +27,9 @@ const PEN_PRESETS = palette.penPresets;
 const PEN_WIDTH_MIN = 2;
 const PEN_WIDTH_MAX = 20;
 const PEN_WIDTH_DEFAULT = 7;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 1.25;
 
 // Single-page canvas. Strokes are passed in via `lines` and surfaced via
 // `onLinesChange` so a parent (e.g. PagedCanvas) can keep a per-page map
@@ -47,6 +57,10 @@ function AnnotationCanvas(
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [penColor, setPenColor] = useState(PEN_PRESETS[0]);
   const [penWidth, setPenWidth] = useState(PEN_WIDTH_DEFAULT);
+  const [zoom, setZoom] = useState(1);
+  const [panMode, setPanMode] = useState(false);
+  const [panning, setPanning] = useState(false);
+  const panStart = useRef(null);
 
   useImperativeHandle(
     ref,
@@ -68,6 +82,7 @@ function AnnotationCanvas(
   );
 
   useEffect(() => {
+    setZoom(1);
     if (!imageUrl) {
       setImage(null);
       return undefined;
@@ -91,10 +106,12 @@ function AnnotationCanvas(
   }, []);
 
   const fit = fitToContainer(image, containerSize);
+  const displayWidth = fit.width * zoom;
+  const displayHeight = fit.height * zoom;
 
   function toNormalized(pos) {
-    if (fit.width === 0 || fit.height === 0) return null;
-    return [pos.x / fit.width, pos.y / fit.height];
+    if (displayWidth === 0 || displayHeight === 0) return null;
+    return [pos.x / displayWidth, pos.y / displayHeight];
   }
 
   function setLines(updater) {
@@ -104,6 +121,7 @@ function AnnotationCanvas(
   }
 
   function startLine(e) {
+    if (panMode) return;
     if (!image) return;
     if (e.target?.getLayer?.() === aiLayerRef.current) return;
     const pt = toNormalized(e.target.getStage().getPointerPosition());
@@ -126,6 +144,32 @@ function AnnotationCanvas(
 
   function endLine() {
     drawing.current = false;
+  }
+
+  function startPan(clientX, clientY) {
+    const el = containerRef.current;
+    if (!panMode || !el) return;
+    panStart.current = {
+      x: clientX,
+      y: clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop
+    };
+    setPanning(true);
+  }
+
+  function extendPan(clientX, clientY) {
+    const el = containerRef.current;
+    const start = panStart.current;
+    if (!start || !el) return;
+    el.scrollLeft = start.scrollLeft - (clientX - start.x);
+    el.scrollTop = start.scrollTop - (clientY - start.y);
+  }
+
+  function endPan() {
+    if (!panStart.current) return;
+    panStart.current = null;
+    setPanning(false);
   }
 
   return (
@@ -212,26 +256,84 @@ function AnnotationCanvas(
           </Button>
         </Popover>
 
+        <span aria-hidden style={toolbarDividerStyle} />
+
+        <Tooltip title={panMode ? 'Pan mode (drag to move) — click to switch back to pen' : 'Pan mode — drag the image around when zoomed in'}>
+          <Button
+            icon={<DragOutlined />}
+            type={panMode ? 'primary' : 'default'}
+            onClick={() => setPanMode((p) => !p)}
+            disabled={!image}
+            aria-label="Pan tool"
+            aria-pressed={panMode}
+          />
+        </Tooltip>
+
+        <Tooltip title="Zoom out">
+          <Button
+            icon={<ZoomOutOutlined />}
+            onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z / ZOOM_STEP))}
+            disabled={!image || zoom <= ZOOM_MIN + 1e-3}
+            aria-label="Zoom out"
+          />
+        </Tooltip>
+        <Tooltip title="Reset zoom">
+          <Button
+            onClick={() => setZoom(1)}
+            disabled={!image || Math.abs(zoom - 1) < 1e-3}
+            style={{ minWidth: 56, paddingInline: 8, fontVariantNumeric: 'tabular-nums' }}
+          >
+            {Math.round(zoom * 100)}%
+          </Button>
+        </Tooltip>
+        <Tooltip title="Zoom in">
+          <Button
+            icon={<ZoomInOutlined />}
+            onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z * ZOOM_STEP))}
+            disabled={!image || zoom >= ZOOM_MAX - 1e-3}
+            aria-label="Zoom in"
+          />
+        </Tooltip>
+
         {toolbarExtras}
       </Space>
       <div
         ref={containerRef}
+        onMouseDown={(e) => startPan(e.clientX, e.clientY)}
+        onMouseMove={(e) => extendPan(e.clientX, e.clientY)}
+        onMouseUp={endPan}
+        onMouseLeave={endPan}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          if (t) startPan(t.clientX, t.clientY);
+        }}
+        onTouchMove={(e) => {
+          const t = e.touches[0];
+          if (t) extendPan(t.clientX, t.clientY);
+        }}
+        onTouchEnd={endPan}
         style={{
           flex: 1,
           minHeight: 0,
           background: palette.canvasVoid,
           borderRadius: 12,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden'
+          // `safe center` keeps the stage centered when it fits, but falls
+          // back to start alignment when zoomed past the viewport so the
+          // top/left edge stays reachable via scroll instead of clipped.
+          alignItems: 'safe center',
+          justifyContent: 'safe center',
+          overflow: 'auto',
+          cursor: panMode ? (panning ? 'grabbing' : 'grab') : 'default',
+          // Prevent text/image selection during a pan drag.
+          userSelect: panMode ? 'none' : 'auto'
         }}
       >
-        {image && fit.width > 0 && (
+        {image && displayWidth > 0 && (
           <Stage
             ref={stageRef}
-            width={fit.width}
-            height={fit.height}
+            width={displayWidth}
+            height={displayHeight}
             onMouseDown={startLine}
             onMouseMove={extendLine}
             onMouseUp={endLine}
@@ -240,15 +342,15 @@ function AnnotationCanvas(
             onTouchEnd={endLine}
           >
             <Layer listening={false}>
-              <KonvaImage image={image} width={fit.width} height={fit.height} />
+              <KonvaImage image={image} width={displayWidth} height={displayHeight} />
             </Layer>
             <Layer ref={aiLayerRef}>
               {aiAnnotations.map((anno) => (
                 <AiAnnotation
                   key={anno.id}
                   annotation={anno}
-                  fitWidth={fit.width}
-                  fitHeight={fit.height}
+                  fitWidth={displayWidth}
+                  fitHeight={displayHeight}
                 />
               ))}
             </Layer>
@@ -256,14 +358,14 @@ function AnnotationCanvas(
               {lines.map((line, idx) => (
                 <Line
                   key={idx}
-                  points={normalizedToPixels(line.points, fit.width, fit.height)}
+                  points={normalizedToPixels(line.points, displayWidth, displayHeight)}
                   stroke={line.color || palette.pens.red}
-                  strokeWidth={line.width || 7}
+                  strokeWidth={(line.width || 7) * zoom}
                   tension={0.3}
                   lineCap="round"
                   lineJoin="round"
                   shadowColor="rgba(255, 255, 255, 0.95)"
-                  shadowBlur={Math.max(4, (line.width || 7) * 0.7)}
+                  shadowBlur={Math.max(4, (line.width || 7) * 0.7) * zoom}
                   shadowOpacity={1}
                   globalCompositeOperation="source-over"
                 />
