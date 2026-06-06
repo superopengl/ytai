@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Button,
   ConfigProvider,
   Space,
   Spin,
   Tabs,
+  Tooltip,
   theme as antdTheme,
   Typography
 } from 'antd';
-import { FileAddOutlined, LoadingOutlined } from '@ant-design/icons';
+import {
+  FileAddOutlined,
+  LoadingOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
+} from '@ant-design/icons';
 import apiFetch from '../lib/apiFetch.js';
 import { palette } from '../theme.js';
 
@@ -17,7 +24,9 @@ export default function TutorSessionsSider({
   subject,
   onSelect,
   onNewSession,
-  creatingSession
+  creatingSession,
+  collapsed = false,
+  onToggleCollapsed
 }) {
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
@@ -115,21 +124,71 @@ export default function TutorSessionsSider({
           color: palette.sider.textPrimary
         }}
       >
-        {sessions === null ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-            <Spin indicator={<LoadingOutlined spin />} size="small" />
+        {collapsed ? (
+          // Thin rail: just the expand button. Click to restore the full sider.
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              paddingTop: 8,
+              gap: 8
+            }}
+          >
+            <Tooltip title="Show sessions" placement="right">
+              <Button
+                type="text"
+                size="small"
+                icon={<MenuUnfoldOutlined />}
+                onClick={onToggleCollapsed}
+                aria-label="Show sessions"
+                style={{ color: palette.sider.textPrimary }}
+              />
+            </Tooltip>
           </div>
-        ) : error ? (
-          <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
         ) : (
-          <Tabs
-            className="ytai-vert-nav-tabs"
-            tabPosition="left"
-            type="card"
-            activeKey={activeKey}
-            onChange={(key) => (key === 'new' ? onNewSession?.() : onSelect?.(key))}
-            items={items}
-          />
+          <>
+            {/* Header row sits above the tab strip so the collapse control is
+                always reachable regardless of how long the session list is. */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 8px 4px 12px'
+              }}
+            >
+              <Typography.Text strong style={{ color: palette.sider.textPrimary, fontSize: 12, letterSpacing: 0.4 }}>
+                SESSIONS
+              </Typography.Text>
+              <Tooltip title="Hide sessions" placement="right">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MenuFoldOutlined />}
+                  onClick={onToggleCollapsed}
+                  aria-label="Hide sessions"
+                  style={{ color: palette.sider.textMuted }}
+                />
+              </Tooltip>
+            </div>
+            {sessions === null ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                <Spin indicator={<LoadingOutlined spin />} size="small" />
+              </div>
+            ) : error ? (
+              <Alert type="warning" showIcon message={error} style={{ margin: 12 }} />
+            ) : (
+              <Tabs
+                className="ytai-vert-nav-tabs"
+                tabPosition="left"
+                type="card"
+                activeKey={activeKey}
+                onChange={(key) => (key === 'new' ? onNewSession?.() : onSelect?.(key))}
+                items={items}
+              />
+            )}
+          </>
         )}
       </div>
     </ConfigProvider>

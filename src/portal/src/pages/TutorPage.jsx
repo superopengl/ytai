@@ -9,8 +9,33 @@ import Logo from '../components/Logo.jsx';
 import apiFetch from '../lib/apiFetch.js';
 import authSession from '../lib/authSession.js';
 import currentSubject from '../lib/currentSubject.js';
+import currentYear, { YEARS } from '../lib/currentYear.js';
 import SUBJECTS from '../lib/subjects.js';
 import { palette } from '../theme.js';
+
+// Width of the collapsed session sider — wide enough for the expand button +
+// breathing room, narrow enough to disappear from peripheral vision.
+const SIDER_COLLAPSED_WIDTH = 40;
+const SIDER_DEFAULT_WIDTH = 260;
+const SIDER_COLLAPSED_STORAGE_KEY = 'ytai.sider.collapsed';
+
+function readSiderCollapsed() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(SIDER_COLLAPSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSiderCollapsed(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(SIDER_COLLAPSED_STORAGE_KEY, value ? '1' : '0');
+  } catch {
+    // private mode etc. — silently ignore
+  }
+}
 
 export default function TutorPage() {
   const { sessionId: routeSessionId } = useParams();
@@ -23,7 +48,17 @@ export default function TutorPage() {
   const [aiAnnotationsByPage, setAiAnnotationsByPage] = useState(() => new Map());
   const [creatingSession, setCreatingSession] = useState(false);
   const [subject, setSubject] = useState(() => currentSubject().value);
+  const [year, setYear] = useState(() => currentYear().value);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [siderCollapsed, setSiderCollapsed] = useState(readSiderCollapsed);
+
+  const toggleSider = useCallback(() => {
+    setSiderCollapsed((prev) => {
+      const next = !prev;
+      writeSiderCollapsed(next);
+      return next;
+    });
+  }, []);
   const currentUser = authSession().user;
   const [modal, modalContextHolder] = Modal.useModal();
   // Imperative handle on the canvas so ChatPanel can pull a flattened PNG
@@ -85,6 +120,15 @@ export default function TutorPage() {
       navigate('/tutor', { replace: true });
     },
     [navigate, subject]
+  );
+
+  const onYearChange = useCallback(
+    (next) => {
+      if (next === year) return;
+      setYear(next);
+      currentYear().save(next);
+    },
+    [year]
   );
 
   useEffect(() => {
@@ -210,7 +254,14 @@ export default function TutorPage() {
         />
         <Logo height={24} />
 
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Select
+            value={year}
+            onChange={onYearChange}
+            style={{ width: 84 }}
+            aria-label="Year level"
+            options={YEARS.map((y) => ({ value: y, label: y }))}
+          />
           <Select
             value={subject}
             onChange={onSubjectChange}
@@ -309,10 +360,11 @@ export default function TutorPage() {
         style={{ flex: 1, minHeight: 0, background: palette.surface }}
       >
         <Splitter.Panel
-          defaultSize={260}
-          min={180}
+          defaultSize={SIDER_DEFAULT_WIDTH}
+          size={siderCollapsed ? SIDER_COLLAPSED_WIDTH : undefined}
+          min={siderCollapsed ? SIDER_COLLAPSED_WIDTH : 180}
           max="40%"
-          collapsible={{ start: true, end: true, showCollapsibleIcon: true }}
+          resizable={!siderCollapsed}
         >
           <TutorSessionsSider
             currentSessionId={sessionId}
@@ -320,6 +372,8 @@ export default function TutorPage() {
             onSelect={onSelectSession}
             onNewSession={onNewSession}
             creatingSession={creatingSession}
+            collapsed={siderCollapsed}
+            onToggleCollapsed={toggleSider}
           />
         </Splitter.Panel>
         <Splitter.Panel>
