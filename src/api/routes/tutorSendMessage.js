@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
@@ -15,6 +18,16 @@ import tutorPrompt from '../lib/tutorPrompt.js';
 
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
+// Corrective prompt sent on the phantom-annotation retry. Stored as a
+// markdown resource so it can be edited without touching code.
+const PHANTOM_ANNOTATION_RETRY_PROMPT = readFileSync(
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../prompts/phantomAnnotationRetry.md'
+  ),
+  'utf8'
+).trimEnd();
+
 // Catches first-person claims of having drawn on the page. Used to detect
 // the hallucination case where Brain narrates a highlight it never actually
 // produced via draw_annotation. Intentionally first-person ("I've") only —
@@ -28,24 +41,34 @@ function looksLikeAnnotationAnnouncement(text) {
   return ANNOTATION_NARRATION_RE.test(text);
 }
 
-// Strip phantom-highlight sentences from a past assistant message before
-// feeding it back to Brain. If an earlier turn narrated a highlight without
-// actually calling draw_annotation, leaving that sentence in the model's
-// conversation history teaches it the lie is a valid pattern — next turn it
-// copies the form. Returns the cleaned content (which may be empty if the
-// entire message was the false claim).
-function sanitizeAssistantContentForBrain(row) {
-  const content = typeof row.content === 'string' ? row.content : '';
-  if (!content) return content;
-  const hadDrawAnnotation =
-    Array.isArray(row.toolCalls) && row.toolCalls.some((c) => c?.name === 'draw_annotation');
-  if (hadDrawAnnotation) return content;
+// Strip every phantom-highlight sentence from a string, splitting on
+// sentence terminators and newlines and dropping any segment that matches
+// the narration regex. Used both for cleaning past assistant messages
+// before re-feeding Brain (so the lie doesn't reinforce itself across
+// turns) and as a belt-and-suspenders scrub on the live turn's content
+// before it lands in the DB. May return an empty string if the entire
+// message was the false claim.
+function stripPhantomAnnotationNarration(content) {
+  if (typeof content !== 'string' || content.length === 0) return content;
   if (!ANNOTATION_NARRATION_RE.test(content)) return content;
   return content
     .split(/(?<=[.!?])\s+|\n+/)
     .filter((s) => !ANNOTATION_NARRATION_RE.test(s))
     .join(' ')
     .trim();
+}
+
+// Scrub phantom-highlight narration off an assistant row before feeding
+// it back to Brain. Skipped when the row actually had a draw_annotation
+// call (the narration was grounded), so legitimate "I've highlighted X"
+// sentences stay intact.
+function sanitizeAssistantContentForBrain(row) {
+  const content = typeof row.content === 'string' ? row.content : '';
+  if (!content) return content;
+  const hadDrawAnnotation =
+    Array.isArray(row.toolCalls) && row.toolCalls.some((c) => c?.name === 'draw_annotation');
+  if (hadDrawAnnotation) return content;
+  return stripPhantomAnnotationNarration(content);
 }
 
 function brainConfig() {
@@ -336,7 +359,7 @@ export default function tutorSendMessage(fastify) {
       usedColorsForTurn
     });
 
-    const {
+    let {
       assistantContent,
       allToolCalls,
       usageRecords,
@@ -359,17 +382,80 @@ export default function tutorSendMessage(fastify) {
       request.log.error({ err: turnError, sessionId }, 'Chat stream failed');
     }
 
-    // Hallucination check: Brain sometimes writes "I've highlighted X in
-    // yellow…" without actually calling draw_annotation. The persona forbids
-    // this but DeepSeek occasionally pattern-matches off prior assistant
-    // turns. Log it so we can measure how often, and consider a retry loop
-    // if it stays frequent.
+    // Hallucination correction: when Brain writes "I've highlighted X in
+    // yellow…" but never called draw_annotation, retry once. The student
+    // would otherwise see a phantom announcement with no mark on the page.
+    // Only retry on a clean turn — skip when the stream was interrupted or
+    // already failed.
     const drewSomething = allToolCalls.some((c) => c.name === 'draw_annotation');
-    if (!drewSomething && looksLikeAnnotationAnnouncement(assistantContent)) {
+    const phantomAnnotation =
+      !drewSomething &&
+      !interrupted &&
+      !turnError &&
+      looksLikeAnnotationAnnouncement(assistantContent);
+
+    if (phantomAnnotation) {
       request.log.warn(
         { sessionId, contentPreview: assistantContent.slice(0, 200) },
-        'Brain narrated a highlight without calling draw_annotation — annotation hallucinated'
+        'Brain narrated a highlight without calling draw_annotation — retrying once'
       );
+
+      // Tell the UI to clear the in-progress assistant bubble and stop
+      // speaking the discarded sentence. The retry's tokens stream into
+      // the same (now empty) bubble.
+      sse('retry', { reason: 'phantom-annotation' });
+
+      // Synthesize the first attempt as an assistant turn so Brain sees
+      // what it said, then ask for a corrected reply. Two-message form
+      // (assistant + user) reads more naturally than appending a bare
+      // corrective user message after the original prompt.
+      modelMessages.push({ role: 'assistant', content: assistantContent });
+      modelMessages.push({ role: 'user', content: PHANTOM_ANNOTATION_RETRY_PROMPT });
+
+      const retryResult = await runBrainTurn({
+        baseUrl,
+        apiKey,
+        model: modelId,
+        messages: modelMessages,
+        tools: activeDoc ? brainTools : undefined,
+        signal: abortController.signal,
+        log: request.log,
+        logFields: { sessionId, retry: 'phantom-annotation' },
+        dispatchTool,
+        onToken: (delta) => sse('token', { delta })
+      });
+
+      // Discard the first attempt's content; keep both attempts' usage
+      // (we paid for both) and tool-call audit (intermediate lookups from
+      // the first attempt still happened and matter for the record).
+      assistantContent = retryResult.assistantContent;
+      allToolCalls = [...allToolCalls, ...retryResult.allToolCalls];
+      usageRecords = [...usageRecords, ...retryResult.usageRecords];
+      interrupted = retryResult.interrupted;
+      turnError = retryResult.error;
+
+      if (turnError) {
+        request.log.error({ err: turnError, sessionId }, 'Retry Brain turn failed');
+      }
+    }
+
+    // Belt-and-suspenders: if the (retried or original) reply STILL claims
+    // a mark with no backing draw_annotation, drop the offending sentence
+    // before persisting rather than capping the lie in the transcript. May
+    // empty the message entirely if the entire reply was the false claim
+    // — handled by the existing "no content" branch below.
+    const finalDrewSomething = allToolCalls.some((c) => c.name === 'draw_annotation');
+    if (!finalDrewSomething && looksLikeAnnotationAnnouncement(assistantContent)) {
+      const scrubbed = stripPhantomAnnotationNarration(assistantContent);
+      request.log.warn(
+        {
+          sessionId,
+          before: assistantContent.slice(0, 200),
+          after: scrubbed.slice(0, 200)
+        },
+        'Phantom annotation narration survived retry — scrubbing sentence before persistence'
+      );
+      assistantContent = scrubbed;
     }
 
     // Roll Brain rounds into one bill for this assistant message. The

@@ -324,6 +324,18 @@ export default function ChatPanel({
                 : m
             )
           );
+        } else if (event === 'retry') {
+          // Server detected a phantom-highlight reply and is re-running
+          // Brain in the same HTTP turn. Clear the in-progress bubble and
+          // kill the voice queue so the retry's tokens stream into a
+          // clean slate. The same placeholder id keeps audio bound to
+          // this bubble after re-binding the voice target.
+          setAwaitingTokens(true);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === placeholderId ? { ...m, content: '' } : m))
+          );
+          voice.stop();
+          voice.setActiveTarget(placeholderId);
         } else if (event === 'lookup-start' || event === 'lookup') {
           setAwaitingTokens(true);
         } else if (event === 'tool') {
