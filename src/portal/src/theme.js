@@ -271,9 +271,9 @@ const theme = {
       controlHeightLG: 56,
       controlHeightSM: 40,
       fontWeight: 600,
-      primaryShadow: stickerShadow.button,
-      defaultShadow: stickerShadow.button,
-      dangerShadow: stickerShadow.button
+      primaryShadow: 'none',
+      defaultShadow: 'none',
+      dangerShadow: 'none'
     },
     Card: {
       borderRadiusLG: radius.lg,
