@@ -14,7 +14,8 @@ export default function tutorGetMessages(fastify) {
         subject: tutorSession.subject,
         year: tutorSession.year,
         currentDocId: tutorSession.currentDocId,
-        title: tutorSession.title
+        title: tutorSession.title,
+        startedAt: tutorSession.startedAt
       })
       .from(tutorSession)
       .where(and(eq(tutorSession.id, sessionId), eq(tutorSession.userId, userId)));
@@ -88,7 +89,8 @@ export default function tutorGetMessages(fastify) {
         subject: session.subject,
         year: session.year,
         currentDocId: session.currentDocId,
-        title: session.title
+        title: session.title,
+        startedAt: session.startedAt
       },
       messages,
       docs
