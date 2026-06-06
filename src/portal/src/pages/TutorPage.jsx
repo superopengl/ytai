@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Select, Splitter, Typography } from 'antd';
-import { MenuOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Radio, Select, Splitter, Typography } from 'antd';
+import { MenuOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
-import TutorSessionsSider from '../components/TutorSessionsSider.jsx';
 import Logo from '../components/Logo.jsx';
 import apiFetch from '../lib/apiFetch.js';
 import authSession from '../lib/authSession.js';
@@ -12,30 +11,6 @@ import currentSubject from '../lib/currentSubject.js';
 import currentYear, { YEARS } from '../lib/currentYear.js';
 import SUBJECTS from '../lib/subjects.js';
 import { palette } from '../theme.js';
-
-// Width of the collapsed session sider — wide enough for the expand button +
-// breathing room, narrow enough to disappear from peripheral vision.
-const SIDER_COLLAPSED_WIDTH = 40;
-const SIDER_DEFAULT_WIDTH = 260;
-const SIDER_COLLAPSED_STORAGE_KEY = 'ytai.sider.collapsed';
-
-function readSiderCollapsed() {
-  if (typeof localStorage === 'undefined') return false;
-  try {
-    return localStorage.getItem(SIDER_COLLAPSED_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeSiderCollapsed(value) {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SIDER_COLLAPSED_STORAGE_KEY, value ? '1' : '0');
-  } catch {
-    // private mode etc. — silently ignore
-  }
-}
 
 export default function TutorPage() {
   const { sessionId: routeSessionId } = useParams();
@@ -50,11 +25,12 @@ export default function TutorPage() {
   const [subject, setSubject] = useState(() => currentSubject().value);
   const [year, setYear] = useState(() => currentYear().value);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [siderCollapsed, setSiderCollapsed] = useState(readSiderCollapsed);
-  // Bumped on any change that the session sider's GET /api/tutor/sessions
-  // wouldn't otherwise re-trigger (e.g. renaming the current session). The
-  // sider re-runs its fetch whenever this counter changes.
-  const [sidebarRefresh, setSidebarRefresh] = useState(0);
+  // List of every session owned by the user, fed into the header Select
+  // so the user can jump between sessions. Bumped via `sessionsRefresh`
+  // when something the GET wouldn't otherwise re-trigger changes (rename,
+  // delete). Null while the first fetch is in flight.
+  const [sessions, setSessions] = useState(null);
+  const [sessionsRefresh, setSessionsRefresh] = useState(0);
   // AntD breakpoint: !md => below 768px = phone/narrow tablet. On narrow
   // we replace the 3-pane Splitter (sider | canvas | chat) with a single
   // full-width ChatPanel + a thumbnail button that pops the canvas in a
@@ -70,13 +46,27 @@ export default function TutorPage() {
     if (!isNarrow) setCanvasDrawerOpen(false);
   }, [isNarrow]);
 
-  const toggleSider = useCallback(() => {
-    setSiderCollapsed((prev) => {
-      const next = !prev;
-      writeSiderCollapsed(next);
-      return next;
-    });
-  }, []);
+  // Fetch the session list once per (sessionId, sessionsRefresh) tick.
+  // Re-fetching when sessionId changes catches new sessions created via
+  // the New Session button; the refresh counter catches rename/delete.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/tutor/sessions');
+        if (!res.ok) throw new Error("Couldn't load your sessions");
+        const body = await res.json();
+        if (cancelled) return;
+        setSessions(Array.isArray(body.sessions) ? body.sessions : []);
+      } catch (err) {
+        if (!cancelled) console.error('Failed to load sessions', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sessionsRefresh]);
+
   const currentUser = authSession().user;
   const [modal, modalContextHolder] = Modal.useModal();
   // Imperative handle on the canvas so ChatPanel can pull a flattened PNG
@@ -104,74 +94,68 @@ export default function TutorPage() {
 
   const onSessionDeleted = useCallback(
     (deletedId) => {
+      setSessionsRefresh((n) => n + 1);
       if (deletedId === sessionId) navigate('/tutor', { replace: true });
     },
     [navigate, sessionId]
   );
 
   const onSessionRenamed = useCallback(() => {
-    setSidebarRefresh((n) => n + 1);
+    // The session list's GET response carries the title, so a refresh is
+    // enough to flow the new name into the header Select.
+    setSessionsRefresh((n) => n + 1);
   }, []);
 
-  const onNewSession = useCallback(async () => {
+  // The "+ New Session" tab opens this modal; year + subject are chosen
+  // inside it and only get committed when the user clicks Create. Defaults
+  // come from the page-level state — which is hydrated from the user
+  // profile + the most recently opened session — so the modal opens on
+  // what the kid most likely wants without making them re-pick every time.
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [draftSubject, setDraftSubject] = useState(subject);
+  const [draftYear, setDraftYear] = useState(year);
+
+  const onNewSession = useCallback(() => {
+    setDraftSubject(subject);
+    setDraftYear(year);
+    setNewSessionOpen(true);
+  }, [subject, year]);
+
+  const confirmNewSession = useCallback(async () => {
     if (creatingSession) return;
     setCreatingSession(true);
     try {
       const res = await apiFetch('/api/tutor/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject, year })
+        body: JSON.stringify({ subject: draftSubject, year: draftYear })
       });
       if (!res.ok) throw new Error("Couldn't start a new session");
       const body = await res.json();
+      // Persist the picks as the new defaults for the next session. The
+      // year also propagates back to the user profile so the choice
+      // follows the kid across browsers.
+      setSubject(draftSubject);
+      currentSubject().save(draftSubject);
+      setYear(draftYear);
+      currentYear().save(draftYear);
+      if (draftYear !== year) {
+        apiFetch('/api/me/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year: draftYear })
+        }).catch((err) => {
+          console.error('Failed to save year preference', err);
+        });
+      }
+      setNewSessionOpen(false);
       navigate(`/tutor/${body.sessionId}`);
     } catch (err) {
       message.error(err.message || "Couldn't start a new session");
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, navigate, subject, year]);
-
-  const onSubjectChange = useCallback(
-    (next) => {
-      if (next === subject) return;
-      setSubject(next);
-      currentSubject().save(next);
-      // Drop the current session from the URL so the effect below picks
-      // (or creates) the top session for the newly-selected subject.
-      navigate('/tutor', { replace: true });
-    },
-    [navigate, subject]
-  );
-
-  const onYearChange = useCallback(
-    (next) => {
-      if (next === year) return;
-      setYear(next);
-      currentYear().save(next);
-      // Persist to the server profile so the choice follows the user across
-      // browsers, and patch the current session so its year reflects the
-      // student's correction. Best-effort: the localStorage cache +
-      // optimistic state update mean a network blip doesn't strand the UI.
-      apiFetch('/api/me/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: next })
-      }).catch((err) => {
-        console.error('Failed to save year preference', err);
-      });
-      if (sessionId) {
-        apiFetch(`/api/tutor/${sessionId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ year: next })
-        }).catch((err) => {
-          console.error('Failed to update session year', err);
-        });
-      }
-    },
-    [sessionId, year]
-  );
+  }, [creatingSession, draftSubject, draftYear, navigate, year]);
 
   // Hydrate the year from the server profile on mount. localStorage primes
   // the initial render so the dropdown isn't blank during the fetch; if the
@@ -232,10 +216,11 @@ export default function TutorPage() {
     return () => {
       cancelled = true;
     };
-    // `year` is read as a snapshot when the effect runs — re-running on
-    // every year flip would auto-create a new session each time, which
-    // isn't what the user wants. onYearChange PATCHes the current session
-    // instead.
+    // `year` is read as a snapshot when the effect runs — it only
+    // matters when this branch falls through to creating a fresh session
+    // because the user has none yet, and re-running on every year change
+    // would auto-create a new session each time. The "+ New Session"
+    // modal is the explicit path for changing year/subject.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSessionId, navigate, subject]);
 
@@ -244,17 +229,13 @@ export default function TutorPage() {
     setCurrentDocId(loadedCurrent);
     setCurrentPage(1);
     setAiAnnotationsByPage(loadedAi ?? new Map());
-    // Keep the subject dropdown synced with whatever this session actually
-    // is — opening a /tutor/:id URL for a non-math session should swap the
-    // selector to match instead of misrepresenting the session. Persist
-    // so the user lands back on the same subject elsewhere in the app.
+    // Mirror the active session's subject + year back into the page-level
+    // defaults so the New Session modal opens on what the kid most likely
+    // wants. Persisted so it survives reloads.
     if (loadedSubject) {
       setSubject(loadedSubject);
       currentSubject().save(loadedSubject);
     }
-    // Year is per-session too — the kid may have done Y4 work back when
-    // they were in Y4, even though they're now in Y5. Mirror the session's
-    // year onto the selector so the header reads the session's truth.
     if (loadedYear) {
       setYear(loadedYear);
       currentYear().save(loadedYear);
@@ -347,6 +328,16 @@ export default function TutorPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: palette.bgPanel }}>
       {modalContextHolder}
+      <NewSessionModal
+        open={newSessionOpen}
+        creating={creatingSession}
+        year={draftYear}
+        subject={draftSubject}
+        onYearChange={setDraftYear}
+        onSubjectChange={setDraftSubject}
+        onConfirm={confirmNewSession}
+        onCancel={() => setNewSessionOpen(false)}
+      />
       <header
         style={{
           padding: '12px 24px 12px 12px',
@@ -358,39 +349,25 @@ export default function TutorPage() {
         }}
       >
         <Button
-          type="default"
+          type="text"
           icon={<MenuOutlined />}
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
         />
         <Logo height={24} />
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Select
-            value={year}
-            onChange={onYearChange}
-            style={{ width: 84 }}
-            aria-label="Year level"
-            options={YEARS.map((y) => ({ value: y, label: y }))}
-          />
-          <Select
-            value={subject}
-            onChange={onSubjectChange}
-            style={{ minWidth: 180 }}
-            options={SUBJECTS.map((s) => {
-              const Icon = s.icon;
-              return {
-                value: s.key,
-                label: (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <Icon style={{ color: s.color }} />
-                    {s.label}
-                  </span>
-                )
-              };
-            })}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, padding: '0 12px' }}>
+          <SessionSelect
+            value={sessionId}
+            sessions={sessions}
+            onChange={onSelectSession}
           />
         </div>
+        <Button
+          type="text"
+          icon={<PlusOutlined />}
+          loading={creatingSession}
+          onClick={onNewSession}
+        />
       </header>
       <Drawer
         placement="left"
@@ -466,77 +443,314 @@ export default function TutorPage() {
           ]}
         />
       </Drawer>
-      <Splitter
-        className="ytai-sider-splitter"
-        style={{ flex: 1, minHeight: 0, background: palette.surface }}
-      >
-        <Splitter.Panel
-          defaultSize={SIDER_DEFAULT_WIDTH}
-          // On narrow viewports force the sider to the 40px-wide collapsed
-          // rail so the chat gets the rest of the row. The user's saved
-          // wide-screen preference is preserved for when they rotate back.
-          size={isNarrow || siderCollapsed ? SIDER_COLLAPSED_WIDTH : undefined}
-          min={isNarrow || siderCollapsed ? SIDER_COLLAPSED_WIDTH : 180}
-          max="40%"
-          resizable={!isNarrow && !siderCollapsed}
-        >
-          <TutorSessionsSider
-            currentSessionId={sessionId}
-            subject={subject}
-            onSelect={onSelectSession}
-            onNewSession={onNewSession}
-            creatingSession={creatingSession}
-            collapsed={isNarrow || siderCollapsed}
-            onToggleCollapsed={isNarrow ? undefined : toggleSider}
-            refreshKey={sidebarRefresh}
-          />
-        </Splitter.Panel>
-        <Splitter.Panel>
-          {isNarrow ? (
-            <>
-              {chatPanel}
-              <Drawer
-                placement="right"
-                open={canvasDrawerOpen}
-                onClose={() => setCanvasDrawerOpen(false)}
-                width="100%"
-                title="Worksheet"
-                destroyOnClose={false}
-                // Mount the canvas eagerly so canvasRef is wired before the
-                // student opens the drawer — ChatPanel pulls a flattened PNG
-                // via getAnnotatedImage on send, and that has to work even
-                // when the drawer has never been opened this turn.
-                forceRender
-                styles={{
-                  body: { padding: 8, display: 'flex', flexDirection: 'column' }
+      <div style={{ flex: 1, minHeight: 0, background: palette.surface }}>
+        {isNarrow ? (
+          <>
+            {chatPanel}
+            <Drawer
+              placement="right"
+              open={canvasDrawerOpen}
+              onClose={() => setCanvasDrawerOpen(false)}
+              width="100%"
+              title="Worksheet"
+              destroyOnClose={false}
+              // Mount the canvas eagerly so canvasRef is wired before the
+              // student opens the drawer — ChatPanel pulls a flattened PNG
+              // via getAnnotatedImage on send, and that has to work even
+              // when the drawer has never been opened this turn.
+              forceRender
+              styles={{
+                body: { padding: 8, display: 'flex', flexDirection: 'column' }
+              }}
+            >
+              {pagedCanvas}
+            </Drawer>
+          </>
+        ) : currentDoc ? (
+          <Splitter style={{ height: '100%', minHeight: 0 }}>
+            <Splitter.Panel key="canvas" defaultSize="58%" min="30%" max="80%">
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 4,
+                  boxSizing: 'border-box'
                 }}
               >
                 {pagedCanvas}
-              </Drawer>
-            </>
-          ) : (
-            <Splitter style={{ height: '100%', minHeight: 0 }}>
-              {currentDoc && (
-                <Splitter.Panel key="canvas" defaultSize="58%" min="30%" max="80%">
-                  <div
-                    style={{
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: 4,
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    {pagedCanvas}
-                  </div>
-                </Splitter.Panel>
-              )}
-              <Splitter.Panel key="chat">{chatPanel}</Splitter.Panel>
-            </Splitter>
-          )}
-        </Splitter.Panel>
-      </Splitter>
+              </div>
+            </Splitter.Panel>
+            <Splitter.Panel key="chat">{chatPanel}</Splitter.Panel>
+          </Splitter>
+        ) : (
+          // No worksheet yet: skip the Splitter so the chat doesn't stretch
+          // across an empty desktop. Cap at 500px and center, so the kid is
+          // looking at a focused column instead of a wall of whitespace.
+          <div style={{ height: '100%', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 700, height: '100%' }}>
+              {chatPanel}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
+function NewSessionModal({
+  open,
+  creating,
+  year,
+  subject,
+  onYearChange,
+  onSubjectChange,
+  onConfirm,
+  onCancel
+}) {
+  return (
+    <Modal
+      open={open}
+      title="Start a new tutoring session"
+      okText="Create"
+      cancelText="Cancel"
+      confirmLoading={creating}
+      onOk={onConfirm}
+      onCancel={onCancel}
+      destroyOnClose
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 8 }}>
+        <div>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            Year level
+          </Typography.Text>
+          <Radio.Group
+            value={year}
+            onChange={(e) => onYearChange(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            {YEARS.map((y) => (
+              <Radio.Button key={y} value={y}>
+                {y}
+              </Radio.Button>
+            ))}
+          </Radio.Group>
+        </div>
+        <div>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            Subject
+          </Typography.Text>
+          <Radio.Group
+            value={subject}
+            onChange={(e) => onSubjectChange(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            {SUBJECTS.map((s) => {
+              const Icon = s.icon;
+              const selected = subject === s.key;
+              return (
+                <Radio.Button key={s.key} value={s.key}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Icon style={{ color: selected ? '#fff' : s.color }} />
+                    {s.label}
+                  </span>
+                </Radio.Button>
+              );
+            })}
+          </Radio.Group>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Centered session picker in the top nav. Trigger and dropdown items
+// share the same three-row layout (year/subject chips → title →
+// created time + "X ago") so a glance at the closed Select tells the
+// user the same thing as picking from the list.
+function SessionSelect({ value, sessions, onChange }) {
+  const loading = sessions === null;
+  const options = (sessions ?? []).map((s) => ({
+    value: s.id,
+    label: sessionDisplayTitle(s),
+    session: s
+  }));
+  return (
+    <Select
+      className="ytai-session-select"
+      value={value ?? undefined}
+      onChange={(id) => onChange?.(id)}
+      loading={loading}
+      placeholder={loading ? 'Loading sessions…' : 'Pick a session'}
+      style={{ width: '100%', maxWidth: 480 }}
+      optionLabelProp="label"
+      options={options}
+      labelRender={({ value: id }) => {
+        const s = (sessions ?? []).find((row) => row.id === id);
+        if (!s) return null;
+        return <SessionTriggerLabel session={s} />;
+      }}
+      optionRender={(option) => <SessionOptionContent session={option.data.session} />}
+    />
+  );
+}
+
+// Closed-trigger label: single row of [year chip] [subject chip] [title],
+// so the Select sits at AntD's default 32px height and matches the
+// "+ New Session" button beside it. The dropdown rows still use the
+// richer two-line SessionOptionContent layout.
+function SessionTriggerLabel({ session }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      {session.year ? <HeaderYearChip year={session.year} /> : null}
+      {session.subject ? <HeaderSubjectChip subject={session.subject} /> : null}
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: palette.text,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0
+        }}
+      >
+        {sessionDisplayTitle(session)}
+      </span>
+    </div>
+  );
+}
+
+function SessionOptionContent({ session }) {
+  const absolute = formatSessionDate(session.startedAt);
+  const relative = formatSessionRelative(session.startedAt);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '4px 0', minWidth: 0 }}>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: palette.text,
+          lineHeight: 1.3,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {sessionDisplayTitle(session)}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+          {session.year ? <HeaderYearChip year={session.year} /> : null}
+          {session.subject ? <HeaderSubjectChip subject={session.subject} /> : null}
+        </div>
+        {absolute ? (
+          <div
+            style={{
+              marginLeft: 'auto',
+              fontSize: 11,
+              color: palette.textMuted,
+              lineHeight: 1.3,
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            {absolute}
+            {relative ? ` (${relative})` : ''}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function sessionDisplayTitle(session) {
+  const title = typeof session?.title === 'string' ? session.title.trim() : '';
+  if (title) return title.length > 80 ? `${title.slice(0, 77)}…` : title;
+  const raw = typeof session?.preview === 'string' ? session.preview.trim() : '';
+  if (!raw) return 'New Session';
+  const flat = raw.replace(/\s+/g, ' ');
+  return flat.length > 80 ? `${flat.slice(0, 77)}…` : flat;
+}
+
+function HeaderYearChip({ year }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0 5px',
+        border: `1px solid ${palette.border}`,
+        borderRadius: 999,
+        background: palette.bgPanel,
+        color: palette.text,
+        fontSize: 9,
+        fontWeight: 600,
+        lineHeight: 1.4,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {year}
+    </span>
+  );
+}
+
+function HeaderSubjectChip({ subject }) {
+  const meta = SUBJECTS.find((s) => s.key === subject);
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        padding: '0 5px 0 4px',
+        border: `1px solid ${meta.color}`,
+        background: meta.tint,
+        borderRadius: 999,
+        color: palette.text,
+        fontSize: 9,
+        fontWeight: 600,
+        lineHeight: 1.4,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <Icon style={{ color: meta.color, fontSize: 9 }} />
+      {meta.label}
+    </span>
+  );
+}
+
+function formatSessionDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return '';
+  }
+}
+
+function formatSessionRelative(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'just now';
+  if (secs < 90) return '1 minute ago';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.round(days / 30);
+  if (months === 1) return '1 month ago';
+  if (months < 12) return `${months} months ago`;
+  const years = Math.round(days / 365);
+  return years === 1 ? '1 year ago' : `${years} years ago`;
+}

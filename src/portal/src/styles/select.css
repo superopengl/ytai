@@ -1,0 +1,8 @@
+/* The TutorPage's session picker shows a single-row label in the closed
+   trigger (year chip + subject chip + title) so AntD's default 32px
+   selector height matches the "+ New Session" button beside it. The
+   dropdown options still render the richer two-line layout; the
+   selection-item padding-end leaves room for the dropdown arrow. */
+.ytai-session-select.ant-select .ant-select-selection-item {
+  padding-inline-end: 24px !important;
+}

@@ -127,6 +127,8 @@ export default function ChatPanel({
           currentDocId: body.session?.currentDocId ?? null,
           subject: body.session?.subject ?? null,
           year: body.session?.year ?? null,
+          title: body.session?.title ?? null,
+          startedAt: body.session?.startedAt ?? null,
           aiAnnotationsByPage: aiByPage
         });
       })
@@ -410,9 +412,22 @@ export default function ChatPanel({
 
   const openRename = useCallback(() => {
     if (!sessionId) return;
-    setRenameDraft(sessionTitle ?? '');
+    // Prefill with whatever the user currently sees as the session's name:
+    // the explicit title if set, otherwise the first-user-message preview
+    // (same source the sider falls back to). Flatten whitespace and cap at
+    // the input's maxLength so a long first message doesn't overflow.
+    let initial = (sessionTitle ?? '').trim();
+    if (!initial) {
+      const firstUserMessage = messages.find(
+        (m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+      );
+      if (firstUserMessage) {
+        initial = firstUserMessage.content.trim().replace(/\s+/g, ' ').slice(0, 80);
+      }
+    }
+    setRenameDraft(initial);
     setRenameOpen(true);
-  }, [sessionId, sessionTitle]);
+  }, [sessionId, sessionTitle, messages]);
 
   const submitRename = useCallback(async () => {
     if (!sessionId || renameSaving) return;
@@ -431,12 +446,13 @@ export default function ChatPanel({
         throw new Error(body.error || "Couldn't rename that session");
       }
       const body = await res.json();
-      setSessionTitle(body.title ?? null);
+      const nextTitle = body.title ?? null;
+      setSessionTitle(nextTitle);
       setRenameOpen(false);
-      // Tell the parent so the sider can re-fetch — its label was driven
-      // by either the old title or the preview, neither of which is what
-      // we just persisted.
-      onSessionRenamed?.(sessionId);
+      // Tell the parent so the sider can re-fetch and the header label
+      // updates — both were driven by either the old title or the
+      // preview, neither of which is what we just persisted.
+      onSessionRenamed?.(sessionId, nextTitle);
     } catch (err) {
       message.error(err.message || "Couldn't rename that session");
     } finally {
@@ -624,57 +640,6 @@ export default function ChatPanel({
       )}
 
       <div style={composerStyle}>
-        <Tooltip title="Add a worksheet or PDF">
-          <Upload
-            beforeUpload={(file, list) => {
-              // antd fires beforeUpload once per file in a multi-select.
-              // Only act on the first call (when file === list[0]) so we
-              // don't upload the same batch N times.
-              if (Array.isArray(list) && list.length > 0 && file === list[0]) {
-                handleUploadFiles(list);
-              } else if (!Array.isArray(list) || list.length === 0) {
-                handleUploadFiles([file]);
-              }
-              return false;
-            }}
-            accept="image/*,application/pdf"
-            multiple
-            showUploadList={false}
-            disabled={uploading}
-          >
-            <Button
-              icon={uploading ? <LoadingOutlined /> : <PlusOutlined />}
-              disabled={uploading}
-              aria-label="Upload a new worksheet"
-            />
-          </Upload>
-        </Tooltip>
-        {speech.supported && (
-          <Tooltip
-            title={
-              speech.listening
-                ? 'Stop dictation'
-                : voice.speaking
-                  ? 'Stop reading and dictate'
-                  : 'Dictate your question'
-            }
-          >
-            <Button
-              icon={<AudioOutlined />}
-              onClick={toggleDictation}
-              danger={speech.listening}
-              type={speech.listening ? 'primary' : 'default'}
-              aria-pressed={speech.listening}
-              aria-label={
-                speech.listening
-                  ? 'Stop dictation'
-                  : voice.speaking
-                    ? 'Stop reading and start dictation'
-                    : 'Start dictation'
-              }
-            />
-          </Tooltip>
-        )}
         <Input.TextArea
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -690,29 +655,92 @@ export default function ChatPanel({
           readOnly={speech.listening}
           maxLength={2000}
           style={{
-            flex: 1,
             borderRadius: 12,
             borderColor: speech.listening ? palette.error : undefined,
             boxShadow: speech.listening ? `0 0 0 2px ${palette.error}26` : undefined
           }}
         />
-        {busy || voice.speaking ? (
-          <Tooltip title="Stop the tutor">
-            <Button danger icon={<StopOutlined />} onClick={stop} aria-label="Stop the tutor">
-              Stop
+        <div style={composerActionsStyle}>
+          <div style={composerActionsLeftStyle}>
+            <Tooltip title="Add a worksheet or PDF">
+              <Upload
+                beforeUpload={(file, list) => {
+                  // antd fires beforeUpload once per file in a multi-select.
+                  // Only act on the first call (when file === list[0]) so we
+                  // don't upload the same batch N times.
+                  if (Array.isArray(list) && list.length > 0 && file === list[0]) {
+                    handleUploadFiles(list);
+                  } else if (!Array.isArray(list) || list.length === 0) {
+                    handleUploadFiles([file]);
+                  }
+                  return false;
+                }}
+                accept="image/*,application/pdf"
+                multiple
+                showUploadList={false}
+                disabled={uploading}
+              >
+                <Button
+                  size="small"
+                  icon={uploading ? <LoadingOutlined /> : <PlusOutlined />}
+                  disabled={uploading}
+                  aria-label="Upload a new worksheet"
+                />
+              </Upload>
+            </Tooltip>
+            {speech.supported && (
+              <Tooltip
+                title={
+                  speech.listening
+                    ? 'Stop dictation'
+                    : voice.speaking
+                      ? 'Stop reading and dictate'
+                      : 'Dictate your question'
+                }
+              >
+                <Button
+                  size="small"
+                  icon={<AudioOutlined />}
+                  onClick={toggleDictation}
+                  danger={speech.listening}
+                  type={speech.listening ? 'primary' : 'default'}
+                  aria-pressed={speech.listening}
+                  aria-label={
+                    speech.listening
+                      ? 'Stop dictation'
+                      : voice.speaking
+                        ? 'Stop reading and start dictation'
+                        : 'Start dictation'
+                  }
+                />
+              </Tooltip>
+            )}
+          </div>
+          {busy || voice.speaking ? (
+            <Tooltip title="Stop the tutor">
+              <Button
+                size="small"
+                danger
+                icon={<StopOutlined />}
+                onClick={stop}
+                aria-label="Stop the tutor"
+              >
+                Stop
+              </Button>
+            </Tooltip>
+          ) : (
+            <Button
+              size="small"
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={send}
+              disabled={!input.trim()}
+              aria-label="Send message"
+            >
+              Send
             </Button>
-          </Tooltip>
-        ) : (
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={send}
-            disabled={!input.trim()}
-            aria-label="Send message"
-          >
-            Send
-          </Button>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -974,10 +1002,20 @@ const headerStyle = {
 const scrollStyle = { flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 };
 const composerStyle = {
   padding: 12,
-  borderTop: `1px solid ${palette.borderSoft}`,
   display: 'flex',
-  gap: 8,
-  alignItems: 'flex-end'
+  flexDirection: 'column',
+  gap: 8
+};
+const composerActionsStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8
+};
+const composerActionsLeftStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8
 };
 const centeredHint = {
   height: '100%',
