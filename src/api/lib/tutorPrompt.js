@@ -90,7 +90,8 @@ export default async function tutorPrompt({
   usedColors = [],
   guidanceLevel,
   subject,
-  annotatedPages = []
+  annotatedPages = [],
+  unified = false
 } = {}) {
   const level = isGuidanceLevel(guidanceLevel) ? guidanceLevel : DEFAULT_GUIDANCE_LEVEL;
   const subjectKey = isSubject(subject) ? subject : DEFAULT_SUBJECT;
@@ -112,18 +113,48 @@ export default async function tutorPrompt({
 
   if (hasDoc) {
     const pageCount = activeDoc.pages.length;
-    const manifest = await buildDocManifest(activeDoc);
-    const manifestLines = (manifest || [])
-      .map((m) => `  - Page ${m.page}: ${m.preview}`)
-      .join('\n');
     const viewing =
       Number.isInteger(viewingPage) && viewingPage >= 1 && viewingPage <= pageCount
         ? viewingPage
         : null;
 
-    messages.push({
-      role: 'system',
-      content:
+    if (unified) {
+      messages.push({
+        role: 'system',
+        content:
+          `The student is studying a ${pageCount}-page worksheet (the "current doc"). You can see ` +
+          `every page directly — each page is attached as an image in the user message, labeled ` +
+          `"Worksheet (page N of ${pageCount}):". Read the printed text, the student's handwriting, ` +
+          `any diagrams, and any freehand marks the student drew, straight from the images. There ` +
+          `is no separate OCR or vision lookup tool — looking at the page IS your job.\n` +
+          '\n' +
+          (viewing
+            ? `The student is currently looking at page ${viewing}. Bias your attention toward ` +
+              'that page unless the question clearly references a different one.\n\n'
+            : '') +
+          'You have one tool:\n' +
+          '\n' +
+          `1. draw_annotation({ shape, x1, y1, x2, y2, page, color?, label? }) — draws on a specific ` +
+          `page. Pass the \`page\` (1..${pageCount}) the bbox belongs to. Coordinates are normalized ` +
+          `0..1 corners within that page (0,0 = top-left, 1,1 = bottom-right). Estimate the bbox ` +
+          `from what you see in the image — there is no helper to look it up.\n` +
+          '\n' +
+          'The student can draw freehand on the page — colored circles, underlines, highlights — ' +
+          'to point at what they are stuck on. Those marks are baked into the page image you see, ' +
+          'so read them as the student pointing at exactly what they want help with.\n' +
+          '\n' +
+          'Annotation is the default — almost every turn that references the page should call ' +
+          'draw_annotation. Skip it for general or off-page questions. Do not narrate a highlight ' +
+          'unless you actually called draw_annotation.'
+      });
+    } else {
+      const manifest = await buildDocManifest(activeDoc);
+      const manifestLines = (manifest || [])
+        .map((m) => `  - Page ${m.page}: ${m.preview}`)
+        .join('\n');
+      messages.push({
+        role: 'system',
+        content:
         `The student is studying a ${pageCount}-page worksheet (the "current doc"). You cannot see ` +
         `it directly. Here is an OCR preview of every page:\n\n${manifestLines}\n\n` +
         (viewing
@@ -167,7 +198,8 @@ export default async function tutorPrompt({
         '  student in plain text — do not keep guessing queries.\n' +
         '- Never call lookup_on_image twice for the same thing. If you already learned what the ' +
         "  question says, move on — don't re-ask Eyes for confirmation."
-    });
+      });
+    }
 
     const usedSet = new Set(
       (Array.isArray(usedColors) ? usedColors : []).map((c) => String(c).toLowerCase())
@@ -189,17 +221,28 @@ export default async function tutorPrompt({
         annotatedList.length === 1
           ? `page ${annotatedList[0]}`
           : `pages ${annotatedList.join(', ')}`;
-      messages.push({
-        role: 'system',
-        content:
-          `Heads up: the student drew freehand on ${pageList} for THIS turn. Their mark is ` +
-          'visible to lookup_on_image — call it on that page with a question about the ' +
-          "freehand mark (e.g. \"What did the student circle on this page? Describe what is " +
-          'inside the colored freehand ring and quote any printed text it surrounds."). Do not ' +
-          'tell the student you cannot see the mark — Eyes can. Once you know what is inside ' +
-          'the mark, follow up with find_text_on_image on a distinctive phrase from that area ' +
-          'and draw_annotation on the bbox to acknowledge it.'
-      });
+      if (unified) {
+        messages.push({
+          role: 'system',
+          content:
+            `Heads up: the student drew freehand on ${pageList} for THIS turn. Their mark is ` +
+            'baked into the page image you can see — read what they circled or highlighted ' +
+            'directly from the image. Do not tell the student you cannot see the mark. Then ' +
+            'call draw_annotation to acknowledge it with your own bbox over the same region.'
+        });
+      } else {
+        messages.push({
+          role: 'system',
+          content:
+            `Heads up: the student drew freehand on ${pageList} for THIS turn. Their mark is ` +
+            'visible to lookup_on_image — call it on that page with a question about the ' +
+            "freehand mark (e.g. \"What did the student circle on this page? Describe what is " +
+            'inside the colored freehand ring and quote any printed text it surrounds."). Do not ' +
+            'tell the student you cannot see the mark — Eyes can. Once you know what is inside ' +
+            'the mark, follow up with find_text_on_image on a distinctive phrase from that area ' +
+            'and draw_annotation on the bbox to acknowledge it.'
+        });
+      }
     }
 
     messages.push({

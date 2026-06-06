@@ -7,7 +7,8 @@ import {
   sessionMessage,
   tutorSession
 } from '../db/schema.js';
-import brainTools from '../lib/brainTools.js';
+import brainTools, { unifiedBrainTools } from '../lib/brainTools.js';
+import buildUserMessageWithImages from '../lib/buildUserMessageWithImages.js';
 import ensureImageOcr from '../lib/ensureImageOcr.js';
 import makeTutorTools from '../lib/makeTutorTools.js';
 import { normaliseUsage, recordLlmUsageBatch, sumUsage } from '../lib/recordLlmUsage.js';
@@ -57,6 +58,15 @@ function brainConfig() {
   };
 }
 
+// Unified-vision prototype: Brain is a multimodal model (e.g. Gemma 4) that
+// reads the worksheet image directly in its user message, replacing the
+// EasyOCR sidecar + Eyes (Qwen2.5-VL) calls. When this flag is on we attach
+// page images to the latest user message, expose only draw_annotation, and
+// skip OCR kicks. Off-by-default — the split Brain/Eyes/OCR pipeline stays.
+function isUnifiedVision() {
+  return process.env.YTAI_UNIFIED_VISION === 'true';
+}
+
 function collectUsedColors(history) {
   const seen = new Set();
   for (const row of history) {
@@ -78,7 +88,7 @@ function collectUsedColors(history) {
 // Load the session's current doc with all its pages (one row per page,
 // ordered 1..N). Returns null when the session has no doc yet — a text-
 // only conversation where Brain answers without the worksheet.
-async function loadActiveDoc(sessionId, currentDocId, log) {
+async function loadActiveDoc(sessionId, currentDocId, log, { skipOcrKick = false } = {}) {
   if (!currentDocId) return null;
   const [doc] = await db()
     .select({
@@ -105,11 +115,14 @@ async function loadActiveDoc(sessionId, currentDocId, log) {
   if (pages.length === 0) return null;
 
   // Backfill OCR for any page that predates the OCR feature. The job is
-  // idempotent so a no-op when the row already exists.
-  for (const p of pages) {
-    ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch((err) => {
-      log?.warn({ err: err?.message, imageId: p.id }, 'ensureImageOcr background job rejected');
-    });
+  // idempotent so a no-op when the row already exists. Skipped in unified-
+  // vision mode where Brain reads the page directly and OCR is never read.
+  if (!skipOcrKick) {
+    for (const p of pages) {
+      ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch((err) => {
+        log?.warn({ err: err?.message, imageId: p.id }, 'ensureImageOcr background job rejected');
+      });
+    }
   }
 
   return { id: doc.id, kind: doc.kind, pages };
@@ -176,7 +189,10 @@ export default function tutorSendMessage(fastify) {
       return { error: 'Session not found' };
     }
 
-    const activeDoc = await loadActiveDoc(sessionId, session.currentDocId, request.log);
+    const unified = isUnifiedVision();
+    const activeDoc = await loadActiveDoc(sessionId, session.currentDocId, request.log, {
+      skipOcrKick: unified
+    });
 
     // Build the per-imageId annotated-bytes map for this turn. Only honor an
     // annotated image whose imageId belongs to a page of the active doc —
@@ -267,8 +283,31 @@ export default function tutorSendMessage(fastify) {
       usedColors,
       guidanceLevel: session.guidanceLevel,
       subject: session.subject,
-      annotatedPages: annotatedPageNumbers
+      annotatedPages: annotatedPageNumbers,
+      unified
     });
+
+    // In unified mode, the latest user message carries the page images
+    // directly as multimodal content. Earlier turns stay text-only — Brain
+    // sees the worksheet fresh each turn, and prior assistant replies just
+    // describe what was seen.
+    let latestUserContent = content;
+    if (unified && activeDoc) {
+      const multimodalContent = await buildUserMessageWithImages({
+        activeDoc,
+        annotatedByImageId,
+        text: content,
+        log: request.log
+      });
+      if (multimodalContent) {
+        latestUserContent = multimodalContent;
+      } else {
+        request.log.warn(
+          { sessionId, activeDocId: activeDoc.id },
+          'unified-vision: no page bytes resolvable — falling back to text-only user message'
+        );
+      }
+    }
 
     const modelMessages = [
       ...promptMessages,
@@ -286,7 +325,7 @@ export default function tutorSendMessage(fastify) {
           return { role: m.role, content: m.content };
         })
         .filter((m) => m.content),
-      { role: 'user', content }
+      { role: 'user', content: latestUserContent }
     ];
 
     const { baseUrl, apiKey, model: modelId } = brainConfig();
@@ -340,6 +379,8 @@ export default function tutorSendMessage(fastify) {
       visionUsageCollector
     });
 
+    const toolsForTurn = activeDoc ? (unified ? unifiedBrainTools : brainTools) : undefined;
+
     const {
       assistantContent,
       allToolCalls,
@@ -351,7 +392,7 @@ export default function tutorSendMessage(fastify) {
       apiKey,
       model: modelId,
       messages: modelMessages,
-      tools: activeDoc ? brainTools : undefined,
+      tools: toolsForTurn,
       signal: abortController.signal,
       log: request.log,
       logFields: { sessionId },
