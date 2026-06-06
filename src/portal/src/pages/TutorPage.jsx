@@ -354,7 +354,7 @@ export default function TutorPage() {
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
         />
-        <Logo height={24} />
+        {isNarrow ? null : <Logo height={24} />}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, padding: '0 12px' }}>
           <SessionSelect
             value={sessionId}
@@ -572,40 +572,84 @@ function NewSessionModal({
 // user the same thing as picking from the list.
 function SessionSelect({ value, sessions, onChange }) {
   const loading = sessions === null;
+  const [open, setOpen] = useState(false);
   const options = (sessions ?? []).map((s) => ({
     value: s.id,
     label: sessionDisplayTitle(s),
     session: s
   }));
+  // Stretch the dropdown to fill the viewport below the trigger so the
+  // user can see as many sessions as possible without scrolling. AntD's
+  // default `listHeight` is 256px — far smaller than needed once a user
+  // has accumulated a dozen-plus sessions.
+  const listHeight = useDropdownListHeight(options.length);
   return (
-    <Select
-      className="ytai-session-select"
-      value={value ?? undefined}
-      onChange={(id) => onChange?.(id)}
-      loading={loading}
-      placeholder={loading ? 'Loading sessions…' : 'Pick a session'}
-      style={{ width: '100%', maxWidth: 480 }}
-      optionLabelProp="label"
-      options={options}
-      labelRender={({ value: id }) => {
-        const s = (sessions ?? []).find((row) => row.id === id);
-        if (!s) return null;
-        return <SessionTriggerLabel session={s} />;
-      }}
-      optionRender={(option) => <SessionOptionContent session={option.data.session} />}
-    />
+    <>
+      {open ? (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: palette.overlay.scrim,
+            // AntD Select's popup defaults to z-index 1050 — sit just below
+            // so the dropdown reads above the scrim but page chrome below
+            // gets dimmed.
+            zIndex: 1040
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
+      <Select
+        className="ytai-session-select"
+        value={value ?? undefined}
+        onChange={(id) => onChange?.(id)}
+        open={open}
+        onDropdownVisibleChange={setOpen}
+        loading={loading}
+        placeholder={loading ? 'Loading sessions…' : 'Pick a session'}
+        style={{ width: '100%', maxWidth: 480 }}
+        optionLabelProp="label"
+        options={options}
+        listHeight={listHeight}
+        labelRender={({ value: id }) => {
+          const s = (sessions ?? []).find((row) => row.id === id);
+          if (!s) return null;
+          return <SessionTriggerLabel session={s} />;
+        }}
+        optionRender={(option) => <SessionOptionContent session={option.data.session} />}
+      />
+    </>
   );
 }
 
-// Closed-trigger label: single row of [year chip] [subject chip] [title],
+// Cap dropdown height at (viewport - 160px) for header chrome and a small
+// gap below the dropdown. Each SessionOptionContent row renders at ~56px
+// (two text lines + chip row + padding), so we also clamp to the natural
+// height of the list to avoid an oversized empty pane when the user only
+// has a few sessions.
+const SESSION_OPTION_ROW_PX = 56;
+function useDropdownListHeight(optionCount) {
+  const [viewportH, setViewportH] = useState(() =>
+    typeof window !== 'undefined' ? window.innerHeight : 768
+  );
+  useEffect(() => {
+    const onResize = () => setViewportH(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const max = Math.max(256, viewportH - 160);
+  const natural = Math.max(1, optionCount) * SESSION_OPTION_ROW_PX + 8;
+  return Math.min(max, natural);
+}
+
+// Closed-trigger label: single row of [title] [year chip] [subject chip],
 // so the Select sits at AntD's default 32px height and matches the
 // "+ New Session" button beside it. The dropdown rows still use the
 // richer two-line SessionOptionContent layout.
 function SessionTriggerLabel({ session }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-      {session.year ? <HeaderYearChip year={session.year} /> : null}
-      {session.subject ? <HeaderSubjectChip subject={session.subject} /> : null}
       <span
         style={{
           fontSize: 13,
@@ -614,11 +658,14 @@ function SessionTriggerLabel({ session }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          minWidth: 0
+          minWidth: 0,
+          flex: 1
         }}
       >
         {sessionDisplayTitle(session)}
       </span>
+      {session.year ? <HeaderYearChip year={session.year} /> : null}
+      {session.subject ? <HeaderSubjectChip subject={session.subject} /> : null}
     </div>
   );
 }

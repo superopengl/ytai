@@ -254,9 +254,9 @@ const theme = {
     fontFamily: fonts.body,
     fontSize: 16,
 
-    controlHeight: 48,
-    controlHeightLG: 56,
-    controlHeightSM: 40,
+    controlHeight: 36,
+    controlHeightLG: 44,
+    controlHeightSM: 28,
 
     boxShadow: stickerShadow.card,
     boxShadowSecondary: stickerShadow.button,
@@ -267,9 +267,12 @@ const theme = {
       borderRadius: radius.sm,
       borderRadiusLG: radius.md,
       borderRadiusSM: 10,
-      controlHeight: 48,
-      controlHeightLG: 56,
-      controlHeightSM: 40,
+      controlHeight: 36,
+      controlHeightLG: 44,
+      controlHeightSM: 28,
+      paddingInline: 14,
+      paddingInlineLG: 18,
+      paddingInlineSM: 10,
       fontWeight: 600,
       primaryShadow: 'none',
       defaultShadow: 'none',
@@ -283,22 +286,22 @@ const theme = {
     },
     Input: {
       borderRadius: radius.sm,
-      controlHeight: 48,
+      controlHeight: 36,
       activeShadow: `0 0 0 4px ${TEAL_TINT_18}`
     },
     InputNumber: {
       borderRadius: radius.sm,
-      controlHeight: 48,
+      controlHeight: 36,
       activeShadow: `0 0 0 4px ${TEAL_TINT_18}`
     },
     Select: {
       borderRadius: radius.sm,
-      controlHeight: 48,
-      boxShadowSecondary: stickerShadow.card
+      controlHeight: 36,
+      boxShadowSecondary: 'none'
     },
     DatePicker: {
       borderRadius: radius.sm,
-      controlHeight: 48,
+      controlHeight: 36,
       activeShadow: `0 0 0 4px ${TEAL_TINT_18}`,
       boxShadowSecondary: stickerShadow.card
     },
@@ -307,7 +310,7 @@ const theme = {
     },
     Mentions: {
       borderRadius: radius.sm,
-      controlHeight: 48
+      controlHeight: 36
     },
     Tabs: {
       itemColor: TEXT_MUTED,
@@ -369,7 +372,7 @@ const theme = {
     },
     Segmented: {
       borderRadius: radius.md,
-      controlHeight: 40,
+      controlHeight: 32,
       trackBg: BG_PANEL,
       itemSelectedBg: SURFACE
     },
