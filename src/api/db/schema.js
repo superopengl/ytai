@@ -105,6 +105,10 @@ export const tutorSession = ytai.table('tutor_session', {
   // or 'writing'. Selected by the student on the Tutor page; drives
   // subject-specific prompt scaffolding later.
   subject: text('subject').notNull().default('math'),
+  // Student-set display name for the session. Null means "use the
+  // first-user-message preview". Set via the chat-panel Rename menu;
+  // capped on the API at 80 chars.
+  title: text('title'),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

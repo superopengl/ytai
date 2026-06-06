@@ -5,6 +5,7 @@ import {
   CheckOutlined,
   CopyOutlined,
   DeleteOutlined,
+  EditOutlined,
   FilePdfOutlined,
   LoadingOutlined,
   MoreOutlined,
@@ -60,6 +61,7 @@ export default function ChatPanel({
   onDocCreated,
   onSelectDoc,
   onSessionDeleted,
+  onSessionRenamed,
   getAnnotatedImage
 }) {
   const [messages, setMessages] = useState([]);
@@ -70,6 +72,9 @@ export default function ChatPanel({
   const [error, setError] = useState(null);
   const [guidanceLevel, setGuidanceLevel] = useState('direct');
   const [uploading, setUploading] = useState(false);
+  // Student-set title for the active session. Null/empty means the sider
+  // falls back to the auto-generated first-message preview.
+  const [sessionTitle, setSessionTitle] = useState(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const voice = useTutorVoice(sessionId);
@@ -102,6 +107,7 @@ export default function ChatPanel({
         setMessages(filtered);
         setHistoryLoaded(true);
         if (body.session?.guidanceLevel) setGuidanceLevel(body.session.guidanceLevel);
+        setSessionTitle(body.session?.title ?? null);
 
         // Rebuild per-page AI annotations from past tool calls. Each call
         // carries imageId so we can route it directly.
@@ -377,6 +383,9 @@ export default function ChatPanel({
   }, [voice, speech]);
 
   const [modal, modalContextHolder] = Modal.useModal();
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const handleDeleteSession = useCallback(() => {
     if (!sessionId) return;
@@ -398,6 +407,42 @@ export default function ChatPanel({
     });
   }, [modal, sessionId, onSessionDeleted]);
 
+  const openRename = useCallback(() => {
+    if (!sessionId) return;
+    setRenameDraft(sessionTitle ?? '');
+    setRenameOpen(true);
+  }, [sessionId, sessionTitle]);
+
+  const submitRename = useCallback(async () => {
+    if (!sessionId || renameSaving) return;
+    const trimmed = renameDraft.trim();
+    setRenameSaving(true);
+    try {
+      const res = await apiFetch(`/api/tutor/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // Empty input clears back to the auto-generated preview — server
+        // treats null and empty the same.
+        body: JSON.stringify({ title: trimmed.length === 0 ? null : trimmed })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Couldn't rename that session");
+      }
+      const body = await res.json();
+      setSessionTitle(body.title ?? null);
+      setRenameOpen(false);
+      // Tell the parent so the sider can re-fetch — its label was driven
+      // by either the old title or the preview, neither of which is what
+      // we just persisted.
+      onSessionRenamed?.(sessionId);
+    } catch (err) {
+      message.error(err.message || "Couldn't rename that session");
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [sessionId, renameDraft, renameSaving, onSessionRenamed]);
+
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -418,6 +463,28 @@ export default function ChatPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {modalContextHolder}
+      <Modal
+        title="Rename session"
+        open={renameOpen}
+        onCancel={() => (renameSaving ? null : setRenameOpen(false))}
+        onOk={submitRename}
+        okText="Save"
+        confirmLoading={renameSaving}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          maxLength={80}
+          showCount
+          placeholder="e.g. Fractions homework"
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onPressEnter={submitRename}
+        />
+        <div style={{ marginTop: 8, fontSize: 12, color: palette.textMuted }}>
+          Leave blank to fall back to the first-message preview.
+        </div>
+      </Modal>
       <div style={headerStyle}>
         <Tooltip
           title={
@@ -461,6 +528,13 @@ export default function ChatPanel({
           placement="bottomRight"
           menu={{
             items: [
+              {
+                key: 'rename',
+                label: 'Rename',
+                icon: <EditOutlined />,
+                onClick: openRename
+              },
+              { type: 'divider' },
               {
                 key: 'delete',
                 label: 'Delete this session',

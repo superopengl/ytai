@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Menu, message, Modal, Select, Splitter, Typography } from 'antd';
+import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Select, Splitter, Typography } from 'antd';
 import { MenuOutlined, UserOutlined } from '@ant-design/icons';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
@@ -51,6 +51,24 @@ export default function TutorPage() {
   const [year, setYear] = useState(() => currentYear().value);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [siderCollapsed, setSiderCollapsed] = useState(readSiderCollapsed);
+  // Bumped on any change that the session sider's GET /api/tutor/sessions
+  // wouldn't otherwise re-trigger (e.g. renaming the current session). The
+  // sider re-runs its fetch whenever this counter changes.
+  const [sidebarRefresh, setSidebarRefresh] = useState(0);
+  // AntD breakpoint: !md => below 768px = phone/narrow tablet. On narrow
+  // we replace the 3-pane Splitter (sider | canvas | chat) with a single
+  // full-width ChatPanel + a thumbnail button that pops the canvas in a
+  // Drawer, since three side-by-side panes can't share a phone viewport.
+  const screens = Grid.useBreakpoint();
+  const isNarrow = !screens.md;
+  const [canvasDrawerOpen, setCanvasDrawerOpen] = useState(false);
+
+  // Close the canvas drawer if the user resizes back to a wide viewport,
+  // otherwise the open state strands across breakpoints and would re-open
+  // unexpectedly next time the viewport narrows.
+  useEffect(() => {
+    if (!isNarrow) setCanvasDrawerOpen(false);
+  }, [isNarrow]);
 
   const toggleSider = useCallback(() => {
     setSiderCollapsed((prev) => {
@@ -90,6 +108,10 @@ export default function TutorPage() {
     },
     [navigate, sessionId]
   );
+
+  const onSessionRenamed = useCallback(() => {
+    setSidebarRefresh((n) => n + 1);
+  }, []);
 
   const onNewSession = useCallback(async () => {
     if (creatingSession) return;
@@ -243,6 +265,11 @@ export default function TutorPage() {
 
   const handleSelectDoc = useCallback(
     async (docId, pageNumber = 1) => {
+      // On narrow screens the chat-bubble image IS the canvas affordance:
+      // tapping it should pop the canvas drawer. Open it unconditionally
+      // (even when the doc is already current) so re-tapping the same
+      // worksheet brings the image back up after the drawer was dismissed.
+      if (isNarrow) setCanvasDrawerOpen(true);
       if (!sessionId || !docId || docId === currentDocId) {
         setCurrentPage(pageNumber);
         return;
@@ -262,10 +289,38 @@ export default function TutorPage() {
         message.error(err.message || "Couldn't switch worksheets");
       }
     },
-    [sessionId, currentDocId]
+    [sessionId, currentDocId, isNarrow]
   );
 
   const currentDoc = docs.find((d) => d.id === currentDocId) ?? null;
+
+  const chatPanel = (
+    <ChatPanel
+      sessionId={sessionId}
+      currentDocId={currentDocId}
+      currentPage={currentPage}
+      docs={docs}
+      onDocsLoaded={handleDocsLoaded}
+      onDocCreated={handleDocCreated}
+      onAiAnnotation={handleAiAnnotation}
+      onSelectDoc={handleSelectDoc}
+      onSessionDeleted={onSessionDeleted}
+      onSessionRenamed={onSessionRenamed}
+      getAnnotatedImage={getAnnotatedImage}
+    />
+  );
+
+  const pagedCanvas = currentDoc ? (
+    <PagedCanvas
+      ref={canvasRef}
+      doc={currentDoc}
+      sessionId={sessionId}
+      currentPage={currentPage}
+      onCurrentPageChange={setCurrentPage}
+      aiAnnotationsByPage={aiAnnotationsByPage}
+      onClearPageAi={handleClearPageAi}
+    />
+  ) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: palette.bgPanel }}>
@@ -395,10 +450,13 @@ export default function TutorPage() {
       >
         <Splitter.Panel
           defaultSize={SIDER_DEFAULT_WIDTH}
-          size={siderCollapsed ? SIDER_COLLAPSED_WIDTH : undefined}
-          min={siderCollapsed ? SIDER_COLLAPSED_WIDTH : 180}
+          // On narrow viewports force the sider to the 40px-wide collapsed
+          // rail so the chat gets the rest of the row. The user's saved
+          // wide-screen preference is preserved for when they rotate back.
+          size={isNarrow || siderCollapsed ? SIDER_COLLAPSED_WIDTH : undefined}
+          min={isNarrow || siderCollapsed ? SIDER_COLLAPSED_WIDTH : 180}
           max="40%"
-          resizable={!siderCollapsed}
+          resizable={!isNarrow && !siderCollapsed}
         >
           <TutorSessionsSider
             currentSessionId={sessionId}
@@ -406,50 +464,54 @@ export default function TutorPage() {
             onSelect={onSelectSession}
             onNewSession={onNewSession}
             creatingSession={creatingSession}
-            collapsed={siderCollapsed}
-            onToggleCollapsed={toggleSider}
+            collapsed={isNarrow || siderCollapsed}
+            onToggleCollapsed={isNarrow ? undefined : toggleSider}
+            refreshKey={sidebarRefresh}
           />
         </Splitter.Panel>
         <Splitter.Panel>
-          <Splitter style={{ height: '100%', minHeight: 0 }}>
-            {currentDoc && (
-              <Splitter.Panel key="canvas" defaultSize="58%" min="30%" max="80%">
-                <div
-                  style={{
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: 4,
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  <PagedCanvas
-                    ref={canvasRef}
-                    doc={currentDoc}
-                    sessionId={sessionId}
-                    currentPage={currentPage}
-                    onCurrentPageChange={setCurrentPage}
-                    aiAnnotationsByPage={aiAnnotationsByPage}
-                    onClearPageAi={handleClearPageAi}
-                  />
-                </div>
-              </Splitter.Panel>
-            )}
-            <Splitter.Panel key="chat">
-              <ChatPanel
-                sessionId={sessionId}
-                currentDocId={currentDocId}
-                currentPage={currentPage}
-                docs={docs}
-                onDocsLoaded={handleDocsLoaded}
-                onDocCreated={handleDocCreated}
-                onAiAnnotation={handleAiAnnotation}
-                onSelectDoc={handleSelectDoc}
-                onSessionDeleted={onSessionDeleted}
-                getAnnotatedImage={getAnnotatedImage}
-              />
-            </Splitter.Panel>
-          </Splitter>
+          {isNarrow ? (
+            <>
+              {chatPanel}
+              <Drawer
+                placement="right"
+                open={canvasDrawerOpen}
+                onClose={() => setCanvasDrawerOpen(false)}
+                width="100%"
+                title="Worksheet"
+                destroyOnClose={false}
+                // Mount the canvas eagerly so canvasRef is wired before the
+                // student opens the drawer — ChatPanel pulls a flattened PNG
+                // via getAnnotatedImage on send, and that has to work even
+                // when the drawer has never been opened this turn.
+                forceRender
+                styles={{
+                  body: { padding: 8, display: 'flex', flexDirection: 'column' }
+                }}
+              >
+                {pagedCanvas}
+              </Drawer>
+            </>
+          ) : (
+            <Splitter style={{ height: '100%', minHeight: 0 }}>
+              {currentDoc && (
+                <Splitter.Panel key="canvas" defaultSize="58%" min="30%" max="80%">
+                  <div
+                    style={{
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: 4,
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {pagedCanvas}
+                  </div>
+                </Splitter.Panel>
+              )}
+              <Splitter.Panel key="chat">{chatPanel}</Splitter.Panel>
+            </Splitter>
+          )}
         </Splitter.Panel>
       </Splitter>
     </div>

@@ -26,7 +26,10 @@ export default function TutorSessionsSider({
   onNewSession,
   creatingSession,
   collapsed = false,
-  onToggleCollapsed
+  onToggleCollapsed,
+  // Bumped by the parent (e.g. after a rename) to force a refetch even
+  // when `currentSessionId` hasn't changed.
+  refreshKey = 0
 }) {
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
@@ -46,7 +49,7 @@ export default function TutorSessionsSider({
 
   useEffect(() => {
     load();
-  }, [load, currentSessionId]);
+  }, [load, currentSessionId, refreshKey]);
 
   const visible = useMemo(() => {
     if (!sessions) return null;
@@ -217,6 +220,12 @@ function SessionTabLabel({ session }) {
 }
 
 function previewLabel(session) {
+  // Student-set title wins over the auto-generated first-message preview.
+  // Null/empty title falls through to the preview path.
+  const title = typeof session.title === 'string' ? session.title.trim() : '';
+  if (title) {
+    return title.length > 60 ? `${title.slice(0, 57)}…` : title;
+  }
   const raw = typeof session.preview === 'string' ? session.preview.trim() : '';
   if (!raw) return 'New Session';
   const flat = raw.replace(/\s+/g, ' ');

@@ -202,17 +202,18 @@ Start a new tutoring session. (Currently dev-mode: bootstraps a `dev` user autom
 **Returns**: `{ sessionId: string }`
 
 ### `PATCH /api/tutor/:sessionId`
-Update mutable fields on an existing session. Each field is optional — send any subset and the rest stay untouched — but at least one must be present. Used by the Tutor page to switch guidance levels, change subject, or set the active doc.
+Update mutable fields on an existing session. Each field is optional — send any subset and the rest stay untouched — but at least one must be present. Used by the Tutor page to switch guidance levels, change subject, set the active doc, or rename the session.
 
 **Body** (any combination, at least one required):
 ```json
 {
   "guidanceLevel": "<one of GUIDANCE_LEVELS>",
   "subject": "math" | "thinking" | "reading" | "writing",
-  "currentDocId": "<doc uuid owned by this session>" | null
+  "currentDocId": "<doc uuid owned by this session>" | null,
+  "title": "string (1..80 chars)" | null
 }
 ```
-`currentDocId: null` clears the active doc. When a UUID is provided, the route verifies the doc belongs to this session — passing another session's doc returns `404`.
+`currentDocId: null` clears the active doc. When a UUID is provided, the route verifies the doc belongs to this session — passing another session's doc returns `404`. `title` is trimmed; `null` or an all-whitespace string clears it back to the auto-generated first-message preview; anything > 80 chars after trimming is `400`.
 
 **Returns**:
 ```json
@@ -220,7 +221,8 @@ Update mutable fields on an existing session. Each field is optional — send an
   "sessionId": "uuid",
   "guidanceLevel": "...",
   "subject": "...",
-  "currentDocId": "uuid | null"
+  "currentDocId": "uuid | null",
+  "title": "string | null"
 }
 ```
 

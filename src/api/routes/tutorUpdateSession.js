@@ -12,10 +12,11 @@ export default function tutorUpdateSession(fastify) {
     const hasGuidance = Object.prototype.hasOwnProperty.call(body, 'guidanceLevel');
     const hasSubject = Object.prototype.hasOwnProperty.call(body, 'subject');
     const hasCurrentDoc = Object.prototype.hasOwnProperty.call(body, 'currentDocId');
+    const hasTitle = Object.prototype.hasOwnProperty.call(body, 'title');
 
-    if (!hasGuidance && !hasSubject && !hasCurrentDoc) {
+    if (!hasGuidance && !hasSubject && !hasCurrentDoc && !hasTitle) {
       reply.code(400);
-      return { error: 'guidanceLevel, subject, or currentDocId is required' };
+      return { error: 'guidanceLevel, subject, currentDocId, or title is required' };
     }
     if (hasGuidance && !isGuidanceLevel(body.guidanceLevel)) {
       reply.code(400);
@@ -31,11 +32,31 @@ export default function tutorUpdateSession(fastify) {
         return { error: 'currentDocId must be a uuid string or null' };
       }
     }
+    // Title: null or empty string clears back to the auto-generated preview;
+    // any string is trimmed and capped at 80 chars (matches the sider's
+    // visual budget). Anything else is a 400.
+    let nextTitle;
+    if (hasTitle) {
+      if (body.title === null) {
+        nextTitle = null;
+      } else if (typeof body.title === 'string') {
+        const trimmed = body.title.trim();
+        if (trimmed.length === 0) nextTitle = null;
+        else if (trimmed.length > 80) {
+          reply.code(400);
+          return { error: 'title must be 80 characters or fewer' };
+        } else nextTitle = trimmed;
+      } else {
+        reply.code(400);
+        return { error: 'title must be a string or null' };
+      }
+    }
 
     const patch = { updatedAt: new Date() };
     if (hasGuidance) patch.guidanceLevel = body.guidanceLevel;
     if (hasSubject) patch.subject = body.subject;
     if (hasCurrentDoc) patch.currentDocId = body.currentDocId;
+    if (hasTitle) patch.title = nextTitle;
 
     const result = await withTx(async (tx) => {
       if (hasCurrentDoc && body.currentDocId !== null) {
@@ -56,7 +77,8 @@ export default function tutorUpdateSession(fastify) {
           id: tutorSession.id,
           guidanceLevel: tutorSession.guidanceLevel,
           subject: tutorSession.subject,
-          currentDocId: tutorSession.currentDocId
+          currentDocId: tutorSession.currentDocId,
+          title: tutorSession.title
         });
 
       if (!updated) return { kind: 'sessionNotFound' };
@@ -77,7 +99,8 @@ export default function tutorUpdateSession(fastify) {
       sessionId: updated.id,
       guidanceLevel: updated.guidanceLevel,
       subject: updated.subject,
-      currentDocId: updated.currentDocId
+      currentDocId: updated.currentDocId,
+      title: updated.title
     };
   });
 }

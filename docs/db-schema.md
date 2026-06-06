@@ -53,6 +53,7 @@ One row per tutoring sitting. A user starts a new session each time they begin t
 | `current_image_id` | uuid | nullable; most recent image attached to the session |
 | `guidance_level` | text | `guided` \| `balanced` \| `direct` — Brain's pacing for this session |
 | `subject` | text | `math` \| `thinking` \| `reading` \| `writing` — subject this session is anchored to |
+| `title` | text | nullable; student-set display name. `null` → sider falls back to the first user message preview. Capped at 80 chars on the API. |
 | `started_at` | timestamptz | |
 | `ended_at` | timestamptz | nullable |
 | `created_at` | timestamptz | |
