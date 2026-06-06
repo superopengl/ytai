@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Radio, Select, Splitter, Typography } from 'antd';
-import { MenuOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Radio, Select, Splitter, Tooltip, Typography } from 'antd';
+import { FormOutlined, MenuOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import Logo from '../components/Logo.jsx';
@@ -362,12 +362,15 @@ export default function TutorPage() {
             onChange={onSelectSession}
           />
         </div>
-        <Button
-          type="text"
-          icon={<PlusOutlined />}
-          loading={creatingSession}
-          onClick={onNewSession}
-        />
+        <Tooltip title="Create new session">
+          <Button
+            type="text"
+            icon={<FormOutlined />}
+            loading={creatingSession}
+            onClick={onNewSession}
+            aria-label="Create new session"
+          />
+        </Tooltip>
       </header>
       <Drawer
         placement="left"

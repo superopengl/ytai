@@ -31,6 +31,24 @@ const ACCENT_BLUE = palette.subjects.math.color;
 const USER_BUBBLE_BG = ACCENT_BLUE;
 const USER_BUBBLE_TINT = palette.subjects.math.tint;
 const ASSISTANT_BUBBLE_BG = palette.bgBubble;
+
+const GUIDANCE_OPTIONS = [
+  {
+    value: 'guided',
+    label: 'Guided',
+    description: 'One tiny step at a time, with lots of check-ins to make sure you’re following along.'
+  },
+  {
+    value: 'balanced',
+    label: 'Balanced',
+    description: 'Short chunks of explanation with a quick check-in between each one.'
+  },
+  {
+    value: 'direct',
+    label: 'Direct',
+    description: 'Full walkthrough in one message — best when you just want the whole answer explained.'
+  }
+];
 import useSpeechRecognition from '../hooks/useSpeechRecognition.js';
 import MarkdownMessage from './MarkdownMessage.jsx';
 
@@ -504,22 +522,27 @@ export default function ChatPanel({
       </Modal>
       <div style={headerStyle}>
         <Tooltip
-          title={
-            guidanceLevel === 'guided'
-              ? 'Guided: one tiny step at a time, lots of check-ins'
-              : guidanceLevel === 'balanced'
-                ? 'Balanced: short chunks with a check-in between'
-                : 'Direct: full walkthrough in one message'
-          }
+          title={(() => {
+            const current = GUIDANCE_OPTIONS.find((o) => o.value === guidanceLevel);
+            return current ? `${current.label}: ${current.description}` : '';
+          })()}
         >
           <Select
             value={guidanceLevel}
             onChange={changeGuidanceLevel}
-            options={[
-              { label: 'Guided', value: 'guided' },
-              { label: 'Balanced', value: 'balanced' },
-              { label: 'Direct', value: 'direct' }
-            ]}
+            options={GUIDANCE_OPTIONS}
+            optionLabelProp="label"
+            optionRender={(option) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: palette.text, lineHeight: 1.3 }}>
+                  {option.data.label}
+                </div>
+                <div style={{ fontSize: 11, color: palette.textMuted, lineHeight: 1.35, whiteSpace: 'normal' }}>
+                  {option.data.description}
+                </div>
+              </div>
+            )}
+            popupMatchSelectWidth={280}
             style={{ marginLeft: 'auto', width: 110 }}
           />
         </Tooltip>
@@ -662,7 +685,7 @@ export default function ChatPanel({
         />
         <div style={composerActionsStyle}>
           <div style={composerActionsLeftStyle}>
-            <Tooltip title="Add a worksheet or PDF">
+            <Tooltip title="Add an image or PDF">
               <Upload
                 beforeUpload={(file, list) => {
                   // antd fires beforeUpload once per file in a multi-select.
@@ -695,7 +718,7 @@ export default function ChatPanel({
                     ? 'Stop dictation'
                     : voice.speaking
                       ? 'Stop reading and dictate'
-                      : 'Dictate your question'
+                      : 'Dictate your message'
                 }
               >
                 <Button
