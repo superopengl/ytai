@@ -348,7 +348,7 @@ const theme = {
     },
     Modal: {
       borderRadiusLG: radius.xl,
-      boxShadow: stickerShadow.card
+      boxShadow: 'none'
     },
     Drawer: {
       boxShadow: stickerShadow.card,
