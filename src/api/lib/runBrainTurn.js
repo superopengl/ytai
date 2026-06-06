@@ -106,7 +106,6 @@ export default async function runBrainTurn({
 
       const toolCallAccum = new Map();
       let assistantContentThisRound = '';
-      let reasoningThisRound = '';
       let finishReason = null;
       let usageThisRound = null;
       let modelVersionThisRound = null;
@@ -124,9 +123,6 @@ export default async function runBrainTurn({
           assistantContentThisRound += chunk.delta;
           assistantContent += chunk.delta;
           onToken?.(chunk.delta);
-        }
-        if (chunk.reasoning) {
-          reasoningThisRound += chunk.reasoning;
         }
         if (chunk.toolCallChunks) {
           for (const tc of chunk.toolCallChunks) {
@@ -202,8 +198,6 @@ export default async function runBrainTurn({
           round,
           finishReason,
           contentChars: assistantContentThisRound.length,
-          reasoningChars: reasoningThisRound.length,
-          reasoningPreview: reasoningThisRound.slice(0, 400),
           toolCalls: pendingCalls.map((c) => ({ name: c.name, args: c.args }))
         },
         'Brain round complete'

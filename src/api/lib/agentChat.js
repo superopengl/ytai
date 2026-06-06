@@ -30,13 +30,17 @@ export default async function* agentChat({
     // cost in the final `usage` block so we can persist it for billing.
     // OpenAI-compat back-ends ignore the field harmlessly.
     usage: { include: true },
-    // Skip the reasoning phase. deepseek-v4-flash and other thinking models
-    // burn wall-clock streaming reasoning_content before any user text.
-    // enable_thinking is the model-native flag (DeepSeek / Qwen);
-    // reasoning.exclude is OpenRouter's normalized form. Sending both is
-    // harmless — providers that don't recognize one ignore it.
+    // Disable the reasoning / thinking phase across every back-end we hit.
+    // `enable_thinking` is the model-native top-level flag (DeepSeek / Qwen).
+    // `reasoning.exclude` is OpenRouter's normalized form.
+    // `chat_template_kwargs.enable_thinking` is what LM Studio passes through
+    // to Gemma 4's chat template — the only knob that actually silences
+    // <think>…</think> spans for Gemma in dev.
+    // Sending all three is harmless: each back-end ignores the keys it
+    // doesn't know.
     enable_thinking: false,
-    reasoning: { exclude: true }
+    reasoning: { exclude: true },
+    chat_template_kwargs: { enable_thinking: false }
   };
   if (Array.isArray(tools) && tools.length > 0) body.tools = tools;
 
@@ -131,16 +135,6 @@ export default async function* agentChat({
           const delta = choice?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
             yield { delta };
-          }
-          // Reasoning models (deepseek-v4-flash, deepseek-r1, etc.) stream
-          // their chain-of-thought under delta.reasoning_content. Surface it
-          // as a separate channel so the caller can log it or show a
-          // "thinking…" trail — otherwise a long reasoning phase looks like
-          // a frozen stream.
-          const reasoning =
-            choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
-          if (typeof reasoning === 'string' && reasoning.length > 0) {
-            yield { reasoning };
           }
           const deltaToolCalls = choice?.delta?.tool_calls;
           if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {

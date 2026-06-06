@@ -51,7 +51,22 @@ export default async function tutorPrompt({
   const messages = [
     { role: 'system', content: PERSONA },
     { role: 'system', content: SUBJECT_PROMPTS[subjectKey] },
-    { role: 'system', content: PACE_BY_LEVEL[level] }
+    {
+      // Cache breakpoint on the last stable system message — caches the
+      // whole PERSONA + SUBJECT + PACE prefix above it. Content-block form
+      // with `cache_control: ephemeral` is the OpenRouter / Anthropic-
+      // compatible prompt-caching hint; providers that don't support
+      // caching ignore the key harmlessly. LM Studio's KV cache reuses
+      // matching prefixes on its own, so this is a no-op in dev.
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: PACE_BY_LEVEL[level],
+          cache_control: { type: 'ephemeral' }
+        }
+      ]
+    }
   ];
 
   if (hasDoc) {
