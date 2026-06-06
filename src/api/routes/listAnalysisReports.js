@@ -42,6 +42,7 @@ export default function listAnalysisReports(fastify) {
       .select({
         id: subjectReport.id,
         subject: subjectReport.subject,
+        year: subjectReport.year,
         status: subjectReport.status,
         narrative: subjectReport.narrative,
         content: subjectReport.content,

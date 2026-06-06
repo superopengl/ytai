@@ -120,7 +120,7 @@ export default function TutorPage() {
       const res = await apiFetch('/api/tutor/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject })
+        body: JSON.stringify({ subject, year })
       });
       if (!res.ok) throw new Error("Couldn't start a new session");
       const body = await res.json();
@@ -130,7 +130,7 @@ export default function TutorPage() {
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, navigate, subject]);
+  }, [creatingSession, navigate, subject, year]);
 
   const onSubjectChange = useCallback(
     (next) => {
@@ -150,8 +150,9 @@ export default function TutorPage() {
       setYear(next);
       currentYear().save(next);
       // Persist to the server profile so the choice follows the user across
-      // browsers. Best-effort: the localStorage cache + optimistic state
-      // update mean a network blip doesn't strand the UI.
+      // browsers, and patch the current session so its year reflects the
+      // student's correction. Best-effort: the localStorage cache +
+      // optimistic state update mean a network blip doesn't strand the UI.
       apiFetch('/api/me/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -159,8 +160,17 @@ export default function TutorPage() {
       }).catch((err) => {
         console.error('Failed to save year preference', err);
       });
+      if (sessionId) {
+        apiFetch(`/api/tutor/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year: next })
+        }).catch((err) => {
+          console.error('Failed to update session year', err);
+        });
+      }
     },
-    [year]
+    [sessionId, year]
   );
 
   // Hydrate the year from the server profile on mount. localStorage primes
@@ -208,7 +218,7 @@ export default function TutorPage() {
         const createRes = await apiFetch('/api/tutor/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subject })
+          body: JSON.stringify({ subject, year })
         });
         if (!createRes.ok) throw new Error("Couldn't start a new session");
         const body = await createRes.json();
@@ -222,9 +232,14 @@ export default function TutorPage() {
     return () => {
       cancelled = true;
     };
+    // `year` is read as a snapshot when the effect runs — re-running on
+    // every year flip would auto-create a new session each time, which
+    // isn't what the user wants. onYearChange PATCHes the current session
+    // instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSessionId, navigate, subject]);
 
-  const handleDocsLoaded = useCallback(({ docs: loadedDocs, currentDocId: loadedCurrent, subject: loadedSubject, aiAnnotationsByPage: loadedAi }) => {
+  const handleDocsLoaded = useCallback(({ docs: loadedDocs, currentDocId: loadedCurrent, subject: loadedSubject, year: loadedYear, aiAnnotationsByPage: loadedAi }) => {
     setDocs(loadedDocs);
     setCurrentDocId(loadedCurrent);
     setCurrentPage(1);
@@ -236,6 +251,13 @@ export default function TutorPage() {
     if (loadedSubject) {
       setSubject(loadedSubject);
       currentSubject().save(loadedSubject);
+    }
+    // Year is per-session too — the kid may have done Y4 work back when
+    // they were in Y4, even though they're now in Y5. Mirror the session's
+    // year onto the selector so the header reads the session's truth.
+    if (loadedYear) {
+      setYear(loadedYear);
+      currentYear().save(loadedYear);
     }
   }, []);
 

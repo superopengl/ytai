@@ -126,6 +126,7 @@ export default function ChatPanel({
           docs: body.docs ?? [],
           currentDocId: body.session?.currentDocId ?? null,
           subject: body.session?.subject ?? null,
+          year: body.session?.year ?? null,
           aiAnnotationsByPage: aiByPage
         });
       })

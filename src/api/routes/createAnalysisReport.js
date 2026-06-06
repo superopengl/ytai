@@ -3,6 +3,7 @@ import enqueueAnalysisReport, {
   VALID_TIMESPAN_DAYS,
   normalizePrompt
 } from '../lib/generateAnalysisReport.js';
+import isYear, { YEARS } from '../lib/year.js';
 
 const MAX_PROMPT_LEN = 2000;
 
@@ -11,6 +12,17 @@ export default function createAnalysisReport(fastify) {
     const body = request.body || {};
     const subject = String(body.subject || '').toLowerCase();
     const prompt = body.prompt ?? null;
+    // Year is optional — when omitted the rollup spans every year the
+    // student has worked in. When present it must be one of the known
+    // labels; anything else is a 400.
+    let year = null;
+    if (body.year !== null && body.year !== undefined) {
+      if (!isYear(body.year)) {
+        reply.code(400);
+        return { error: `year must be one of: ${YEARS.join(', ')} (or omitted for all years)` };
+      }
+      year = body.year;
+    }
     // null / undefined → no time filter (all sessions). Otherwise must be
     // one of the explicit windows the UI offers; reject anything else so
     // a malformed client can't fish for arbitrary date ranges.
@@ -49,6 +61,7 @@ export default function createAnalysisReport(fastify) {
       return await enqueueAnalysisReport({
         userId: request.userId,
         subject,
+        year,
         prompt: normalized,
         timespanDays,
         log: request.log

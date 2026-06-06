@@ -12,6 +12,7 @@ export default function tutorGetMessages(fastify) {
         id: tutorSession.id,
         guidanceLevel: tutorSession.guidanceLevel,
         subject: tutorSession.subject,
+        year: tutorSession.year,
         currentDocId: tutorSession.currentDocId,
         title: tutorSession.title
       })
@@ -85,6 +86,7 @@ export default function tutorGetMessages(fastify) {
         id: session.id,
         guidanceLevel: session.guidanceLevel,
         subject: session.subject,
+        year: session.year,
         currentDocId: session.currentDocId,
         title: session.title
       },

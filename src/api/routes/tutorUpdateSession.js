@@ -3,6 +3,7 @@ import { withTx } from '../db/index.js';
 import { sessionDoc, tutorSession } from '../db/schema.js';
 import { GUIDANCE_LEVELS, isGuidanceLevel } from '../lib/tutorPrompt.js';
 import isSubject, { SUBJECTS } from '../lib/tutorSubject.js';
+import isYear, { YEARS } from '../lib/year.js';
 
 export default function tutorUpdateSession(fastify) {
   fastify.patch('/api/tutor/:sessionId', async (request, reply) => {
@@ -13,10 +14,11 @@ export default function tutorUpdateSession(fastify) {
     const hasSubject = Object.prototype.hasOwnProperty.call(body, 'subject');
     const hasCurrentDoc = Object.prototype.hasOwnProperty.call(body, 'currentDocId');
     const hasTitle = Object.prototype.hasOwnProperty.call(body, 'title');
+    const hasYear = Object.prototype.hasOwnProperty.call(body, 'year');
 
-    if (!hasGuidance && !hasSubject && !hasCurrentDoc && !hasTitle) {
+    if (!hasGuidance && !hasSubject && !hasCurrentDoc && !hasTitle && !hasYear) {
       reply.code(400);
-      return { error: 'guidanceLevel, subject, currentDocId, or title is required' };
+      return { error: 'guidanceLevel, subject, currentDocId, title, or year is required' };
     }
     if (hasGuidance && !isGuidanceLevel(body.guidanceLevel)) {
       reply.code(400);
@@ -25,6 +27,10 @@ export default function tutorUpdateSession(fastify) {
     if (hasSubject && !isSubject(body.subject)) {
       reply.code(400);
       return { error: `subject must be one of: ${SUBJECTS.join(', ')}` };
+    }
+    if (hasYear && !isYear(body.year)) {
+      reply.code(400);
+      return { error: `year must be one of: ${YEARS.join(', ')}` };
     }
     if (hasCurrentDoc && body.currentDocId !== null) {
       if (typeof body.currentDocId !== 'string' || body.currentDocId.length === 0) {
@@ -57,6 +63,7 @@ export default function tutorUpdateSession(fastify) {
     if (hasSubject) patch.subject = body.subject;
     if (hasCurrentDoc) patch.currentDocId = body.currentDocId;
     if (hasTitle) patch.title = nextTitle;
+    if (hasYear) patch.year = body.year;
 
     const result = await withTx(async (tx) => {
       if (hasCurrentDoc && body.currentDocId !== null) {
@@ -78,7 +85,8 @@ export default function tutorUpdateSession(fastify) {
           guidanceLevel: tutorSession.guidanceLevel,
           subject: tutorSession.subject,
           currentDocId: tutorSession.currentDocId,
-          title: tutorSession.title
+          title: tutorSession.title,
+          year: tutorSession.year
         });
 
       if (!updated) return { kind: 'sessionNotFound' };
@@ -100,7 +108,8 @@ export default function tutorUpdateSession(fastify) {
       guidanceLevel: updated.guidanceLevel,
       subject: updated.subject,
       currentDocId: updated.currentDocId,
-      title: updated.title
+      title: updated.title,
+      year: updated.year
     };
   });
 }

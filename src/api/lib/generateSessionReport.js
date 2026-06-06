@@ -310,7 +310,7 @@ async function latestMessage(sessionId) {
 
 export default async function generateSessionReport({ sessionId, log, force = false }) {
   const [session] = await db()
-    .select({ id: tutorSession.id, userId: tutorSession.userId })
+    .select({ id: tutorSession.id, userId: tutorSession.userId, year: tutorSession.year })
     .from(tutorSession)
     .where(eq(tutorSession.id, sessionId));
   if (!session) throw new Error(`Session ${sessionId} not found`);
@@ -357,10 +357,10 @@ export default async function generateSessionReport({ sessionId, log, force = fa
 
   await db()
     .insert(sessionReport)
-    .values({ sessionId, status: 'pending' })
+    .values({ sessionId, year: session.year, status: 'pending' })
     .onConflictDoUpdate({
       target: sessionReport.sessionId,
-      set: { status: 'pending', error: null, updatedAt: new Date() }
+      set: { year: session.year, status: 'pending', error: null, updatedAt: new Date() }
     });
 
   try {

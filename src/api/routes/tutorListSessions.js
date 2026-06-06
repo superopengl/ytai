@@ -17,6 +17,7 @@ export default function tutorListSessions(fastify) {
       .select({
         id: tutorSession.id,
         subject: tutorSession.subject,
+        year: tutorSession.year,
         title: tutorSession.title,
         startedAt: tutorSession.startedAt,
         lastActivityAt: lastActivityExpr.as('last_activity_at'),

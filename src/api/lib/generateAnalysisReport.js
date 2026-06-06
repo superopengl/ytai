@@ -45,8 +45,13 @@ export function normalizePrompt(prompt) {
 //   [{ sessionId, latestMessageId, latestMessageAt, hasReport, reportCursorMessageId }]
 // `timespanDays` (when set) drops sessions that started before
 // `now - timespanDays` so the report only sees the window the user asked for.
-async function loadSessionManifest({ userId, subject, timespanDays }) {
+// `year` (when set) drops sessions whose tutor_session.year doesn't match,
+// so a Y4 report only rolls up the kid's Y4 work.
+async function loadSessionManifest({ userId, subject, year, timespanDays }) {
   const filters = [eq(tutorSession.userId, userId), eq(tutorSession.subject, subject)];
+  if (typeof year === 'string' && year) {
+    filters.push(eq(tutorSession.year, year));
+  }
   if (typeof timespanDays === 'number' && timespanDays > 0) {
     const cutoff = new Date(Date.now() - timespanDays * 24 * 60 * 60 * 1000);
     filters.push(gte(tutorSession.startedAt, cutoff));
@@ -309,6 +314,7 @@ async function runReporter({ messages, baseUrl, apiKey, model, tool }) {
 export default async function enqueueAnalysisReport({
   userId,
   subject,
+  year = null,
   prompt,
   timespanDays = null,
   log
@@ -323,11 +329,12 @@ export default async function enqueueAnalysisReport({
 
   // Cheap precheck — don't create a doomed-to-fail pending row when the
   // user simply has no sessions for this subject yet.
-  const manifest = await loadSessionManifest({ userId, subject, timespanDays });
+  const manifest = await loadSessionManifest({ userId, subject, year, timespanDays });
   if (manifest.length === 0) {
     return {
       status: 'empty',
       subject,
+      year,
       content: null,
       narrative: '',
       generatedAt: null,
@@ -340,6 +347,7 @@ export default async function enqueueAnalysisReport({
     .values({
       userId,
       subject,
+      year,
       customPrompt: normalizedPrompt,
       status: 'pending'
     })
@@ -363,6 +371,7 @@ export default async function enqueueAnalysisReport({
     id: row.id,
     status: 'pending',
     subject,
+    year,
     customPrompt: normalizedPrompt,
     createdAt: row.createdAt
   };

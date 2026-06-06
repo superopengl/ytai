@@ -105,6 +105,11 @@ export const tutorSession = ytai.table('tutor_session', {
   // or 'writing'. Selected by the student on the Tutor page; drives
   // subject-specific prompt scaffolding later.
   subject: text('subject').notNull().default('math'),
+  // School year the student was in when this session ran: 'Y3'..'Y6'.
+  // Captured at creation time so a historical session reads back the year
+  // the kid was in then, not the year they're in now. Feeds report
+  // filtering (a Y4 subject_report only rolls up Y4 sessions).
+  year: text('year').notNull().default('Y3'),
   // Student-set display name for the session. Null means "use the
   // first-user-message preview". Set via the chat-panel Rename menu;
   // capped on the API at 80 chars.
@@ -226,6 +231,10 @@ export const sessionReport = ytai.table('session_report', {
   sessionId: uuid('session_id')
     .primaryKey()
     .references(() => tutorSession.id),
+  // Snapshotted from the parent tutor_session at generation time so
+  // subject_report rollups can filter by year without a join. Nullable
+  // because pre-year rows existed before the column landed.
+  year: text('year'),
   // pending | ready | failed
   status: text('status').notNull().default('pending'),
   summary: text('summary'),
@@ -262,6 +271,10 @@ export const subjectReport = ytai.table(
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => user.id),
     subject: text('subject').notNull(),
+    // School year the rollup is scoped to: 'Y3'..'Y6'. Only sessions
+    // whose tutor_session.year matches feed the report. Nullable for
+    // legacy rows created before the column landed.
+    year: text('year'),
     customPrompt: text('custom_prompt'),
     status: text('status').notNull().default('pending'),
     content: jsonb('content'),

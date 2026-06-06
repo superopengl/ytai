@@ -364,6 +364,7 @@ export default function ReportsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject: customSubject,
+          year: customYear,
           prompt: trimmed,
           timespanDays: customTimespanDays
         })
@@ -388,7 +389,7 @@ export default function ReportsPage() {
     } finally {
       setGenerating(null);
     }
-  }, [customPrompt, customSubject, customTimespanDays, loadReports]);
+  }, [customPrompt, customSubject, customTimespanDays, customYear, loadReports]);
 
   const handleGenerateSimilar = useCallback(
     (report) => {
