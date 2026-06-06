@@ -1,7 +1,7 @@
 /* Soft-neumorphism interaction primitives.
  *
  * Visual identity:
- *   - Paired shadows: soft white highlight (top-left) + cool-grey shadow
+ *   - Paired shadows: soft white highlight (top-left) + black shadow
  *     (bottom-right) make elements feel gently raised from the page.
  *   - Press (:active) inverts both into insets — the element appears pushed
  *     into the surface, no translate needed.
@@ -13,8 +13,8 @@
 :root {
   --neu-bg: #f0f4f8;
   --neu-shadow-light: rgba(255, 255, 255, 0.85);
-  --neu-shadow-dark: rgba(163, 177, 198, 0.45);
-  --neu-shadow-dark-strong: rgba(163, 177, 198, 0.55);
+  --neu-shadow-dark: rgba(0, 0, 0, 0.45);
+  --neu-shadow-dark-strong: rgba(0, 0, 0, 0.55);
 }
 
 /* ---- Sticker card -------------------------------------------------------- */

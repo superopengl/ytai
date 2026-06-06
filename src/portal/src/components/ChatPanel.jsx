@@ -595,7 +595,7 @@ export default function ChatPanel({
                   ? "Voice isn't set up yet."
                   : voice.enabled
                     ? 'Turn voice off'
-                    : 'Turn voice on — tutor will read replies aloud'
+                    : 'Turn voice on — tutor will read replies aloud automatically'
               }
             >
               <Button

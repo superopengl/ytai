@@ -111,27 +111,25 @@ const OVERLAY = {
   inkSoft: 'rgba(74, 144, 164, 0.08)'
 };
 
-// Tinted neumorphic shadow language — primary teal tint on the dark side,
-// near-white on the light side, matching the source's `.soft-card` and
-// `.service-card` recipes.
-const TEAL_TINT_06 = 'rgba(74, 144, 164, 0.06)';
-const TEAL_TINT_08 = 'rgba(74, 144, 164, 0.08)';
-const TEAL_TINT_12 = 'rgba(74, 144, 164, 0.12)';
-const TEAL_TINT_18 = 'rgba(74, 144, 164, 0.18)';
-const TEAL_TINT_30 = 'rgba(74, 144, 164, 0.30)';
+// Neumorphic shadow language — black on the dark side, near-white on the
+// light side. Alpha values preserve the soft, layered depth from the
+// original tinted recipes.
+const BLACK_06 = 'rgba(0, 0, 0, 0.06)';
+const BLACK_08 = 'rgba(0, 0, 0, 0.08)';
+const BLACK_12 = 'rgba(0, 0, 0, 0.12)';
+const BLACK_18 = 'rgba(0, 0, 0, 0.18)';
+const BLACK_30 = 'rgba(0, 0, 0, 0.30)';
 
-const SHADOW_LIGHT_XS = `0 1px 2px 0 ${TEAL_TINT_06}`;
-const SHADOW_DARK_XS = `0 1px 4px -1px ${TEAL_TINT_08}`;
+const SHADOW_LIGHT_XS = `0 1px 2px 0 ${BLACK_06}`;
+const SHADOW_DARK_XS = `0 1px 4px -1px ${BLACK_08}`;
 const SHADOW_INSET_LIGHT = 'inset 0 0 0 1px rgba(255, 255, 255, 0.6)';
-const SHADOW_INSET_DARK = `inset 0 2px 4px 0 ${TEAL_TINT_08}`;
+const SHADOW_INSET_DARK = `inset 0 2px 4px 0 ${BLACK_08}`;
 
 const stickerShadow = {
-  // Source `.soft-card` recipe: tinted teal lift + bright highlight on top.
-  card: `6px 6px 16px ${TEAL_TINT_08}, -6px -6px 16px rgba(255, 255, 255, 0.9)`,
-  cardHover: `8px 8px 24px ${TEAL_TINT_12}, -8px -8px 24px rgba(255, 255, 255, 1)`,
-  // Source `.btn-primary` recipe: directional drop shadow, primary-tinted.
-  button: `0 4px 14px ${TEAL_TINT_30}`,
-  buttonHover: `0 6px 20px ${TEAL_TINT_30}`,
+  card: `6px 6px 16px ${BLACK_08}, -6px -6px 16px rgba(255, 255, 255, 0.9)`,
+  cardHover: `8px 8px 24px ${BLACK_12}, -8px -8px 24px rgba(255, 255, 255, 1)`,
+  button: `0 4px 14px ${BLACK_30}`,
+  buttonHover: `0 6px 20px ${BLACK_30}`,
   chip: `${SHADOW_LIGHT_XS}, ${SHADOW_DARK_XS}`,
   chipHover: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`,
   inset: `${SHADOW_INSET_LIGHT}, ${SHADOW_INSET_DARK}`
@@ -287,12 +285,12 @@ const theme = {
     Input: {
       borderRadius: radius.sm,
       controlHeight: 36,
-      activeShadow: `0 0 0 4px ${TEAL_TINT_18}`
+      activeShadow: `0 0 0 4px ${BLACK_18}`
     },
     InputNumber: {
       borderRadius: radius.sm,
       controlHeight: 36,
-      activeShadow: `0 0 0 4px ${TEAL_TINT_18}`
+      activeShadow: `0 0 0 4px ${BLACK_18}`
     },
     Select: {
       borderRadius: radius.sm,
@@ -302,8 +300,8 @@ const theme = {
     DatePicker: {
       borderRadius: radius.sm,
       controlHeight: 36,
-      activeShadow: `0 0 0 4px ${TEAL_TINT_18}`,
-      boxShadowSecondary: stickerShadow.card
+      activeShadow: `0 0 0 4px ${BLACK_18}`,
+      boxShadowSecondary: stickerShadow.button
     },
     Cascader: {
       controlItemBgHover: SURFACE_OAT
@@ -335,11 +333,11 @@ const theme = {
     },
     Popover: {
       borderRadiusLG: radius.md,
-      boxShadowSecondary: stickerShadow.card
+      boxShadowSecondary: stickerShadow.button
     },
     Dropdown: {
       borderRadiusLG: radius.md,
-      boxShadowSecondary: stickerShadow.card,
+      boxShadowSecondary: stickerShadow.button,
       paddingBlock: 8
     },
     Menu: {
