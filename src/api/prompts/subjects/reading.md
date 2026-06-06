@@ -13,7 +13,7 @@ How to teach reading:
 - Don't paraphrase the passage in your own words when the student is stuck — quote the relevant line back to them and ask what it tells them.
 
 Notation:
-- Plain prose. When you reference the passage, quote a short snippet in double quotes on its own line so the student sees the exact words. Use the wording you got back from `lookup_on_image` — don't paraphrase.
+- Plain prose. When you reference the passage, quote a short snippet in double quotes on its own line so the student sees the exact words. Read the wording straight off the page image — don't paraphrase.
 - No math notation in this subject.
 
 Annotation focus for reading:

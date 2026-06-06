@@ -1,25 +1,22 @@
 import { eq, inArray } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import {
-  imageOcr,
   sessionDoc,
   sessionImage,
   sessionMessage,
   sessionReport,
   subjectReport,
   tutorSession,
-  user,
-  visionExtraction
+  user
 } from '../db/schema.js';
 import { markObjectOrphan } from '../lib/s3.js';
 
 // DELETE /api/admin/user/:id/data
 //
 // Wipe every content row tied to a student account — sessions, docs,
-// images, OCR, vision extractions, messages, session/subject reports.
-// The `user` row itself stays (and login_otp + tts_audio are
-// deliberately left alone — tts_audio is a cross-user cache, login_otp
-// is short-lived auth state).
+// images, messages, session/subject reports. The `user` row itself stays
+// (and login_otp + tts_audio are deliberately left alone — tts_audio is a
+// cross-user cache, login_otp is short-lived auth state).
 //
 // `llm_usage` is explicitly NOT wiped: it's the per-call billing audit
 // log and must be preserved for accounting / chargeback. Its FK columns
@@ -32,9 +29,7 @@ import { markObjectOrphan } from '../lib/s3.js';
 // don't have tutoring content in the same shape, and refusing the call
 // makes it impossible to accidentally nuke another admin's history.
 //
-// Single transaction (FK chains unwind in one shot — partial wipes
-// would leave dangling references to images that the OCR/vision rows
-// still point at).
+// Single transaction (FK chains unwind in one shot).
 export default function deleteAdminUserData(fastify) {
   fastify.delete('/api/admin/user/:id/data', async (request, reply) => {
     const { id: targetUserId } = request.params;
@@ -83,10 +78,6 @@ export default function deleteAdminUserData(fastify) {
       }
 
       if (sessionIds.length > 0) {
-        if (imageIds.length > 0) {
-          await tx.delete(visionExtraction).where(inArray(visionExtraction.imageId, imageIds));
-          await tx.delete(imageOcr).where(inArray(imageOcr.imageId, imageIds));
-        }
         // session_report.cursor_message_id references session_message, so
         // drop the report first to free that FK before the messages go.
         await tx.delete(sessionReport).where(inArray(sessionReport.sessionId, sessionIds));

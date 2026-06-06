@@ -77,42 +77,8 @@ Unique index on `(session_id, content_hash)`.
 ### `tutor_session.current_image_id`
 The most recently active `session_image` for the session. Text-only turns reuse the bytes referenced by this id; uploading a new image (different `content_hash`) advances it.
 
-### `image_ocr`
-Cheap, deterministic OCR pre-pass on the flattened image bytes. Populated asynchronously by the EasyOCR sidecar once per `image_id` (`ensureImageOcr.js`). Brain queries this through `find_text_on_image` to get tight bboxes for printed worksheet text without paying for a VLM call; Eyes (`vision_extraction`) remains the fallback for handwriting, math notation, and diagrams.
-
-| Column | Type | Notes |
-|---|---|---|
-| `image_id` | uuid | PK + FK → `session_image.id` (one OCR row per image) |
-| `status` | text | `pending` \| `ready` \| `failed` |
-| `lines` | jsonb | array of `{ text, confidence, bbox: [x, y, w, h] }`, normalized 0..1; null until `ready` |
-| `error` | text | failure message when `status='failed'`; null otherwise |
-| `model_version` | text | e.g. `easyocr-1.7.2/craft+crnn` |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-Insert uses `onConflictDoNothing` so the row is created exactly once per image. Find-text matches consume corner bboxes; `lines.bbox` stays in xywh on disk and gets translated to `[x1, y1, x2, y2]` on the way out.
-
-### `vision_extraction`
-Cache layer for Brain's on-demand vision lookups. Each row is one `lookup_on_image(question)` call's result, keyed by `(image_id, sha256(question))` so repeated lookups during a session are free. The image_id changes whenever the photo bytes change (including when the student adds or erases strokes), which naturally invalidates the cache.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid | PK |
-| `image_id` | uuid | FK → `session_image.id` |
-| `region_hash` | text | sha256(question) — names a question, not a region. Nullable for legacy rows. |
-| `region_bbox` | jsonb | unused under the on-demand pipeline; kept nullable for back-compat |
-| `extracted` | jsonb | `{ question, answer, bbox? }` from Qwen2.5-VL |
-| `confidence` | numeric | nullable; provider-self-reported confidence if available |
-| `model_version` | text | e.g. `qwen/qwen2.5-vl-72b-instruct` |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-Unique index on `(image_id, region_hash)`.
-
-> Note on the `region_hash` column name: kept for migration compatibility. Semantically it now stores a question hash, not a geometric region hash.
-
 ### `session_message`
-Chat transcript. Ordered by `created_at`. Only `user` and `assistant` messages are persisted — Brain's intermediate tool calls and Eyes' tool replies stay in-memory during the turn and are not stored.
+Chat transcript. Ordered by `created_at`. Only `user` and `assistant` messages are persisted — Brain's intermediate tool calls stay in-memory during the turn (apart from the user-visible `draw_annotation` audit trail kept on the assistant row).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -179,8 +145,7 @@ Indexed by `(user_id, created_at DESC)` to keep the Reports page list scan tight
 
 ```
 user ──< login_otp
-user ──< tutor_session ──< session_image ──┬── image_ocr (1:1)
-     │                 │                   └──< vision_extraction
+user ──< tutor_session ──< session_doc ──< session_image
      │                 ├──< session_message ──┐
      │                 │                      └─ optional FK → session_image
      │                 └── session_report (1:1) ── cursor_message_id → session_message

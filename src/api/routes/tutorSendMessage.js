@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
@@ -7,9 +6,8 @@ import {
   sessionMessage,
   tutorSession
 } from '../db/schema.js';
-import brainTools, { unifiedBrainTools } from '../lib/brainTools.js';
+import brainTools from '../lib/brainTools.js';
 import buildUserMessageWithImages from '../lib/buildUserMessageWithImages.js';
-import ensureImageOcr from '../lib/ensureImageOcr.js';
 import makeTutorTools from '../lib/makeTutorTools.js';
 import { normaliseUsage, recordLlmUsageBatch, sumUsage } from '../lib/recordLlmUsage.js';
 import runBrainTurn from '../lib/runBrainTurn.js';
@@ -58,15 +56,6 @@ function brainConfig() {
   };
 }
 
-// Unified-vision prototype: Brain is a multimodal model (e.g. Gemma 4) that
-// reads the worksheet image directly in its user message, replacing the
-// EasyOCR sidecar + Eyes (Qwen2.5-VL) calls. When this flag is on we attach
-// page images to the latest user message, expose only draw_annotation, and
-// skip OCR kicks. Off-by-default — the split Brain/Eyes/OCR pipeline stays.
-function isUnifiedVision() {
-  return process.env.YTAI_UNIFIED_VISION === 'true';
-}
-
 function collectUsedColors(history) {
   const seen = new Set();
   for (const row of history) {
@@ -88,7 +77,7 @@ function collectUsedColors(history) {
 // Load the session's current doc with all its pages (one row per page,
 // ordered 1..N). Returns null when the session has no doc yet — a text-
 // only conversation where Brain answers without the worksheet.
-async function loadActiveDoc(sessionId, currentDocId, log, { skipOcrKick = false } = {}) {
+async function loadActiveDoc(currentDocId) {
   if (!currentDocId) return null;
   const [doc] = await db()
     .select({
@@ -113,18 +102,6 @@ async function loadActiveDoc(sessionId, currentDocId, log, { skipOcrKick = false
     .orderBy(asc(sessionImage.pageNumber));
 
   if (pages.length === 0) return null;
-
-  // Backfill OCR for any page that predates the OCR feature. The job is
-  // idempotent so a no-op when the row already exists. Skipped in unified-
-  // vision mode where Brain reads the page directly and OCR is never read.
-  if (!skipOcrKick) {
-    for (const p of pages) {
-      ensureImageOcr({ imageId: p.id, storageUrl: p.storageUrl, log }).catch((err) => {
-        log?.warn({ err: err?.message, imageId: p.id }, 'ensureImageOcr background job rejected');
-      });
-    }
-  }
-
   return { id: doc.id, kind: doc.kind, pages };
 }
 
@@ -157,9 +134,9 @@ export default function tutorSendMessage(fastify) {
       : null;
     // Per-turn ephemeral canvas snapshot: { imageId, dataUrl } where the
     // dataUrl is a PNG of (photo + freehand strokes) the student drew on
-    // the active page. Not persisted — Brain's `lookup_on_image` for that
-    // imageId substitutes these bytes for the original photo so Eyes can
-    // see what the student circled. Absent when the canvas is clean.
+    // the active page. Not persisted — these bytes substitute for the
+    // original page in Brain's multimodal user message so Brain sees what
+    // the student circled. Absent when the canvas is clean.
     const annotatedImageRaw = request.body?.annotatedImage;
     const annotatedImage =
       annotatedImageRaw &&
@@ -189,23 +166,13 @@ export default function tutorSendMessage(fastify) {
       return { error: 'Session not found' };
     }
 
-    const unified = isUnifiedVision();
-    const activeDoc = await loadActiveDoc(sessionId, session.currentDocId, request.log, {
-      skipOcrKick: unified
-    });
+    const activeDoc = await loadActiveDoc(session.currentDocId);
 
     // Build the per-imageId annotated-bytes map for this turn. Only honor an
     // annotated image whose imageId belongs to a page of the active doc —
     // a stale imageId from a switched-out doc gets dropped, not trusted.
-    //
-    // We store the raw Buffer + mimeType + a bytes hash, not the original
-    // base64 dataUrl. Two reasons: (1) the dataUrl JS string is ~33% bigger
-    // than the Buffer and lives in memory for the whole multi-round Brain
-    // turn, (2) downstream vision calls used to re-hash the entire base64
-    // payload as the cache key, allocating another copy of the string just
-    // to feed to sha256. Hashing the bytes directly is equivalent and
-    // cheaper, and the dataUrl is encoded lazily inside lookupOnImage only
-    // when there's a cache miss.
+    // We store the raw Buffer + mimeType — buildUserMessageWithImages
+    // encodes the data URL only when it's actually attaching the page.
     const annotatedByImageId = new Map();
     if (annotatedImage && activeDoc) {
       const pageMatch = activeDoc.pages.find((p) => p.id === annotatedImage.imageId);
@@ -214,8 +181,7 @@ export default function tutorSendMessage(fastify) {
         if (decoded) {
           annotatedByImageId.set(pageMatch.id, {
             bytes: decoded.bytes,
-            mimeType: decoded.mimeType,
-            bytesHash: createHash('sha256').update(decoded.bytes).digest('hex')
+            mimeType: decoded.mimeType
           });
         } else {
           request.log.warn(
@@ -283,16 +249,15 @@ export default function tutorSendMessage(fastify) {
       usedColors,
       guidanceLevel: session.guidanceLevel,
       subject: session.subject,
-      annotatedPages: annotatedPageNumbers,
-      unified
+      annotatedPages: annotatedPageNumbers
     });
 
-    // In unified mode, the latest user message carries the page images
-    // directly as multimodal content. Earlier turns stay text-only — Brain
-    // sees the worksheet fresh each turn, and prior assistant replies just
-    // describe what was seen.
+    // The latest user message carries every page of the active doc as
+    // multimodal content so Brain can read the worksheet directly. Earlier
+    // turns stay text-only — Brain sees the worksheet fresh each turn, and
+    // prior assistant replies just describe what was seen.
     let latestUserContent = content;
-    if (unified && activeDoc) {
+    if (activeDoc) {
       const multimodalContent = await buildUserMessageWithImages({
         activeDoc,
         annotatedByImageId,
@@ -304,7 +269,7 @@ export default function tutorSendMessage(fastify) {
       } else {
         request.log.warn(
           { sessionId, activeDocId: activeDoc.id },
-          'unified-vision: no page bytes resolvable — falling back to text-only user message'
+          'no page bytes resolvable — falling back to text-only user message'
         );
       }
     }
@@ -363,23 +328,13 @@ export default function tutorSendMessage(fastify) {
       abortController.abort();
     });
 
-    // Collects { usage, model, modelVersion, imageId } for each Eyes
-    // (lookup_on_image) call this turn so we can write a billing row per
-    // call and roll the cost into the assistant message.
-    const visionUsageCollector = [];
-
     const dispatchTool = makeTutorTools({
       activeDoc,
       viewingPage,
       log: request.log,
       emit: sse,
-      usedColorsForTurn,
-      signal: abortController.signal,
-      annotatedByImageId,
-      visionUsageCollector
+      usedColorsForTurn
     });
-
-    const toolsForTurn = activeDoc ? (unified ? unifiedBrainTools : brainTools) : undefined;
 
     const {
       assistantContent,
@@ -392,7 +347,7 @@ export default function tutorSendMessage(fastify) {
       apiKey,
       model: modelId,
       messages: modelMessages,
-      tools: toolsForTurn,
+      tools: activeDoc ? brainTools : undefined,
       signal: abortController.signal,
       log: request.log,
       logFields: { sessionId },
@@ -417,12 +372,11 @@ export default function tutorSendMessage(fastify) {
       );
     }
 
-    // Roll Brain rounds + Eyes calls into one bill for this assistant
-    // message. The audit-table inserts happen after the row is created so
-    // every llm_usage record has the right messageId FK.
+    // Roll Brain rounds into one bill for this assistant message. The
+    // audit-table inserts happen after the row is created so every
+    // llm_usage record has the right messageId FK.
     const brainNormalised = (usageRecords ?? []).map((r) => normaliseUsage(r.usage));
-    const visionNormalised = visionUsageCollector.map((r) => normaliseUsage(r.usage));
-    const turnTotals = sumUsage([...brainNormalised, ...visionNormalised]);
+    const turnTotals = sumUsage(brainNormalised);
 
     try {
       const [assistantRow] = await db()
@@ -445,31 +399,18 @@ export default function tutorSendMessage(fastify) {
         })
         .returning({ id: sessionMessage.id, createdAt: sessionMessage.createdAt });
 
-      // Best-effort audit log. One row per actual upstream call — Brain
-      // rounds + Eyes lookups that hit the network. Cache hits aren't
-      // recorded because they didn't cost anything. Batched into a single
-      // INSERT so a turn with N Eyes lookups is one DB round-trip, not N+1.
-      const auditRecords = [
-        ...(usageRecords ?? []).map((rec) => ({
-          userId,
-          sessionId,
-          messageId: assistantRow.id,
-          purpose: 'brain_chat',
-          model: modelId,
-          modelVersion: rec.modelVersion,
-          usage: rec.usage
-        })),
-        ...visionUsageCollector.map((rec) => ({
-          userId,
-          sessionId,
-          messageId: assistantRow.id,
-          imageId: rec.imageId,
-          purpose: 'vision_lookup',
-          model: rec.model,
-          modelVersion: rec.modelVersion,
-          usage: rec.usage
-        }))
-      ];
+      // Best-effort audit log — one row per Brain round that hit the
+      // network. Batched into a single INSERT so a multi-round turn is one
+      // DB round-trip, not N+1.
+      const auditRecords = (usageRecords ?? []).map((rec) => ({
+        userId,
+        sessionId,
+        messageId: assistantRow.id,
+        purpose: 'brain_chat',
+        model: modelId,
+        modelVersion: rec.modelVersion,
+        usage: rec.usage
+      }));
       recordLlmUsageBatch(auditRecords, request.log).catch((err) => {
         request.log.warn({ err: err?.message, sessionId }, 'recordLlmUsageBatch background job rejected');
       });

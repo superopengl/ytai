@@ -58,9 +58,9 @@ Create a user directly (bypasses login request flow). Admin-only.
 **Returns**: `{ userId: string }`
 
 ### `DELETE /api/admin/user/:id/data`
-Wipe every content row tied to a student account: every `tutor_session` and the cascade beneath it (`session_doc`, `session_image`, `image_ocr`, `vision_extraction`, `session_message`, `session_report`) and every `subject_report` the student authored. The `user` row itself is kept so the student can sign back in to a fresh slate. `login_otp` (short-lived auth state) and `tts_audio` (cross-user TTS cache) are deliberately untouched. `llm_usage` is also preserved — it's the per-call billing audit log and must outlive the entities it references; its FK columns are plain UUIDs and become orphans on wipe, which is fine since the token-usage aggregates filter on `user_id` (kept). S3 objects are not deleted by this call — the `<prefix>/images/` lifecycle rule on `YTAI_S3_BUCKET` reclaims them automatically.
+Wipe every content row tied to a student account: every `tutor_session` and the cascade beneath it (`session_doc`, `session_image`, `session_message`, `session_report`) and every `subject_report` the student authored. The `user` row itself is kept so the student can sign back in to a fresh slate. `login_otp` (short-lived auth state) and `tts_audio` (cross-user TTS cache) are deliberately untouched. `llm_usage` is also preserved — it's the per-call billing audit log and must outlive the entities it references; its FK columns are plain UUIDs and become orphans on wipe, which is fine since the token-usage aggregates filter on `user_id` (kept). S3 objects are not deleted by this call — the `<prefix>/images/` lifecycle rule on `YTAI_S3_BUCKET` reclaims them automatically.
 
-The whole wipe runs in a single transaction so partial deletes can't leave dangling rows (an OCR row that points at an already-deleted image, etc.). Restricted to `role='student'` — calling it on an admin/parent/teacher returns `409` and does nothing.
+The whole wipe runs in a single transaction so partial deletes can't leave dangling rows. Restricted to `role='student'` — calling it on an admin/parent/teacher returns `409` and does nothing.
 
 **Returns**:
 ```json
@@ -82,7 +82,7 @@ The whole wipe runs in a single transaction so partial deletes can't leave dangl
 - `409` — user exists but `role != 'student'`
 
 ### `GET /api/admin/user/:id/token-usage`
-Per-day token + cost aggregates pulled from `llm_usage` for one user. The response is the raw `(date, purpose, model)` grid — the frontend reshapes it into a stacked column chart split by either `purpose` or `model` without re-querying. Uses `llm_usage` directly (the per-call source of truth) rather than the convenience caches on `session_message` / `vision_extraction`, so totals match billing.
+Per-day token + cost aggregates pulled from `llm_usage` for one user. The response is the raw `(date, purpose, model)` grid — the frontend reshapes it into a stacked column chart split by either `purpose` or `model` without re-querying. Uses `llm_usage` directly (the per-call source of truth) rather than the rollup on `session_message`, so totals match billing.
 
 **Returns**:
 ```json
@@ -91,8 +91,8 @@ Per-day token + cost aggregates pulled from `llm_usage` for one user. The respon
   "days": [
     {
       "date": "2026-05-27",
-      "purpose": "brain_chat" | "vision_lookup" | "session_report" | "subject_report" | "subject_report_title",
-      "model": "deepseek/deepseek-v4-flash",
+      "purpose": "brain_chat" | "session_report" | "subject_report" | "subject_report_title",
+      "model": "google/gemma-4-e4b",
       "inputTokens": 1234,
       "outputTokens": 567,
       "reasoningTokens": 0,
@@ -106,7 +106,7 @@ Per-day token + cost aggregates pulled from `llm_usage` for one user. The respon
 }
 ```
 
-`days` is empty when the user has no recorded calls. Dates are UTC-day-bucketed via `date_trunc('day', created_at)`.
+`days` is empty when the user has no recorded calls. Dates are UTC-day-bucketed via `date_trunc('day', created_at)`. Historical rows from before the unified-vision cleanup may still carry `purpose='vision_lookup'`; new rows do not.
 
 **Errors**:
 - `400` — missing `:id`
@@ -248,28 +248,26 @@ Fetch the full transcript for a session, ordered by `created_at`.
 }
 ```
 
-`toolCalls` contains only **user-visible** tool calls (e.g. `draw_annotation`) so the client can re-render past AI annotations on the canvas. Internal `lookup_on_image` calls are not surfaced here.
+`toolCalls` contains the user-visible `draw_annotation` audit trail so the client can re-render past AI annotations on the canvas.
 
 ### `POST /api/tutor/:sessionId/message`
-Send a chat message. The server runs Brain (deepseek-v4-flash) in a tool-call loop with three tools:
-- `find_text_on_image(query)` — string match against the EasyOCR result in `image_ocr.lines`; returns up to 5 matches + a union bbox, or a status of `no-match | pending | failed | unavailable`. Cheap and deterministic — no model call.
-- `lookup_on_image(question)` — runs Qwen2.5-VL on the current image bytes; cached in `vision_extraction` per `(image_id, sha256(question))`.
-- `draw_annotation(shape, x1, y1, x2, y2, color?)` — server snaps the bbox to the OCR line union (`snapAnnotationBbox`) and forwards it over SSE for Konva to render.
+Send a chat message. The server builds a multimodal user message — every page of the session's active doc is attached as an `image_url` block, followed by the student's text — and runs Brain (the configured multimodal model) in a tool-call loop. The only tool exposed is `draw_annotation`.
+
+- `draw_annotation(shape, page, x1, y1, x2, y2, color?, label?)` — Brain emits a normalized 0..1 bbox from its own visual estimation; the server validates corners, assigns a fresh palette color, and forwards the call over SSE for Konva to render.
 
 **Body**:
 ```json
 {
   "content": "string",
-  "image": {
-    "dataUrl": "data:image/png;base64,...",
-    "width": 1200,
-    "height": 1600,
-    "hasAnnotations": true
+  "viewingPage": 1,
+  "annotatedImage": {
+    "imageId": "<session_image.id of the page the student drew on this turn>",
+    "dataUrl": "data:image/png;base64,..."
   }
 }
 ```
-- `image` is optional. The client only sends it when the canvas bytes have changed since the previous turn (hash dedup). If omitted, the server reuses `tutor_session.current_image_id` from a prior turn.
-- Strokes are baked into `dataUrl` — the server does not need separate stroke geometry.
+- `viewingPage` (optional) tells Brain which page the student is currently looking at so it biases attention toward that page.
+- `annotatedImage` (optional) is a per-turn snapshot of the student's freehand canvas. When present, its bytes substitute for the original page so Brain sees the marks. Not persisted — it lives just for this turn.
 
 **Response**: `text/event-stream`.
 
@@ -281,32 +279,23 @@ data: { "id": "<msgId>", "role": "user", "content": "...", "createdAt": "..." }
 event: token
 data: { "delta": "Sure! " }
 
-event: lookup-start
-data: { "id": "<toolCallId>", "question": "Where is question 3?" }
-# For find_text_on_image, `question` is rendered as `find: "<query>"`.
-
-event: lookup
-data: { "id": "<toolCallId>", "question": "Where is question 3?",
-        "result": { "answer": "...", "bbox": [0.70, 0.05, 0.95, 0.15] } }
-# For find_text_on_image, `result` is { status, matches[], unionBbox? } —
-# see findTextOnImage.js. Bboxes are corner format [x1, y1, x2, y2] in 0..1.
-
 event: tool
 data: { "id": "<toolCallId>", "name": "draw_annotation",
-        "args": { "shape": "highlight", "x1": 0.70, "y1": 0.05, "x2": 0.95, "y2": 0.15 } }
-# The server has already snapped the bbox to the OCR line union by the
-# time the client sees this. shape ∈ { highlight (default), circle, rect }.
+        "args": { "shape": "highlight", "page": 1, "imageId": "<session_image.id>",
+                  "x1": 0.70, "y1": 0.05, "x2": 0.95, "y2": 0.15,
+                  "color": "#fff59d", "colorName": "yellow", "label": "Question 3" } }
+# shape ∈ { highlight (default), circle, rect }. Coordinates are normalized
+# 0..1 corners within the named page.
 
 event: error
 data: { "error": "..." }
 
 event: done
-data: { "messageId": "...", "promptTokens": 412, "completionTokens": 187, "interrupted": false, "toolCalls": [...], "createdAt": "..." }
+data: { "messageId": "...", "inputTokens": 412, "outputTokens": 187, "interrupted": false, "toolCalls": [...], "createdAt": "..." }
 ```
 
-- `lookup-start` lets the client show a "looking at the page…" indicator without waiting for the result; `lookup` carries the actual answer.
-- `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right).
-- Closing the stream from the client triggers `AbortController`, which interrupts both Brain and any in-flight vision call. The partial assistant message is persisted with `interrupted=true`.
+- `tool` events for `draw_annotation` should be rendered on the canvas. Bboxes are normalized 0..1 corners (`x1,y1` top-left + `x2,y2` bottom-right) within the page named by `imageId`.
+- Closing the stream from the client triggers `AbortController`, which interrupts Brain's stream. The partial assistant message is persisted with `interrupted=true`.
 
 ## Analysis reports (cross-session views)
 

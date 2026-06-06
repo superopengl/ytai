@@ -29,18 +29,17 @@ Plus public utility pages: `/privacy_policy`, `/terms_of_use`, `/logo` (brand sh
 
 1. User visits the homepage and signs in via one of: Google SSO (one-tap), email OTP (`/login`, 6-digit code), or — admins only — username + password (`/login` → Admin tab).
 2. On the Tutor page, they **take a photo** with their phone (`<input capture="environment">`) or upload an image of the worksheet/exam. They may circle, underline, or highlight regions on top of the photo with the pen tools.
-3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Each upload writes its own S3 object (key = the new `session_image.id`); the session remembers the active image id. The server kicks an async **EasyOCR pre-pass** on the bytes (writes lines to `image_ocr`) but **no upfront vision pass.**
-4. **deepseek-v4-flash ("Brain")** runs on every turn. Two image tools, used in order of cheapness:
-   - `find_text_on_image(query)` — looks up printed text in the EasyOCR results. Fast, tight bboxes. Returns up to 5 matches + a union bbox.
-   - `lookup_on_image(question)` — falls back to Eyes for handwriting, math notation, diagrams, or anything semantic. One focused question per call.
-5. **Eyes (Qwen2.5-VL)** runs on the current image bytes with that question and returns a short text answer plus, when relevant, a normalized 0..1 corner bbox. Results are cached in `vision_extraction` keyed by `(image_id, sha256(question))` so repeats during a session are free.
-6. Brain may chain lookups (e.g. "what's on the page?" → "what did the student answer for question 3?") and may call `draw_annotation` with a bbox from a lookup to point at the page. Before forwarding, the server **snaps that bbox to the OCR line union** so the on-page mark hugs printed text rather than floating over whitespace. Tokens stream to the chat panel; `draw_annotation` calls render on the canvas.
-7. The student can hit **Stop** at any time to interrupt Brain and any in-flight Eyes call.
-8. Repeat until the session ends; transcript is stored.
+3. When the student sends their first message, the canvas (photo + freehand strokes) is flattened to a single PNG and POSTed alongside the message. Each upload writes its own S3 object (key = the new `session_image.id`); the session remembers the active image id.
+4. **Brain — a multimodal model (default: Gemma 4)** — runs on every turn. The latest user message carries every page of the active doc as an `image_url` block, so Brain reads the printed text, the student's handwriting, diagrams, and any freehand marks directly. No separate Eyes call; no OCR sidecar.
+5. Brain may call `draw_annotation` to point at exactly what it's talking about. The bbox comes from Brain's own visual estimation. Tokens stream to the chat panel; `draw_annotation` calls render on the canvas.
+6. The student can hit **Stop** at any time to interrupt Brain mid-stream.
+7. Repeat until the session ends; transcript is stored.
 
 ## Architecture
 
-Brain (deepseek-v4-flash) drives every turn. A cheap EasyOCR sidecar reads printed text into `image_ocr` async on upload; Brain consults it first via `find_text_on_image`, and only escalates to Eyes (Qwen2.5-VL) for handwriting, diagrams, or semantic questions. Both AI models go through OpenRouter; OCR runs locally as a Docker sidecar. Vision results are cached per `(image_id, question)` so repeats are free. The Konva canvas exports the photo + freehand strokes as one flattened PNG, so Eyes interprets the student's circles and underlines directly without coordinate-mapping. `draw_annotation` bboxes are snapped to the OCR line union before rendering so marks hug actual text. Chat streams over SSE with abort support.
+Brain is a multimodal LLM that handles chat, reading, and visual reasoning in one call. The Konva canvas exports the photo + freehand strokes as one flattened PNG, so Brain sees the student's circles and underlines as part of the page. Page bytes attach to the latest user message every turn; prior turns stay text-only in conversation history. `draw_annotation` is the only tool — Brain emits a normalized 0..1 bbox over a page and the frontend renders the mark on the canvas. Chat streams over SSE with abort support.
+
+Brain goes through any OpenAI-compatible `/v1/chat/completions` endpoint. In dev we point at LM Studio with Gemma 4 (`YTAI_OPENROUTER_BASE_URL=http://localhost:9529/v1`); in prod, OpenRouter.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
@@ -57,7 +56,7 @@ Subjects are the fixed 4-enum (math / thinking / reading / writing), bound 1:1 t
 
 ## Database
 
-PostgreSQL with Drizzle ORM. Tables: `user`, `login_otp`, `tutor_session`, `session_doc`, `session_image`, `image_ocr`, `session_message`, `vision_extraction`, `tts_audio`, `session_report`, `subject_report`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` (`local` | `google` | `email`), `email`, `google_id`, `picture`, plus the admin-only `local_login_user_name` + `password_hash` (scrypt) pair; `email`, `google_id`, and `local_login_user_name` are unique. `login_otp` stores 6-digit email codes in plain text so an admin can read them back when SES delivery fails.
+PostgreSQL with Drizzle ORM. Tables: `user`, `login_otp`, `tutor_session`, `session_doc`, `session_image`, `session_message`, `tts_audio`, `session_report`, `subject_report`, `llm_usage`. UUID primary keys, singular table names, automatic `created_at`/`updated_at`. `user` carries `auth_provider` (`local` | `google` | `email`), `email`, `google_id`, `picture`, plus the admin-only `local_login_user_name` + `password_hash` (scrypt) pair; `email`, `google_id`, and `local_login_user_name` are unique. `login_otp` stores 6-digit email codes in plain text so an admin can read them back when SES delivery fails.
 
 Schema in `src/api/db/schema.js`, migrations in `src/api/drizzle/`.
 
@@ -74,12 +73,12 @@ Summary:
 - `POST /api/auth/otp` — verify a 6-digit code, burn the row, return the same `{ token, user }` shape as Google. 5-wrong-attempts and 10-minute TTL guard against brute force.
 - `POST /api/auth/password` — admin-only username + password sign-in. Verifies the scrypt hash; only `role='admin'` users can sign in here. Every failure returns the same generic 401. Bootstrapped via `YTAI_ADMIN_USERNAME` / `YTAI_ADMIN_PASSWORD`, defaulting to `admin` / `adminadmin` so a fresh checkout has a working admin.
 - `POST /api/admin/password` — admin-only. Change the signed-in admin's own password. Verifies `currentPassword` against the stored scrypt hash and writes a fresh scrypt hash for `newPassword` (min 8 chars). The bootstrap admin's password is re-asserted from `YTAI_ADMIN_PASSWORD` on every server restart, so a change made here is reverted on next restart unless the env var is updated too.
-- `DELETE /api/admin/user/:id/data` — admin-only. Wipe every content row tied to a student account (sessions, docs, images, OCR, vision, messages, session/subject reports). User row, login_otp, the shared tts_audio cache, and `llm_usage` (per-call billing audit, must outlive the wiped entities) are kept. 409 if the target user is not `role='student'`. Whole wipe runs in one transaction.
+- `DELETE /api/admin/user/:id/data` — admin-only. Wipe every content row tied to a student account (sessions, docs, images, messages, session/subject reports). User row, login_otp, the shared tts_audio cache, and `llm_usage` (per-call billing audit, must outlive the wiped entities) are kept. 409 if the target user is not `role='student'`. Whole wipe runs in one transaction.
 - `GET /api/admin/user/:id/token-usage` — admin-only. Per-day token + cost aggregates from `llm_usage`, grouped by `(date, purpose, model)`. Drives the admin dashboard's "Token usage" stacked-column chart, which the frontend reshapes split by either purpose or model.
 - `POST /api/tutor/session` — start a tutoring session
 - `PATCH /api/tutor/:sessionId` — update a session in place. Body accepts any combination of `guidanceLevel`, `subject`, and `currentDocId` (set to a doc UUID owned by this session, or `null` to clear). Validates each field against its enum, verifies the target doc belongs to the session, and returns the patched fields.
 - `GET /api/tutor/:sessionId/messages` — fetch transcript
-- `POST /api/tutor/:sessionId/message` — send chat message; streams deepseek-v4-flash response over SSE. Brain hits `find_text_on_image` (EasyOCR cache) first and `lookup_on_image` (Qwen2.5-VL) for anything OCR can't answer. Vision results cached in `vision_extraction` per `(image_id, sha256(question))`; OCR results cached in `image_ocr` per `image_id`.
+- `POST /api/tutor/:sessionId/message` — send chat message; streams Brain's response over SSE. Each page of the active doc is attached to the user message as an `image_url` block so the multimodal Brain reads the worksheet directly. Brain may call `draw_annotation` to point at the page; per-turn freehand-canvas bytes override the original photo when the student drew on it for that turn.
 - `POST /api/tutor/:sessionId/speak` — synthesize one sentence of MP3 audio (frontend buffers and chunks Brain's stream by sentence). Cached in `tts_audio` per `sha256(text + voice + model)` so kid-tutor catchphrases ("nice work!") are free on repeat. Returns 503 if `YTAI_TTS_BASE_URL` is unset.
 - `GET /api/analysis-reports` — list every analysis report for the current user, newest first.
 - `POST /api/analysis-report` — generate a new analysis report. Every call inserts a new immutable row (no in-place refresh). Body: `{ subject, prompt }`. Prompts are capped at 2000 chars and only ever see structured session data, never raw transcripts.
@@ -95,9 +94,7 @@ Full API documentation: [docs/api-schema.md](docs/api-schema.md)
 - **Backend**: Node.js, Fastify
 - **Database**: PostgreSQL with Drizzle ORM
 - **Image storage**: S3 in production, local disk in dev
-- **AI — Vision (Eyes)**: **Qwen2.5-VL** (default: `qwen/qwen2.5-vl-72b-instruct`) via OpenRouter; called on demand by Brain through the `lookup_on_image` tool
-- **AI — Chat (Brain)**: **deepseek-v4-flash** via OpenRouter; streaming, abortable, tool-call enabled
-- **OCR**: **EasyOCR 1.7.2** (CRAFT detector + CRNN recognizer, English, CPU PyTorch) behind a FastAPI sidecar (`devops/ocr/`). Runs locally via `pnpm start:local:ocr` on port 9531. Drives the `find_text_on_image` tool and the OCR-snap on `draw_annotation`. Optional — when `YTAI_OCR_BASE_URL` is unset Brain falls back to Eyes for everything.
+- **AI — Brain (multimodal chat + vision)**: any OpenAI-compatible multimodal model. Default `google/gemma-4-e4b` via LM Studio in dev; can swap for OpenRouter-hosted multimodal models (`google/gemini-2.5-pro`, `openai/gpt-4o`, etc.) in prod. Streaming, abortable, tool-call enabled.
 - **AI — Voice (TTS)**: **Kokoro-82M** via [`Kokoro-FastAPI`](https://github.com/remsky/Kokoro-FastAPI) (OpenAI-compatible `/audio/speech`); runs as a Docker sidecar in dev (`pnpm start:local:tts`). Configurable via `YTAI_TTS_BASE_URL` — any compatible provider works.
 - **Streaming**: SSE (Server-Sent Events)
 - **Package manager**: pnpm (workspace monorepo — root `@techseeding/yoututorai`, `@techseeding/yoututorai-portal`, `@techseeding/yoututorai-deploy`)
@@ -128,8 +125,6 @@ pnpm db:studio          # open Drizzle Studio
 
 pnpm start:local:tts    # boot Kokoro-FastAPI sidecar for local voice (port 9530)
 pnpm stop:local:tts     # tear it down
-pnpm start:local:ocr    # boot EasyOCR sidecar for local OCR (port 9531)
-pnpm stop:local:ocr     # tear it down
 
 pnpm -F @techseeding/yoututorai-deploy synth
 pnpm -F @techseeding/yoututorai-deploy diff
@@ -161,12 +156,9 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_ADMIN_PASSWORD` | Plain password hashed (scrypt) and persisted as `user.password_hash` on boot. Used to verify `POST /api/auth/password`. Default exists so a fresh checkout has a working admin — **change it for any non-dev deploy**. | `adminadmin` |
 | `YTAI_SES_FROM_EMAIL` | Verified SES sender for sign-in OTP emails. Unset → SES is skipped; codes are still issued and visible in server logs / the DB. | *(unset)* |
 | `YTAI_AWS_REGION` | AWS region used by the SES client | `ap-southeast-2` |
-| `YTAI_OPENROUTER_API_KEY` | OpenRouter API key (used for both Eyes and Brain) | *(required)* |
-| `YTAI_OPENROUTER_CHAT_MODEL` | Brain model id on OpenRouter | `deepseek/deepseek-chat` |
-| `YTAI_OPENROUTER_VISION_MODEL` | Eyes model id on OpenRouter | `qwen/qwen2.5-vl-72b-instruct` |
-| `YTAI_OPENROUTER_BASE_URL` | Override the OpenRouter base URL | `https://openrouter.ai/api/v1` |
-| `YTAI_VISION_BASE_URL` | Per-route override for Eyes (e.g. local LM Studio at `http://localhost:9529/v1`); falls back to OpenRouter when unset | *(unset)* |
-| `YTAI_VISION_API_KEY` | API key for the vision override endpoint | *(unset)* |
+| `YTAI_OPENROUTER_API_KEY` | API key for the chat endpoint. Any non-empty value works against LM Studio. | *(required)* |
+| `YTAI_OPENROUTER_CHAT_MODEL` | Multimodal Brain model id | `google/gemma-4-e4b` |
+| `YTAI_OPENROUTER_BASE_URL` | OpenAI-compatible `/v1/chat/completions` endpoint. Point at LM Studio in dev (`http://localhost:9529/v1`). Defaults to OpenRouter. | `https://openrouter.ai/api/v1` |
 | `YTAI_S3_BUCKET` | Bucket for session images and TTS audio. Unset → local-disk fallback (dev only). | *(required in prod)* |
 | `YTAI_S3_PREFIX` | Key namespace inside `YTAI_S3_BUCKET`. CDK sets this to the deployed stage (`prod`). Local dev defaults to `dev` so a misconfigured laptop can't write into prod's keyspace. | `dev` |
 | `YTAI_SES_FROM_EMAIL` | Verified AWS SES sender identity for sign-in OTP emails. Unset disables SES (the OTP still lands in the DB and logs so an operator can read it back). | *(unset)* |
@@ -176,14 +168,11 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_TTS_MODEL` | TTS model id | `kokoro` |
 | `YTAI_TTS_VOICE` | Default voice id (Kokoro: `af_heart`, `af_bella`, `am_adam`, …) | `af_heart` |
 | `YTAI_AUDIO_DIR` | Local disk path for cached MP3 bytes | `./data/audio` |
-| `YTAI_OCR_BASE_URL` | OCR sidecar URL (e.g. local EasyOCR at `http://localhost:9531`). Unset disables OCR — `find_text_on_image` returns `unavailable` and `draw_annotation` skips the snap step. | *(unset)* |
-| `YTAI_OCR_API_KEY` | Optional auth for the OCR endpoint | *(unset)* |
-| `YTAI_OCR_MIN_CONFIDENCE` | Sidecar-side floor for OCR line confidence; lines below this are dropped before they reach the API | `0.3` |
 
 ## Open Questions to Resolve During Build
 
 1. **Streaming transport**: SSE vs. WebSocket? SSE is simpler and natively supports `AbortController`. Default to SSE; revisit if we add voice or multi-user shared sessions.
 2. **Voice in/out**: Whisper (STT) + ElevenLabs (TTS) is the cheap path. Defer to v2.
 3. **Multi-user shared session**: parent + student on different devices in the same session. Defer to v2.
-4. **Confidence fallback for Eyes**: if Qwen2.5-VL misreads handwriting, what's the recovery? Options: ask the user to re-circle, ask them to type the question, or send the crop to a second-opinion vision model. Decide after first user testing.
+4. **Confidence fallback for handwriting**: if Brain misreads handwriting, what's the recovery? Options: ask the user to re-circle, ask them to type the question, or send the page to a second-opinion model. Decide after first user testing.
 5. **Subject-specific tools**: math step-checker (sympy), writing rubric grader. Add as Brain-side tool calls once core loop works.

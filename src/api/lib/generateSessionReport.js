@@ -4,12 +4,9 @@ import path from 'node:path';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';
 import db from '../db/index.js';
 import {
-  imageOcr,
-  sessionImage,
   sessionMessage,
   sessionReport,
-  tutorSession,
-  visionExtraction
+  tutorSession
 } from '../db/schema.js';
 import agentChat from './agentChat.js';
 import recordLlmUsage, { normaliseUsage } from './recordLlmUsage.js';
@@ -174,32 +171,7 @@ async function loadSessionContext(sessionId, { sinceMessageAt } = {}) {
     .where(whereClause)
     .orderBy(asc(sessionMessage.createdAt));
 
-  // Pull image IDs from the session's docs so the report sees every page
-  // the student worked on, not just images embedded in legacy messages.
-  const sessionImages = await db()
-    .select({ id: sessionImage.id })
-    .from(sessionImage)
-    .where(eq(sessionImage.sessionId, sessionId));
-  const imageIds = Array.from(new Set(sessionImages.map((r) => r.id)));
-
-  const ocrRows = imageIds.length
-    ? await db()
-        .select({ imageId: imageOcr.imageId, status: imageOcr.status, lines: imageOcr.lines })
-        .from(imageOcr)
-        .where(and(eq(imageOcr.status, 'ready')))
-    : [];
-
-  const visionRows = imageIds.length
-    ? await db()
-        .select({ imageId: visionExtraction.imageId, extracted: visionExtraction.extracted })
-        .from(visionExtraction)
-    : [];
-
-  return {
-    messages,
-    ocrRows: ocrRows.filter((r) => imageIds.includes(r.imageId)),
-    visionRows: visionRows.filter((r) => imageIds.includes(r.imageId))
-  };
+  return { messages };
 }
 
 function transcriptToText(messages) {
@@ -212,32 +184,7 @@ function transcriptToText(messages) {
   return out.join('\n\n');
 }
 
-function ocrToText(ocrRows) {
-  if (!ocrRows.length) return '';
-  const lines = [];
-  for (const row of ocrRows) {
-    if (!Array.isArray(row.lines)) continue;
-    for (const ln of row.lines) {
-      if (ln?.text) lines.push(ln.text);
-    }
-  }
-  return lines.join('\n');
-}
-
-function visionQAToText(visionRows) {
-  if (!visionRows.length) return '';
-  const out = [];
-  for (const row of visionRows) {
-    const e = row.extracted;
-    if (!e) continue;
-    if (typeof e.question === 'string' && typeof e.answer === 'string') {
-      out.push(`Q: ${e.question}\nA: ${e.answer}`);
-    }
-  }
-  return out.join('\n\n');
-}
-
-function buildMessages({ transcript, ocrText, visionText, priorQuestions }) {
+function buildMessages({ transcript, priorQuestions }) {
   const isIncremental = Array.isArray(priorQuestions) && priorQuestions.length > 0;
   const incrementalNote = isIncremental
     ? ' This is an incremental update. The student has continued the session since the last report. You are given the prior list of questions and only the NEW chat messages since then. Return a MERGED list: keep any prior question that still belongs (updating its correct/mistakeType if a later interaction changes the verdict — e.g. the student initially got it wrong and then got it right after scaffolding), and add any new questions that came up. Do not drop prior questions just because they are not mentioned in the new transcript chunk.'
@@ -254,8 +201,6 @@ function buildMessages({ transcript, ocrText, visionText, priorQuestions }) {
     CATALOG_RAW;
 
   const userParts = [];
-  if (ocrText) userParts.push(`### Worksheet text (OCR)\n${ocrText}`);
-  if (visionText) userParts.push(`### What the vision model saw on the page\n${visionText}`);
   if (isIncremental) {
     userParts.push(
       `### Prior report — questions already captured (merge with the transcript below)\n${JSON.stringify(priorQuestions, null, 2)}`
@@ -419,15 +364,13 @@ export default async function generateSessionReport({ sessionId, log, force = fa
     });
 
   try {
-    const { messages, ocrRows, visionRows } = await loadSessionContext(
+    const { messages } = await loadSessionContext(
       sessionId,
       canIncrement ? { sinceMessageAt: existing.cursorMessageAt } : undefined
     );
     const transcript = transcriptToText(messages);
-    const ocrText = ocrToText(ocrRows);
-    const visionText = visionQAToText(visionRows);
 
-    if (!transcript && !ocrText && !visionText && !canIncrement) {
+    if (!transcript && !canIncrement) {
       const empty = {
         summary: 'No activity recorded for this session yet.',
         subject: 'Unknown',
@@ -473,8 +416,6 @@ export default async function generateSessionReport({ sessionId, log, force = fa
 
     const promptMessages = buildMessages({
       transcript,
-      ocrText,
-      visionText,
       priorQuestions: canIncrement ? existing.questions : null
     });
     const { baseUrl, apiKey, model } = reporterConfig();
@@ -484,7 +425,6 @@ export default async function generateSessionReport({ sessionId, log, force = fa
         model,
         incremental: canIncrement,
         transcriptChars: transcript.length,
-        ocrChars: ocrText.length,
         priorQuestions: canIncrement ? existing.questions.length : 0
       },
       'generateSessionReport: calling Brain'

@@ -1,13 +1,11 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import {
-  imageOcr,
   sessionDoc,
   sessionImage,
   sessionMessage,
   sessionReport,
-  tutorSession,
-  visionExtraction
+  tutorSession
 } from '../db/schema.js';
 import { markObjectOrphan } from '../lib/s3.js';
 
@@ -28,7 +26,6 @@ export default function tutorDeleteSession(fastify) {
         .select({ id: sessionImage.id, storageUrl: sessionImage.storageUrl })
         .from(sessionImage)
         .where(eq(sessionImage.sessionId, sessionId));
-      const imageIds = images.map((i) => i.id);
 
       const docs = await tx
         .select({ sourcePdfUrl: sessionDoc.sourcePdfUrl })
@@ -36,10 +33,6 @@ export default function tutorDeleteSession(fastify) {
         .where(eq(sessionDoc.sessionId, sessionId));
 
       await tx.delete(sessionMessage).where(eq(sessionMessage.sessionId, sessionId));
-      if (imageIds.length > 0) {
-        await tx.delete(imageOcr).where(inArray(imageOcr.imageId, imageIds));
-        await tx.delete(visionExtraction).where(inArray(visionExtraction.imageId, imageIds));
-      }
       // current_doc_id references session_doc, which references session_image;
       // null the pointer first so FK chains unwind in safe order.
       await tx

@@ -1,13 +1,10 @@
 # YouTutorAI Architecture
 
-## AI Pipeline — Brain drives, OCR-first then Eyes
+## AI Pipeline — single multimodal Brain
 
-Three-stage pipeline:
-- **EasyOCR** ("OCR") — cheap, deterministic local sidecar that reads printed text on upload.
-- **Qwen2.5-VL** ("Eyes") — semantic vision for handwriting, math, diagrams, and anything OCR can't see.
-- **deepseek-v4-flash** ("Brain") — chat, runs every turn, decides which of the above to call.
+A single multimodal LLM ("Brain") handles chat, reading, and visual reasoning in one call. Each turn attaches every page of the active doc to the user message as an `image_url` block; Brain reads the printed text, the student's handwriting, diagrams, and any freehand marks directly.
 
-Brain and Eyes go through OpenRouter; OCR runs as a local Docker sidecar (`devops/ocr/`, port 9531).
+- **Brain** — any OpenAI-compatible multimodal model. Default dev: `google/gemma-4-e4b` via LM Studio (`http://localhost:9529/v1`). Prod: any multimodal model on OpenRouter (Gemma 4, Gemini 2.5, GPT-4o, etc.).
 
 ```
 [Photo upload + freehand strokes on canvas]
@@ -16,52 +13,34 @@ Brain and Eyes go through OpenRouter; OCR runs as a local Docker sidecar (`devop
 Frontend flattens Konva stage → PNG (strokes baked in)
      │
      ▼
-POST /api/tutor/:sessionId/message
-     │   Dedup by sha256(bytes); persist to disk; record as
-     │   tutor_session.current_image_id.
-     │   Kick async EasyOCR job → writes lines to image_ocr.
-     ▼
-Brain (deepseek-v4-flash) on every chat turn
-     │   System prompt = persona + "image attached, prefer find_text_on_image
-     │   for known printed text, escalate to lookup_on_image otherwise"
-     │   Tools = { find_text_on_image, lookup_on_image, draw_annotation }
-     ▼
-For each turn:
-     ├─ tokens stream out                            ──► SSE to client
-     ├─ tool_call: find_text_on_image(query)
-     │         │
-     │         ▼
-     │    Server matches `query` against image_ocr.lines, returns
-     │    up to 5 matches + unionBbox (corners 0..1). 'no-match' /
-     │    'pending' / 'unavailable' tells Brain to fall back to Eyes.
+POST /api/tutor/:sessionId/doc       — stores pages in session_doc + session_image
+POST /api/tutor/:sessionId/message   — student's question + optional per-turn
+                                       annotated-canvas snapshot
      │
-     └─ tool_call: lookup_on_image(question)
-              │
-              ▼
-         Server runs Qwen2.5-VL on the CURRENT image + the question
-              │   Cached in vision_extraction by (image_id, sha256(question))
-              ▼
-         { answer, bbox? } feeds back as a tool message
-              │
-              ▼
-         Brain continues (may call again, or emit final answer)
-
-Tool: draw_annotation(shape, x1, y1, x2, y2, color?)
-     │   Brain passes a corner bbox from a lookup. Server snaps it to
-     │   the union of image_ocr lines that fall inside (so marks hug
-     │   actual printed text), then forwards to the client over SSE.
-     │   Konva renders shape only — no text label.
+     ▼
+Server builds the latest user message as a multimodal content array:
+     {type: 'text', text: 'Worksheet (page N of M):'},
+     {type: 'image_url', image_url: {url: data:image/png;base64,...}},
+     ... (one image_url per page; annotated-canvas bytes used when present)
+     {type: 'text', text: <student message>}
+     │
+     ▼
+Brain streams tokens + (optional) tool_call: draw_annotation(shape,page,x1,y1,x2,y2,color?,label?)
+     │
+     ▼
+Server emits SSE:
+     event: token       — text deltas to the chat panel
+     event: tool        — draw_annotation payload to the canvas
+     event: done        — final usage + assistantMessage id
 ```
 
 **Key rules**:
-- OCR runs eagerly (async) but Eyes is on-demand. EasyOCR is cheap and deterministic so it's fine to pay once per image; the VLM is expensive enough to only call when Brain has a focused question.
-- The bytes Eyes sees include the student's freehand strokes (the canvas exports the flattened stage). Eyes interprets circles, underlines, and highlights directly; the server never reasons about stroke coordinates. OCR sees the same bytes but ignores strokes — its job is reading printed page text.
-- `image_ocr` is a per-image cache, keyed by `image_id` (one row per image, lifecycle `pending → ready/failed`). `vision_extraction` is a per-question cache. Changing annotations changes `image_id` and naturally invalidates both.
-- `find_text_on_image` does plain string matching against OCR lines — no model call. Returns 'no-match' / 'pending' / 'failed' / 'unavailable' as signals for Brain to fall back to Eyes.
-- `draw_annotation` bboxes are snapped to the OCR line union via `snapAnnotationBbox.js` before they hit the wire. No-op when OCR isn't ready or the supplied region is too large to be a single-phrase target.
-- OCR is **optional** — when `YTAI_OCR_BASE_URL` is unset, `find_text_on_image` returns `unavailable`, the snap is a no-op, and Brain falls through to Eyes for everything.
-- Brain's tool-call loop is capped at `MAX_TOOL_ROUNDS = 6` per turn as a runaway guard.
-- Streaming uses SSE + `AbortController` so the Stop button kills both Brain and any in-flight Eyes call. The interrupted partial response is preserved in the transcript.
+- The latest user message carries page images every turn. Prior turns stay text-only in conversation history — Brain sees the worksheet fresh each turn; old assistant replies are just text descriptions of what was seen.
+- The student's freehand strokes are baked into the page image bytes (the canvas exports the flattened Konva stage), so Brain reads circles, underlines, and highlights as part of the page — no separate coordinate-mapping pass.
+- `draw_annotation` is the only tool. Brain estimates the bbox itself from what it sees in the image; the server validates corners, assigns a fresh palette color, and forwards the call over SSE.
+- Brain's tool-call loop is capped at `MAX_TOOL_ROUNDS = 10` per turn as a runaway guard.
+- Streaming uses SSE + `AbortController` so the Stop button kills Brain mid-stream. The interrupted partial response is preserved in the transcript.
+- A hallucination guard (regex over the assistant content) logs warnings when Brain narrates a highlight without actually calling `draw_annotation`.
 
 ## Reporting — two-tier rollup
 
@@ -97,11 +76,9 @@ The Reports portal page (`/reports`) shows a `subjects × builtin types` grid pl
 
 ## Cost / Model Strategy
 
-- **OCR (EasyOCR)** is free per-token at request time (runs locally, no per-call cost beyond CPU). Eagerly pre-runs once per image (~3–8s on CPU) so subsequent `find_text_on_image` calls hit a DB row, not the sidecar.
-- **Eyes (Qwen2.5-VL)** is the expensive call. Strategy: run it only when OCR can't answer. Cache results in `vision_extraction` keyed by `(image_id, sha256(question))` so repeated lookups are free. Image-byte dedup means re-sending the same photo doesn't create a new image row.
-- **Brain (deepseek-v4-flash)** runs every chat turn. Cheap. The tool-call loop may add 1–2 extra Brain round-trips per turn that needs vision, but Brain calls are still inexpensive vs Eyes.
-- **Worst case per turn**: Brain → tool call → Eyes (1–3s) → Brain → tokens. Equivalent latency to the previous eager-extraction model on the first turn, *better* on text-only turns (no vision call at all) and on "locate question 3" turns that resolve through OCR alone.
-- **Pedagogy**: deepseek-v4-flash is weaker than Claude on Socratic teaching for young kids. Compensate with a strong system prompt (see `src/api/prompts/tutorPersona.md`).
+- One multimodal call per turn replaces the previous Brain+Eyes+OCR pipeline. Image tokens are paid per turn since the page bytes attach to the latest user message — multi-page worksheets compound this, watch context size.
+- In dev, LM Studio + Gemma 4 e4b means inference is free per-token (local CPU/GPU). In prod the bill is one chat-completion per turn at whichever multimodal model is configured.
+- No per-question cache: Brain re-reads the image every turn. Cheaper to lean on the model's own KV-cache where the provider supports it than to maintain a separate vision cache.
 
 ## Frontend (React + Ant Design)
 
@@ -111,7 +88,7 @@ The Reports portal page (`/reports`) shows a `subjects × builtin types` grid pl
 - Pages: `HomePage` (which is also the sign-in surface — Google SSO only), `TutorPage`, `AdminPage`, plus public utility pages `PrivacyPolicyPage`, `TermsOfUsePage`, `LogoPage`
 - Components:
   - `PhotoCapture` — `<input type="file" capture="environment">` for phone camera + upload fallback
-  - `AnnotationCanvas` — Konva.js wrapper; renders the photo as a background layer and a transparent drawing layer on top; `exportImage()` returns a flattened dataUrl (strokes baked in) for Eyes to read
+  - `AnnotationCanvas` — Konva.js wrapper; renders the photo as a background layer and a transparent drawing layer on top; `exportImage()` returns a flattened dataUrl (strokes baked in) for Brain to read
   - `ChatPanel` — streaming message list with Stop button; renders math via KaTeX
 - Design tokens in `src/portal/src/theme.js` — kid-friendly colors, encouraging tone in copy, large legible fonts
 - Vite dev server proxies API/WebSocket to Fastify backend
@@ -132,20 +109,18 @@ src/
     routes/                     # One controller per file (filename = exported function name)
       healthcheck.js
       tutorCreateSession.js     # POST /api/tutor/session
+      tutorCreateDoc.js         # POST /api/tutor/:sessionId/doc
       tutorGetMessages.js       # GET  /api/tutor/:sessionId/messages
       tutorSendMessage.js       # POST /api/tutor/:sessionId/message  (streams; runs Brain tool-call loop)
     lib/
-      agentChat.js              # OpenAI-compatible streaming chat client (Brain)
-      askVision.js              # Qwen2.5-VL Q&A (one image + one question)
-      brainTools.js             # Tool defs: find_text_on_image, lookup_on_image, draw_annotation
-      ensureImageOcr.js         # Async kick of the EasyOCR sidecar; writes image_ocr rows
-      findTextOnImage.js        # String match against image_ocr.lines for find_text_on_image
-      runOcr.js                 # HTTP client for the OCR sidecar
-      snapAnnotationBbox.js     # Tightens draw_annotation bboxes to OCR line union
+      agentChat.js              # OpenAI-compatible streaming chat client
+      brainTools.js             # Tool def: draw_annotation
+      buildUserMessageWithImages.js  # Builds the multimodal user content array
+      makeTutorTools.js         # Dispatch for draw_annotation (validates bbox, assigns palette color)
+      runBrainTurn.js           # Per-turn loop (streams chat, accumulates tool calls, dispatches)
       tutorPrompt.js            # Persona + per-turn system messages
-      persistImage.js           # Disk (dev) image storage
-      loadImageDataUrl.js       # Re-hydrate persisted image bytes for later vision calls
-      hashBuffer.js             # sha256 helper for content-hash dedup
+      persistImage.js           # S3 / disk image storage
+      loadImageDataUrl.js       # Re-hydrate persisted image bytes as data URL
     db/
       schema.js                 # Drizzle schema
       index.js                  # postgres.js connection
@@ -166,11 +141,9 @@ src/
         PhotoCapture.jsx
         AnnotationCanvas.jsx    # Konva.js canvas
         ChatPanel.jsx
-        VisionSummary.jsx
     vite.config.js
     package.json
 devops/                         # Dockerfile + entrypoint
-  ocr/                          # EasyOCR FastAPI sidecar (Dockerfile, server.py, requirements.txt)
 deploy/                         # AWS CDK app
 dist/                           # Build artifacts (gitignored)
 ```

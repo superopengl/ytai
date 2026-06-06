@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { withTx } from '../db/index.js';
 import { sessionDoc, sessionImage, tutorSession } from '../db/schema.js';
-import ensureImageOcr from '../lib/ensureImageOcr.js';
 import persistImage from '../lib/persistImage.js';
 
 // Create a new doc on a session from 1..N images. Each image becomes a
@@ -142,14 +141,6 @@ export default function tutorCreateDoc(fastify) {
     }
 
     const { docRow, inserted } = txResult;
-
-    // Fire OCR jobs after commit so the inserted session_image rows are
-    // visible to the background workers.
-    for (const row of inserted) {
-      ensureImageOcr({ imageId: row.id, storageUrl: row.storageUrl, log: request.log }).catch(
-        () => {}
-      );
-    }
 
     request.log.info(
       { sessionId, docId: docRow.id, pageCount: inserted.length },

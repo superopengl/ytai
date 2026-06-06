@@ -11,7 +11,6 @@ import authGoogle from './routes/authGoogle.js';
 import authOtp from './routes/authOtp.js';
 import authPassword from './routes/authPassword.js';
 import bootstrapAdmin from './lib/bootstrapAdmin.js';
-import { inFlightOcrCount } from './lib/ensureImageOcr.js';
 import failOrphanReports from './lib/failOrphanReports.js';
 import changeAdminPassword from './routes/changeAdminPassword.js';
 import createAnalysisReport from './routes/createAnalysisReport.js';
@@ -174,8 +173,7 @@ export default async function server() {
           heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
           heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
           externalMb: Math.round(mem.external / 1024 / 1024),
-          arrayBuffersMb: Math.round(mem.arrayBuffers / 1024 / 1024),
-          ocrInFlight: inFlightOcrCount()
+          arrayBuffersMb: Math.round(mem.arrayBuffers / 1024 / 1024)
         },
         'memory snapshot'
       );

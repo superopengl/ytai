@@ -134,58 +134,6 @@ export const sessionImage = ytai.table(
   })
 );
 
-// Cheap, deterministic OCR pass on the flattened image bytes. Populated
-// asynchronously by the OCR sidecar (EasyOCR — CRAFT detector + CRNN
-// recognizer, see devops/ocr/) once per image_id. Brain queries this
-// through find_text_on_image to get tight bboxes for printed worksheet
-// text — Eyes (vision_extraction) stays the fallback for handwriting,
-// math notation, and diagrams.
-export const imageOcr = ytai.table('image_ocr', {
-  imageId: uuid('image_id')
-    .primaryKey()
-    .references(() => sessionImage.id),
-  // pending | ready | failed
-  status: text('status').notNull().default('pending'),
-  // Array of { text, confidence, bbox: [x, y, w, h] }, normalized 0..1.
-  lines: jsonb('lines'),
-  error: text('error'),
-  modelVersion: text('model_version'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-});
-
-export const visionExtraction = ytai.table(
-  'vision_extraction',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    imageId: uuid('image_id').notNull().references(() => sessionImage.id),
-    regionHash: text('region_hash'),
-    extracted: jsonb('extracted').notNull(),
-    // Eyes (vision) identity for the call that populated this row. `model`
-    // is what we asked for; `modelVersion` is what the provider returned.
-    // Subsequent reads of this row are cache hits — they don't write a new
-    // llm_usage record, so these columns are the only record of what the
-    // original call cost.
-    provider: text('provider'),
-    model: text('model'),
-    modelVersion: text('model_version').notNull(),
-    // Token + cost snapshot for the one upstream call that produced this
-    // cached answer. Stays with the row forever — every cache hit on this
-    // (imageId, regionHash) avoided this many tokens / this much cost.
-    inputTokens: integer('input_tokens'),
-    outputTokens: integer('output_tokens'),
-    reasoningTokens: integer('reasoning_tokens'),
-    cacheReadTokens: integer('cache_read_tokens'),
-    cacheWriteTokens: integer('cache_write_tokens'),
-    costUsd: numeric('cost_usd'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
-  },
-  (t) => ({
-    imageRegionUnique: uniqueIndex('vision_extraction_image_region_uq').on(t.imageId, t.regionHash)
-  })
-);
-
 export const ttsAudio = ytai.table(
   'tts_audio',
   {
