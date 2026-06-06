@@ -829,7 +829,7 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
                   onClick={onReplay}
                   aria-label={isSpeaking ? 'Stop reading this message' : 'Replay this message'}
                   aria-pressed={isSpeaking}
-                  style={{ color: ACCENT_BLUE }}
+                  style={{ color: ACCENT_BLUE, width: 22, height: 22, minWidth: 22, fontSize: 12 }}
                 />
               </Tooltip>
             )}
@@ -842,7 +842,7 @@ function Bubble({ message, onReplay, isSpeaking, thinking }) {
                   icon={copied ? <CheckOutlined /> : <CopyOutlined />}
                   onClick={handleCopy}
                   aria-label={copied ? 'Message copied' : 'Copy message to clipboard'}
-                  style={{ color: ACCENT_BLUE }}
+                  style={{ color: ACCENT_BLUE, width: 22, height: 22, minWidth: 22, fontSize: 12 }}
                 />
               </Tooltip>
             )}
