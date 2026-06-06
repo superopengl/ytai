@@ -149,7 +149,6 @@ All env vars prefixed with `YTAI_`.
 | `YTAI_DATABASE_URL` | PostgreSQL connection string | `postgres://localhost:5432/yoututorai` |
 | `YTAI_API_PORT` | API server port | `9521` |
 | `YTAI_PORTAL_PORT` | Vite dev server port | `9522` |
-| `YTAI_PUBLIC_URL` | Public-facing app origin | `http://localhost:9522` |
 | `YTAI_JWT_SECRET` | JWT signing secret | *(required)* |
 | `YTAI_GOOGLE_CLIENT_ID` | OAuth 2.0 Web Client ID from the Google Cloud Console. Enables the "Sign in with Google" button on the homepage / `/login` page and the `POST /api/auth/google` route. Unset disables Google SSO. | *(unset)* |
 | `YTAI_ADMIN_USERNAME` | Username for the boot-time admin upsert. With `YTAI_ADMIN_PASSWORD`, the server ensures a `role='admin'` user exists with this hash on every restart. | `admin` |
