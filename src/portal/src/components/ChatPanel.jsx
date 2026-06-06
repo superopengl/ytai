@@ -621,20 +621,23 @@ export default function ChatPanel({
             boxShadow: speech.listening ? `0 0 0 2px ${palette.error}26` : undefined
           }}
         />
-        {(busy || voice.speaking) && (
+        {busy || voice.speaking ? (
           <Tooltip title="Stop the tutor">
-            <Button danger icon={<StopOutlined />} onClick={stop} aria-label="Stop the tutor" />
+            <Button danger icon={<StopOutlined />} onClick={stop} aria-label="Stop the tutor">
+              Stop
+            </Button>
           </Tooltip>
+        ) : (
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={send}
+            disabled={!input.trim()}
+            aria-label="Send message"
+          >
+            Send
+          </Button>
         )}
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={send}
-          disabled={!input.trim()}
-          title={busy || voice.speaking ? 'Send (the tutor will pause and listen)' : undefined}
-        >
-          Send
-        </Button>
       </div>
     </div>
   );
