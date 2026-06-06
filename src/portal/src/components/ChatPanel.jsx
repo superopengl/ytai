@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Dropdown, Input, message, Modal, Select, Tag, Tooltip, Upload } from 'antd';
+import { Alert, Button, Input, message, Select, Tag, Tooltip, Upload } from 'antd';
 import {
   AudioOutlined,
   CheckOutlined,
   CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
   FilePdfOutlined,
   LoadingOutlined,
-  MoreOutlined,
   MutedOutlined,
   PictureOutlined,
   PlusOutlined,
@@ -78,8 +75,6 @@ export default function ChatPanel({
   onAiAnnotation,
   onDocCreated,
   onSelectDoc,
-  onSessionDeleted,
-  onSessionRenamed,
   getAnnotatedImage
 }) {
   const [messages, setMessages] = useState([]);
@@ -90,9 +85,6 @@ export default function ChatPanel({
   const [error, setError] = useState(null);
   const [guidanceLevel, setGuidanceLevel] = useState('direct');
   const [uploading, setUploading] = useState(false);
-  // Student-set title for the active session. Null/empty means the sider
-  // falls back to the auto-generated first-message preview.
-  const [sessionTitle, setSessionTitle] = useState(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
   const voice = useTutorVoice(sessionId);
@@ -125,7 +117,6 @@ export default function ChatPanel({
         setMessages(filtered);
         setHistoryLoaded(true);
         if (body.session?.guidanceLevel) setGuidanceLevel(body.session.guidanceLevel);
-        setSessionTitle(body.session?.title ?? null);
 
         // Rebuild per-page AI annotations from past tool calls. Each call
         // carries imageId so we can route it directly.
@@ -403,81 +394,6 @@ export default function ChatPanel({
     if (speech.listening) speech.stop();
   }, [voice, speech]);
 
-  const [modal, modalContextHolder] = Modal.useModal();
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
-  const [renameSaving, setRenameSaving] = useState(false);
-
-  const handleDeleteSession = useCallback(() => {
-    if (!sessionId) return;
-    modal.confirm({
-      title: 'Delete this session?',
-      content: "This permanently removes the chat, images, and any reports. You can't undo it.",
-      okText: 'Delete',
-      okButtonProps: { danger: true },
-      cancelText: 'Cancel',
-      onOk: async () => {
-        try {
-          const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
-          if (!res.ok) throw new Error("Couldn't delete that session");
-          onSessionDeleted?.(sessionId);
-        } catch (err) {
-          message.error(err.message || "Couldn't delete that session");
-        }
-      }
-    });
-  }, [modal, sessionId, onSessionDeleted]);
-
-  const openRename = useCallback(() => {
-    if (!sessionId) return;
-    // Prefill with whatever the user currently sees as the session's name:
-    // the explicit title if set, otherwise the first-user-message preview
-    // (same source the sider falls back to). Flatten whitespace and cap at
-    // the input's maxLength so a long first message doesn't overflow.
-    let initial = (sessionTitle ?? '').trim();
-    if (!initial) {
-      const firstUserMessage = messages.find(
-        (m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
-      );
-      if (firstUserMessage) {
-        initial = firstUserMessage.content.trim().replace(/\s+/g, ' ').slice(0, 80);
-      }
-    }
-    setRenameDraft(initial);
-    setRenameOpen(true);
-  }, [sessionId, sessionTitle, messages]);
-
-  const submitRename = useCallback(async () => {
-    if (!sessionId || renameSaving) return;
-    const trimmed = renameDraft.trim();
-    setRenameSaving(true);
-    try {
-      const res = await apiFetch(`/api/tutor/${sessionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        // Empty input clears back to the auto-generated preview — server
-        // treats null and empty the same.
-        body: JSON.stringify({ title: trimmed.length === 0 ? null : trimmed })
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Couldn't rename that session");
-      }
-      const body = await res.json();
-      const nextTitle = body.title ?? null;
-      setSessionTitle(nextTitle);
-      setRenameOpen(false);
-      // Tell the parent so the sider can re-fetch and the header label
-      // updates — both were driven by either the old title or the
-      // preview, neither of which is what we just persisted.
-      onSessionRenamed?.(sessionId, nextTitle);
-    } catch (err) {
-      message.error(err.message || "Couldn't rename that session");
-    } finally {
-      setRenameSaving(false);
-    }
-  }, [sessionId, renameDraft, renameSaving, onSessionRenamed]);
-
   const onKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -497,97 +413,6 @@ export default function ChatPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {modalContextHolder}
-      <Modal
-        title="Rename session"
-        open={renameOpen}
-        onCancel={() => (renameSaving ? null : setRenameOpen(false))}
-        onOk={submitRename}
-        okText="Save"
-        confirmLoading={renameSaving}
-        destroyOnHidden
-      >
-        <Input
-          autoFocus
-          maxLength={80}
-          showCount
-          placeholder="e.g. Fractions homework"
-          value={renameDraft}
-          onChange={(e) => setRenameDraft(e.target.value)}
-          onPressEnter={submitRename}
-        />
-        <div style={{ marginTop: 8, fontSize: 12, color: palette.textMuted }}>
-          Leave blank to fall back to the first-message preview.
-        </div>
-      </Modal>
-      <div style={headerStyle}>
-        <Tooltip
-          title={(() => {
-            const current = GUIDANCE_OPTIONS.find((o) => o.value === guidanceLevel);
-            return current ? `${current.label}: ${current.description}` : '';
-          })()}
-        >
-          <Select
-            value={guidanceLevel}
-            onChange={changeGuidanceLevel}
-            options={GUIDANCE_OPTIONS}
-            optionLabelProp="label"
-            optionRender={(option) => (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: palette.text, lineHeight: 1.3 }}>
-                  {option.data.label}
-                </div>
-                <div style={{ fontSize: 11, color: palette.textMuted, lineHeight: 1.35, whiteSpace: 'normal' }}>
-                  {option.data.description}
-                </div>
-              </div>
-            )}
-            popupMatchSelectWidth={280}
-            style={{ marginLeft: 'auto', width: 110 }}
-          />
-        </Tooltip>
-        <Tooltip
-          title={
-            !voice.supported
-              ? "Voice isn't set up yet."
-              : voice.enabled
-                ? 'Turn voice off'
-                : 'Turn voice on — tutor will read replies aloud'
-          }
-        >
-          <Button
-            disabled={!voice.supported}
-            aria-pressed={voice.enabled}
-            icon={voice.enabled ? <SoundOutlined /> : <MutedOutlined />}
-            onClick={() => voice.setEnabled(!voice.enabled)}
-            type={voice.enabled ? 'primary' : 'default'}
-          />
-        </Tooltip>
-        <Dropdown
-          trigger={['click']}
-          placement="bottomRight"
-          menu={{
-            items: [
-              {
-                key: 'rename',
-                label: 'Rename',
-                icon: <EditOutlined />,
-                onClick: openRename
-              },
-              { type: 'divider' },
-              {
-                key: 'delete',
-                label: 'Delete this session',
-                icon: <DeleteOutlined />,
-                danger: true,
-                onClick: handleDeleteSession
-              }
-            ]
-          }}
-        >
-          <Button icon={<MoreOutlined />} aria-label="Session menu" />
-        </Dropdown>
-      </div>
       <div ref={scrollRef} style={scrollStyle}>
         {!historyLoaded ? (
           <div style={centeredHint}>
@@ -738,6 +563,50 @@ export default function ChatPanel({
                 />
               </Tooltip>
             )}
+            <Tooltip
+              title={(() => {
+                const current = GUIDANCE_OPTIONS.find((o) => o.value === guidanceLevel);
+                return current ? `${current.label}: ${current.description}` : '';
+              })()}
+            >
+              <Select
+                size="small"
+                value={guidanceLevel}
+                onChange={changeGuidanceLevel}
+                options={GUIDANCE_OPTIONS}
+                optionLabelProp="label"
+                optionRender={(option) => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: palette.text, lineHeight: 1.3 }}>
+                      {option.data.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: palette.textMuted, lineHeight: 1.35, whiteSpace: 'normal' }}>
+                      {option.data.description}
+                    </div>
+                  </div>
+                )}
+                popupMatchSelectWidth={280}
+                style={{ width: 110 }}
+              />
+            </Tooltip>
+            <Tooltip
+              title={
+                !voice.supported
+                  ? "Voice isn't set up yet."
+                  : voice.enabled
+                    ? 'Turn voice off'
+                    : 'Turn voice on — tutor will read replies aloud'
+              }
+            >
+              <Button
+                size="small"
+                disabled={!voice.supported}
+                aria-pressed={voice.enabled}
+                icon={voice.enabled ? <SoundOutlined /> : <MutedOutlined />}
+                onClick={() => voice.setEnabled(!voice.enabled)}
+                type={voice.enabled ? 'primary' : 'default'}
+              />
+            </Tooltip>
           </div>
           {busy || voice.speaking ? (
             <Tooltip title="Stop the tutor">
@@ -1016,13 +885,6 @@ function dictationErrorMessage(code) {
   return "Voice isn't working right now.";
 }
 
-const headerStyle = {
-  padding: '12px 16px',
-  borderBottom: `1px solid ${palette.borderSoft}`,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8
-};
 const scrollStyle = { flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 };
 const composerStyle = {
   padding: 12,

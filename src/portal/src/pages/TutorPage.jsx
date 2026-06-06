@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, Drawer, Grid, Menu, message, Modal, Radio, Select, Splitter, Tooltip, Typography } from 'antd';
-import { FormOutlined, MenuOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Drawer, Dropdown, Grid, Input, Menu, message, Modal, Radio, Select, Splitter, Tooltip, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, FormOutlined, MenuOutlined, MoreOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import PagedCanvas from '../components/PagedCanvas.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import Logo from '../components/Logo.jsx';
@@ -105,6 +105,70 @@ export default function TutorPage() {
     // enough to flow the new name into the header Select.
     setSessionsRefresh((n) => n + 1);
   }, []);
+
+  // Rename / delete for the active session — surfaced via the kebab in the
+  // top bar next to the SessionSelect. Prefill uses the session list's
+  // title-then-preview fallback (same source the Select label uses), so
+  // there's no need to wait on the messages history fetch.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+
+  const handleDeleteSession = useCallback(() => {
+    if (!sessionId) return;
+    modal.confirm({
+      title: 'Delete this session?',
+      content: "This permanently removes the chat, images, and any reports. You can't undo it.",
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          const res = await apiFetch(`/api/tutor/${sessionId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error("Couldn't delete that session");
+          onSessionDeleted(sessionId);
+        } catch (err) {
+          message.error(err.message || "Couldn't delete that session");
+        }
+      }
+    });
+  }, [modal, sessionId, onSessionDeleted]);
+
+  const openRename = useCallback(() => {
+    if (!sessionId) return;
+    const active = (sessions ?? []).find((s) => s.id === sessionId);
+    const title = typeof active?.title === 'string' ? active.title.trim() : '';
+    let initial = title;
+    if (!initial) {
+      const preview = typeof active?.preview === 'string' ? active.preview.trim() : '';
+      initial = preview.replace(/\s+/g, ' ').slice(0, 80);
+    }
+    setRenameDraft(initial);
+    setRenameOpen(true);
+  }, [sessionId, sessions]);
+
+  const submitRename = useCallback(async () => {
+    if (!sessionId || renameSaving) return;
+    const trimmed = renameDraft.trim();
+    setRenameSaving(true);
+    try {
+      const res = await apiFetch(`/api/tutor/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmed.length === 0 ? null : trimmed })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Couldn't rename that session");
+      }
+      setRenameOpen(false);
+      onSessionRenamed();
+    } catch (err) {
+      message.error(err.message || "Couldn't rename that session");
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [sessionId, renameDraft, renameSaving, onSessionRenamed]);
 
   // The "+ New Session" tab opens this modal; year + subject are chosen
   // inside it and only get committed when the user clicks Create. Defaults
@@ -307,8 +371,6 @@ export default function TutorPage() {
       onDocCreated={handleDocCreated}
       onAiAnnotation={handleAiAnnotation}
       onSelectDoc={handleSelectDoc}
-      onSessionDeleted={onSessionDeleted}
-      onSessionRenamed={onSessionRenamed}
       getAnnotatedImage={getAnnotatedImage}
     />
   );
@@ -338,6 +400,28 @@ export default function TutorPage() {
         onConfirm={confirmNewSession}
         onCancel={() => setNewSessionOpen(false)}
       />
+      <Modal
+        title="Rename session"
+        open={renameOpen}
+        onCancel={() => (renameSaving ? null : setRenameOpen(false))}
+        onOk={submitRename}
+        okText="Save"
+        confirmLoading={renameSaving}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          maxLength={80}
+          showCount
+          placeholder="e.g. Fractions homework"
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onPressEnter={submitRename}
+        />
+        <div style={{ marginTop: 8, fontSize: 12, color: palette.textMuted }}>
+          Leave blank to fall back to the first-message preview.
+        </div>
+      </Modal>
       <header
         style={{
           padding: '12px 24px 12px 12px',
@@ -355,12 +439,38 @@ export default function TutorPage() {
           aria-label="Open menu"
         />
         {isNarrow ? null : <Logo height={24} />}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, padding: '0 12px' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 0, padding: '0 12px' }}>
           <SessionSelect
             value={sessionId}
             sessions={sessions}
             onChange={onSelectSession}
           />
+          {sessionId ? (
+            <Dropdown
+              trigger={['click']}
+              placement="bottomRight"
+              menu={{
+                items: [
+                  {
+                    key: 'rename',
+                    label: 'Rename',
+                    icon: <EditOutlined />,
+                    onClick: openRename
+                  },
+                  { type: 'divider' },
+                  {
+                    key: 'delete',
+                    label: 'Delete this session',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: handleDeleteSession
+                  }
+                ]
+              }}
+            >
+              <Button type="text" icon={<MoreOutlined />} aria-label="Session menu" />
+            </Dropdown>
+          ) : null}
         </div>
         <Tooltip title="Create new session">
           <Button

@@ -179,6 +179,19 @@ function AnnotationCanvas(
         style={{ marginTop: 4, marginBottom: 8, flexWrap: 'wrap', rowGap: 8 }}
         size={[8, 8]}
       >
+        {onClearAiAnnotations && aiAnnotations.length > 0 && (<>
+          <Tooltip title="Remove the tutor's highlights and circles">
+            <Button
+              onClick={onClearAiAnnotations}
+            >
+              Clear tutor marks
+            </Button>
+          </Tooltip>
+
+          <span aria-hidden style={toolbarDividerStyle} />
+        </>
+        )}
+
         <Tooltip title="Undo last mark">
           <Button
             icon={<UndoOutlined />}
@@ -197,18 +210,6 @@ function AnnotationCanvas(
             Clear
           </Button>
         </Tooltip>
-        {onClearAiAnnotations && (
-          <Tooltip title="Remove the tutor's highlights and circles">
-            <Button
-              icon={<HighlightOutlined />}
-              onClick={onClearAiAnnotations}
-              disabled={aiAnnotations.length === 0}
-            >
-              Clear tutor marks
-            </Button>
-          </Tooltip>
-        )}
-
         <Tooltip title="Pen color">
           <ColorPicker
             value={penColor}
