@@ -29,6 +29,7 @@ import {
 import SUBJECTS from '../lib/subjects.js';
 import apiFetch from '../lib/apiFetch.js';
 import currentSubject from '../lib/currentSubject.js';
+import currentYear, { YEARS } from '../lib/currentYear.js';
 import { palette } from '../theme.js';
 import MarkdownMessage from '../components/MarkdownMessage.jsx';
 
@@ -247,10 +248,49 @@ export default function ReportsPage() {
   const [customPrompt, setCustomPrompt] = useState('');
   const [customSubject, setCustomSubject] = useState(() => currentSubject().value);
   const [customTimespanDays, setCustomTimespanDays] = useState(DEFAULT_TIMESPAN_DAYS);
+  const [customYear, setCustomYear] = useState(() => currentYear().value);
 
   const updateSubject = useCallback((next) => {
     setCustomSubject(next);
     currentSubject().save(next);
+  }, []);
+
+  const updateYear = useCallback((next) => {
+    if (next === customYear) return;
+    setCustomYear(next);
+    currentYear().save(next);
+    apiFetch('/api/me/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ year: next })
+    }).catch((err) => {
+      console.error('Failed to save year preference', err);
+    });
+  }, [customYear]);
+
+  // Hydrate the year from the server profile so the default matches what the
+  // user picked elsewhere (e.g. on the Tutor page) even on a fresh browser.
+  // localStorage primes the initial value so the radio isn't blank during
+  // the fetch.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/me/profile');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        if (body?.year) {
+          setCustomYear(body.year);
+          currentYear().save(body.year);
+        }
+      } catch (err) {
+        console.error('Failed to load profile', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadReports = useCallback(async () => {
@@ -427,6 +467,8 @@ export default function ReportsPage() {
             ) : (
               <GeneratePanel
                 generating={generating}
+                customYear={customYear}
+                setCustomYear={updateYear}
                 customSubject={customSubject}
                 setCustomSubject={updateSubject}
                 customTimespanDays={customTimespanDays}
@@ -586,6 +628,8 @@ function ReportTabLabel({ report }) {
 
 function GeneratePanel({
   generating,
+  customYear,
+  setCustomYear,
   customSubject,
   setCustomSubject,
   customTimespanDays,
@@ -622,7 +666,29 @@ function GeneratePanel({
       </Typography.Paragraph>
 
       <section style={{ marginBottom: 20 }}>
-        <StepHeader n={1} title="Choose a subject">
+        <StepHeader n={1} title="Choose the year">
+          Which year level is the student in? This anchors the AI's expectations.
+        </StepHeader>
+        <div style={{ marginLeft: 36 }}>
+          <Radio.Group
+            value={customYear}
+            onChange={(e) => setCustomYear(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            {YEARS.map((y) => (
+              <Radio.Button key={y} value={y}>
+                {y}
+              </Radio.Button>
+            ))}
+          </Radio.Group>
+        </div>
+      </section>
+
+      <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
+
+      <section style={{ marginBottom: 20 }}>
+        <StepHeader n={2} title="Choose a subject">
           Which subject's tutoring work should the AI analyze?
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
@@ -651,7 +717,7 @@ function GeneratePanel({
       <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
 
       <section style={{ marginBottom: 20 }}>
-        <StepHeader n={2} title="Pick a time span">
+        <StepHeader n={3} title="Pick a time span">
           How far back should the AI look? Only sessions started within this window are included.
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
@@ -676,7 +742,7 @@ function GeneratePanel({
       <div style={{ borderTop: `1px dashed ${palette.borderSoft}`, margin: '24px 0' }} />
 
       <section style={{ marginBottom: 28 }}>
-        <StepHeader n={3} title="Tell the AI what to analyze">
+        <StepHeader n={4} title="Tell the AI what to analyze">
           Start from a template, then tweak the prompt before generating.
         </StepHeader>
         <div style={{ marginLeft: 36 }}>
