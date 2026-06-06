@@ -13,8 +13,36 @@ const { overlay: OVERLAY } = palette;
 // and line-height. The wrapper element trims first/last child margins so
 // paragraphs don't add empty space inside the bubble.
 
+// remark-math 6 treats every `$` as a math delimiter and does NOT honor
+// `\$` escapes, so currency the LLM emits ("$24.00 ... $206.00") gets
+// pair-matched as a math span. We sidestep this by mapping `$` that's
+// followed by a digit (currency open) to a private-use Unicode char
+// before parsing, and restoring it to `$` in text nodes after remark-math
+// has finished — so `$x^2$` still parses as math but `$24.00` renders as
+// plain currency.
+const CURRENCY_PLACEHOLDER = '';
+const CURRENCY_RE = /\\?\$(?=\d)/g;
+
+function escapeCurrency(src) {
+  return typeof src === 'string' ? src.replace(CURRENCY_RE, CURRENCY_PLACEHOLDER) : src;
+}
+
+function restoreCurrencyInTree(node) {
+  if (!node) return;
+  if (node.type === 'text' && typeof node.value === 'string' && node.value.includes(CURRENCY_PLACEHOLDER)) {
+    node.value = node.value.split(CURRENCY_PLACEHOLDER).join('$');
+  }
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) restoreCurrencyInTree(child);
+  }
+}
+
+function rehypeRestoreCurrency() {
+  return (tree) => restoreCurrencyInTree(tree);
+}
+
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
-const REHYPE_PLUGINS = [rehypeKatex];
+const REHYPE_PLUGINS = [rehypeKatex, rehypeRestoreCurrency];
 
 const components = {
   a: ({ node, ...props }) => (
@@ -87,7 +115,7 @@ export default function MarkdownMessage({ children }) {
   return (
     <div className="ytai-md">
       <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
-        {children}
+        {escapeCurrency(children)}
       </ReactMarkdown>
       <style>{`.ytai-md > :first-child { margin-top: 0; } .ytai-md > :last-child { margin-bottom: 0; }`}</style>
     </div>
