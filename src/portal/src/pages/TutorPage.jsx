@@ -127,9 +127,43 @@ export default function TutorPage() {
       if (next === year) return;
       setYear(next);
       currentYear().save(next);
+      // Persist to the server profile so the choice follows the user across
+      // browsers. Best-effort: the localStorage cache + optimistic state
+      // update mean a network blip doesn't strand the UI.
+      apiFetch('/api/me/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: next })
+      }).catch((err) => {
+        console.error('Failed to save year preference', err);
+      });
     },
     [year]
   );
+
+  // Hydrate the year from the server profile on mount. localStorage primes
+  // the initial render so the dropdown isn't blank during the fetch; if the
+  // server has a different value, replace what we cached.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/me/profile');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        if (body?.year) {
+          setYear(body.year);
+          currentYear().save(body.year);
+        }
+      } catch (err) {
+        console.error('Failed to load profile', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (routeSessionId) {

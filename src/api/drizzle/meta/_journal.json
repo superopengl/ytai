@@ -183,6 +183,13 @@
       "when": 1782000000000,
       "tag": "0025_drop_image_ocr_and_vision_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782100000000,
+      "tag": "0026_user_profile",
+      "breakpoints": true
     }
   ]
 }

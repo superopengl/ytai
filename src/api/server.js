@@ -17,6 +17,7 @@ import createAnalysisReport from './routes/createAnalysisReport.js';
 import deleteAdminUserData from './routes/deleteAdminUserData.js';
 import deleteAnalysisReport from './routes/deleteAnalysisReport.js';
 import getAdminUserTokenUsage from './routes/getAdminUserTokenUsage.js';
+import getMyProfile from './routes/getMyProfile.js';
 import healthcheck from './routes/healthcheck.js';
 import listAdminUsers from './routes/listAdminUsers.js';
 import listAnalysisReports from './routes/listAnalysisReports.js';
@@ -29,6 +30,7 @@ import tutorListSessions from './routes/tutorListSessions.js';
 import tutorSendMessage from './routes/tutorSendMessage.js';
 import tutorSpeak from './routes/tutorSpeak.js';
 import tutorUpdateSession from './routes/tutorUpdateSession.js';
+import updateMyProfile from './routes/updateMyProfile.js';
 
 export default async function server() {
   const isProd = process.env.NODE_ENV === 'production';
@@ -96,6 +98,7 @@ export default async function server() {
   deleteAdminUserData(app);
   deleteAnalysisReport(app);
   getAdminUserTokenUsage(app);
+  getMyProfile(app);
   listAdminUsers(app);
   listAnalysisReports(app);
   tutorCreateDoc(app);
@@ -107,6 +110,7 @@ export default async function server() {
   tutorSendMessage(app);
   tutorSpeak(app);
   tutorUpdateSession(app);
+  updateMyProfile(app);
 
   // SPA serving — only in prod, and only when the built portal exists.
   // In dev, Vite serves the portal separately on YTAI_PORTAL_PORT, so the

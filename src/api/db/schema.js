@@ -44,6 +44,22 @@ export const user = ytai.table(
   })
 );
 
+// Per-user mutable preferences. Kept separate from `user` so the auth /
+// identity columns (email, googleId, passwordHash, role) stay narrow and
+// preference-style fields can grow without churning the auth table.
+// Keyed 1:1 with user via userId-as-PK; rows are upserted on first write,
+// so a user that never touched a preference simply has no row.
+export const userProfile = ytai.table('user_profile', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => user.id),
+  // 'Y3' | 'Y4' | 'Y5' | 'Y6'. Nullable so a freshly-upserted row can hold
+  // future preferences without forcing year to be set first.
+  year: text('year'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});
+
 // Short-lived 6-digit email sign-in codes. Stored in plain text on purpose —
 // admins can read codes out to a student whose email isn't reaching them.
 // Lifetime is bounded by expiresAt (10 minutes by default); rows are
