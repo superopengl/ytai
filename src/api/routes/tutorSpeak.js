@@ -9,7 +9,7 @@ import synthesizeSpeech from '../lib/synthesizeSpeech.js';
 import { getObjectStream, objectExists } from '../lib/s3.js';
 
 const DEFAULT_MODEL = 'kokoro';
-const DEFAULT_VOICE = 'af_heart';
+const DEFAULT_VOICE = 'am_fenrir';
 // Sentence-length text only — the frontend splits on sentence boundaries.
 // Anything bigger than this is almost certainly the model running away
 // without punctuation; reject so we don't pay synthesis cost on a wall.
