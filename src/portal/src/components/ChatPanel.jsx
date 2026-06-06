@@ -197,9 +197,13 @@ export default function ChatPanel({
       speech.stop();
       return;
     }
+    // Cut TTS before opening the mic — without this the recognizer hears
+    // the spoken sentence coming out of the speakers and feeds it back
+    // into the input box.
+    if (voice.speaking) voice.stop();
     dictationBaseRef.current = input.replace(/\s+$/, '');
     speech.start();
-  }, [input, speech]);
+  }, [input, speech, voice]);
 
   const handleUploadFiles = useCallback(
     async (files) => {
@@ -504,8 +508,16 @@ export default function ChatPanel({
                 thinking={isStreamingTail && thinkingActive}
                 onReplay={
                   voice.supported
-                    ? () =>
-                        isThisSpeaking ? voice.stop() : voice.speak(message.content, message.id)
+                    ? () => {
+                        if (isThisSpeaking) {
+                          voice.stop();
+                          return;
+                        }
+                        // Close the mic before TTS starts — otherwise the
+                        // recognizer would pick up the read-aloud audio.
+                        if (speech.listening) speech.stop();
+                        voice.speak(message.content, message.id);
+                      }
                     : null
                 }
               />
@@ -563,14 +575,28 @@ export default function ChatPanel({
           </Upload>
         </Tooltip>
         {speech.supported && (
-          <Tooltip title={speech.listening ? 'Stop dictation' : 'Dictate your question'}>
+          <Tooltip
+            title={
+              speech.listening
+                ? 'Stop dictation'
+                : voice.speaking
+                  ? 'Stop reading and dictate'
+                  : 'Dictate your question'
+            }
+          >
             <Button
               icon={<AudioOutlined />}
               onClick={toggleDictation}
               danger={speech.listening}
               type={speech.listening ? 'primary' : 'default'}
               aria-pressed={speech.listening}
-              aria-label={speech.listening ? 'Stop dictation' : 'Start dictation'}
+              aria-label={
+                speech.listening
+                  ? 'Stop dictation'
+                  : voice.speaking
+                    ? 'Stop reading and start dictation'
+                    : 'Start dictation'
+              }
             />
           </Tooltip>
         )}
