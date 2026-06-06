@@ -315,7 +315,7 @@ function AnnotationCanvas(
         style={{
           flex: 1,
           minHeight: 0,
-          background: palette.canvasVoid,
+          background: palette.pens.ink,
           borderRadius: 12,
           display: 'flex',
           // `safe center` keeps the stage centered when it fits, but falls
