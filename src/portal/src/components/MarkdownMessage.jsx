@@ -15,16 +15,35 @@ const { overlay: OVERLAY } = palette;
 
 // remark-math 6 treats every `$` as a math delimiter and does NOT honor
 // `\$` escapes, so currency the LLM emits ("$24.00 ... $206.00") gets
-// pair-matched as a math span. We sidestep this by mapping `$` that's
-// followed by a digit (currency open) to a private-use Unicode char
-// before parsing, and restoring it to `$` in text nodes after remark-math
-// has finished — so `$x^2$` still parses as math but `$24.00` renders as
-// plain currency.
+// pair-matched as a math span. We sidestep this by mapping `$` that
+// clearly opens currency to a private-use Unicode char before parsing,
+// then restoring it to `$` in text nodes after the AST is built —
+// `$x^2$`, `$3G = 182$`, `$3 + 4 = 7$` still parse as math but `$24.00`,
+// `$182,`, and `$206.00$.` (LLM typo with stray closing `$`) render as
+// plain currency. The distinguisher: currency is `$<digits>` followed by
+// English prose punctuation/whitespace; math is `$<digits>` followed by
+// a letter, operator, or another digit without a closing `$` in pure-
+// numeric position.
 const CURRENCY_PLACEHOLDER = '';
-const CURRENCY_RE = /\\?\$(?=\d)/g;
+const NUMERIC = '\\d[\\d,]*(?:\\.\\d+)?';
+// 1. LLM's failed `\$<digit>` escape (remark-math 6 doesn't honor escapes).
+const RE_ESCAPED_CURRENCY = /\\\$(?=\d)/g;
+// 2. Currency with a stray trailing `$` typo: `$206.00$.` — content is purely
+//    numeric and the closing `$` is not followed by a letter (so it's not
+//    starting another math span).
+const RE_CURRENCY_TYPO = new RegExp(`\\$(${NUMERIC})\\$(?![A-Za-z])`, 'g');
+// 3. Currency in prose: `$<digits>` followed by sentence punctuation, end of
+//    string, or whitespace + an English letter. Crucially NOT a bare letter
+//    (e.g. `$3G`), operator (`$3+4`), or `\s+` followed by an operator
+//    (`$3 + 4 = 7$`), so digit-leading math expressions are left alone.
+const RE_CURRENCY = new RegExp(`\\$(${NUMERIC})(?=[.,;:!?")\\]]|\\s+[A-Za-z]|$)`, 'g');
 
 function escapeCurrency(src) {
-  return typeof src === 'string' ? src.replace(CURRENCY_RE, CURRENCY_PLACEHOLDER) : src;
+  if (typeof src !== 'string') return src;
+  return src
+    .replace(RE_ESCAPED_CURRENCY, CURRENCY_PLACEHOLDER)
+    .replace(RE_CURRENCY_TYPO, CURRENCY_PLACEHOLDER + '$1' + CURRENCY_PLACEHOLDER)
+    .replace(RE_CURRENCY, CURRENCY_PLACEHOLDER + '$1');
 }
 
 function restoreCurrencyInTree(node) {
