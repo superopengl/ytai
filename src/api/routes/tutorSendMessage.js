@@ -33,8 +33,22 @@ const PHANTOM_ANNOTATION_RETRY_PROMPT = readFileSync(
 // produced via draw_annotation. Intentionally first-person ("I've") only —
 // "the student highlighted" or "the page has a circle around" are legitimate
 // descriptions of someone else's marks.
-const ANNOTATION_NARRATION_RE =
-  /\bI(?:'ve| have| 've)?\s+(?:just|now|already)?\s*(?:put\s+(?:a|an)\s+\w+\s+(?:highlight|circle|box|mark)|highlighted|circled|underlined|marked|drawn?\s+(?:a\s+)?(?:circle|box|highlight))\b/i;
+// Shapes Brain's draw_annotation can produce ("rect" most often surfaces as
+// rectangle/square/outline/frame/box in the narration). Kept in one list so
+// both the verb-only branch ("I've boxed…") and the "put a <color> <shape>"
+// branch stay in sync.
+const ANNOTATION_SHAPE = '(?:highlight|circle|box|mark|rectangle|square|outline|frame)';
+const ANNOTATION_NARRATION_RE = new RegExp(
+  `\\bI(?:'ve| have| 've)?\\s+(?:just|now|already)?\\s*(?:` +
+    // "put a purple rectangle around …", "put an orange highlight on …"
+    `put\\s+(?:a|an)\\s+\\w+\\s+${ANNOTATION_SHAPE}` +
+    // Bare verb forms — "highlighted", "circled", "boxed", "outlined", …
+    `|highlighted|circled|underlined|outlined|boxed|marked` +
+    // "drew/drawn a rectangle around …"
+    `|(?:drew|drawn|draw)\\s+(?:a\\s+)?${ANNOTATION_SHAPE}` +
+  `)\\b`,
+  'i'
+);
 
 function looksLikeAnnotationAnnouncement(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
